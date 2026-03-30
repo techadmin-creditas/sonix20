@@ -35,7 +35,8 @@ google-generativeai==0.8.6 # Google Gemini models
 # --- Async Utilities ---
 async-timeout==5.0.1
 anyio==4.13.0
-asyncio-timeout==0.0.1; python_version < "3.11"
+# asyncio-timeout is a typo for async-timeout (already on line 36) or should be removed for Python 3.10+
+
 
 # --- Observability & Logging ---
 tqdm==4.67.3
