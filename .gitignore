@@ -29,6 +29,16 @@ ENV/
 node_modules/
 package-lock.json
 
+# 📥 Node/NPM caches & temp artifacts
+.npm/
+.npm-cache/
+.npm-cache-*/
+
+# Next.js / Turbopack / Vite
+.next/
+.turbo/
+.vite/
+
 # 🪵 Logs & Temps
 *.log
 /tmp/
