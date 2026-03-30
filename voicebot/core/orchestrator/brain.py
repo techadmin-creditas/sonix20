@@ -479,11 +479,22 @@ class AgenticBrain:
             await asyncio.sleep(10.0)
             if self.state == BotState.LISTENING:
                 logger.info("Proactive silence: user quiet for 10s, prompting...")
-                proactive_messages = [
-                    "Are you still there? Just let me know if you need anything.",
-                    "I'm here whenever you're ready.",
-                    "Take your time — I'm still listening.",
-                ]
+                proactive_messages = self.bot_config.get("proactive_prompts", [])
+                if not proactive_messages:
+                    lang = self.session.detected_language or "hi"
+                    if "hi" in lang.lower():
+                        proactive_messages = [
+                            "क्या आप अभी भी वहां हैं? अगर आपको किसी और चीज़ की ज़रूरत है तो मुझे बताएं।",
+                            "जब आप तैयार हों तो मैं यहीं हूं।",
+                            "अपना समय लें - मैं सुन रहा हूं।",
+                        ]
+                    else:
+                        proactive_messages = [
+                            "Are you still there? Just let me know if you need anything.",
+                            "I'm here whenever you're ready.",
+                            "Take your time — I'm still listening.",
+                        ]
+                
                 import random
                 msg = random.choice(proactive_messages)
                 await self._stream_text_to_tts(msg, time.time())
@@ -1108,9 +1119,10 @@ class AgenticBrain:
             return
         await self._set_state(BotState.SPEAKING)
         if self._on_log:
+            voice_id = getattr(self.tts, "model", getattr(self.tts, "voice_id", "unknown"))
             await self._log_event(
                 "[STREAM]",
-                f"TTS segment ({len(t)} chars)",
+                f"TTS segment ({len(t)} chars) [Voice: {voice_id}]",
                 "text-cyan-400",
             )
         _tts_t0 = time.time()
@@ -1120,6 +1132,7 @@ class AgenticBrain:
             if self._interrupt_event.is_set():
                 interrupted = True
                 break
+            # logger.debug("📡 Brain received audio chunk from TTS: %d bytes", len(audio_chunk))
             if _first_chunk:
                 # Track time-to-first-sound for metrics
                 self.session.last_tts_latency_ms = (time.time() - _tts_t0) * 1000

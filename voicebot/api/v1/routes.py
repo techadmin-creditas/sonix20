@@ -111,6 +111,7 @@ async def create_session(
     user_id: Optional[str] = None,
     bot_id: Optional[str] = None,
     transport: str = "websocket",
+    language: str = "hi",
 ):
     """
     Create a new voice session.
@@ -263,6 +264,9 @@ async def create_bot(data: dict):
             color=data.get("color", "primary"),
             temperature=data.get("temperature", 0.7),
             max_tokens=data.get("max_tokens", 2048),
+            tts_provider=data.get("tts_provider", "deepgram_ws"),
+            default_language=data.get("default_language", "hi"),
+            proactive_prompts=data.get("proactive_prompts", []),
         )
         bid = result.get("id")
         if bid:
@@ -556,12 +560,14 @@ async def get_supported_voices():
     """List supported TTS voices across providers."""
     return {
         "voices": [
-            {"id": "aura-asteria-en", "name": "Asteria (Deepgram)", "provider": "deepgram"},
+            {"id": "aura-asteria-en", "name": "Asteria (Hindi Accent / Deepgram)", "provider": "deepgram"},
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
-            {"id": "aura-stella-en", "name": "Stella (Deepgram)", "provider": "deepgram"},
-            {"id": "aura-athena-en", "name": "Athena (Deepgram)", "provider": "deepgram"},
-            {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel (ElevenLabs)", "provider": "elevenlabs"},
-            {"id": "ThT5KcBe7VKqW6E5kyPh", "name": "Dorothy (ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
+            {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
+            {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "ThT5KcBe7VKqW6E5kyPh", "name": "Dorothy (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "AZnzlk1XhkUvSST7V3S6", "name": "Nicole (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
         ]
     }
 

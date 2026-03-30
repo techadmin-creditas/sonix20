@@ -63,6 +63,9 @@ export interface Bot {
   post_call_webhook_url?: string;
   /** Min Deepgram confidence (0-1). Below this on short utterances, bot asks to repeat */
   min_stt_confidence?: number;
+  tts_provider?: string;
+  default_language?: string;
+  proactive_prompts?: string[];
 }
 
 export interface SessionFeedback {

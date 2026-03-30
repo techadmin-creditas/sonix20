@@ -116,7 +116,10 @@ python3 scripts/seed_banking_db.py
 
 This is idempotent — safe to run multiple times.
 
-### 6. Start the backend server
+### 6. Database Migrations
+The system handles schema updates automatically on startup via `SQLiteProvider.initialize()`. There is no need to run manual migration scripts. When you pull the latest code and restart the server, any new columns or tables will be added automatically to your `voicebot.db` without wiping your existing bots.
+
+### 7. Start the backend server
 
 ```bash
 uvicorn voicebot.main:app --reload --host 0.0.0.0 --port 8000

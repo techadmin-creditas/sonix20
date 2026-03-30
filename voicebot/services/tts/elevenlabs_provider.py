@@ -39,8 +39,8 @@ class ElevenLabsStreamingProvider:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        voice_id: str = "21m00Tcm4TlvDq8ikWAM",
-        model_id: str = "eleven_monolingual_v1",
+        voice_id: str = "EXAVITQu4vr4xnSDxMaL",
+        model_id: str = "eleven_multilingual_v2",
         output_format: str = "pcm_16000",
     ):
         self.api_key = api_key or settings.elevenlabs_api_key
@@ -134,12 +134,18 @@ class ElevenLabsStreamingProvider:
                         logger.error("ElevenLabs error %d: %s", response.status_code, error_text)
                         return
 
+                    logger.info("ElevenLabs: HTTP %d response, model=%s, content-type=%s", response.status_code, self.model_id, response.headers.get("content-type"))
+                    _chunk_count = 0
                     async for chunk in response.aiter_bytes(chunk_size=4096):
                         if self._stopped:
                             logger.debug("TTS streaming stopped (interrupted)")
                             return
+                        _chunk_count += 1
+                        if _chunk_count == 1:
+                            logger.info("ElevenLabs: First audio chunk received (%d bytes)", len(chunk))
                         accumulated.append(chunk)
                         yield chunk
+                    logger.info("ElevenLabs: Streaming complete. Total chunks: %d", _chunk_count)
 
         except Exception as e:
             logger.error("ElevenLabs streaming error: %s", e)

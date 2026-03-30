@@ -291,11 +291,27 @@ export default function BotConfig() {
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">First Contact String</label>
-              <input 
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30" 
-                type="text" 
+              <textarea 
+                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface w-full focus:ring-1 focus:ring-primary/30 min-h-14" 
+                rows={1}
                 value={formData.greeting}
                 onChange={e => setFormData(prev => ({ ...prev, greeting: e.target.value }))}
+              />
+            </div>
+            
+            <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Proactive Silence Prompts</label>
+                <span className="text-[10px] text-on-surface-variant/60 font-medium italic">One per line</span>
+              </div>
+              <textarea 
+                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface w-full focus:ring-1 focus:ring-primary/30 min-h-32" 
+                placeholder="Are you still there?&#10;I'm here whenever you're ready."
+                value={(formData.proactive_prompts || []).join('\n')}
+                onChange={e => {
+                  const lines = e.target.value.split('\n').filter(l => l.trim() !== '');
+                  setFormData(prev => ({ ...prev, proactive_prompts: lines }));
+                }}
               />
             </div>
           </section>
@@ -326,7 +342,7 @@ export default function BotConfig() {
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Voice Profile</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Engine Profile</label>
                 <div className="relative">
                   <select 
                     className="appearance-none w-full bg-surface-container-highest border-none rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
@@ -338,6 +354,33 @@ export default function BotConfig() {
                     ))}
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant size-5" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Provider</label>
+                  <select 
+                    className="w-full bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    value={formData.tts_provider || 'deepgram_ws'}
+                    onChange={e => setFormData(prev => ({ ...prev, tts_provider: e.target.value }))}
+                  >
+                    <option value="deepgram_ws">Deepgram (Websocket)</option>
+                    <option value="deepgram_http">Deepgram (HTTP)</option>
+                    <option value="elevenlabs">ElevenLabs (Multilingual)</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
+                  <select 
+                    className="w-full bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    value={formData.default_language || 'hi'}
+                    onChange={e => setFormData(prev => ({ ...prev, default_language: e.target.value }))}
+                  >
+                    <option value="hi">Hindi (hi)</option>
+                    <option value="en">English (en)</option>
+                    <option value="hi-en">Hinglish (Mixed)</option>
+                  </select>
                 </div>
               </div>
 

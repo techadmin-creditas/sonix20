@@ -157,6 +157,7 @@ class DeepgramWSTTSProvider:
                 self._audio_queue.get_nowait()
 
             try:
+                logger.debug("Deepgram WS TTS: sending text segment (model=%s, len=%d)", self.model, len(text))
                 await self._ws.send(json.dumps({"type": "Speak", "text": text}))
                 await self._ws.send(json.dumps({"type": "Flush"}))
             except Exception as exc:

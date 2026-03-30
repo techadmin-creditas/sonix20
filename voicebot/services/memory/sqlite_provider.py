@@ -72,7 +72,7 @@ class SQLiteProvider:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS bots (
                 id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(4)))),
-                name        TEXT NOT NULL UNIQUE,
+                name        TEXT NOT NULL,
                 description TEXT,
                 persona     TEXT NOT NULL DEFAULT 'helpful assistant',
                 system_prompt TEXT NOT NULL,
@@ -107,6 +107,8 @@ class SQLiteProvider:
             ("stt_utterance_end_ms", "INTEGER DEFAULT 800"),      # Deepgram definitive utterance-end timeout
             ("first_segment_chars", "INTEGER DEFAULT 80"),        # First TTS flush char cap (fast-path)
             ("audio_frame_normalize", "INTEGER DEFAULT 1"),       # 1 = normalize to 20 ms frames
+            ("default_language", "TEXT DEFAULT 'hi'"),
+            ("proactive_prompts", "TEXT DEFAULT '[]'"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -133,7 +135,7 @@ class SQLiteProvider:
                 id          TEXT PRIMARY KEY,
                 bot_id      TEXT REFERENCES bots(id),
                 user_id     TEXT,
-                language    TEXT DEFAULT 'en',
+                language    TEXT DEFAULT 'hi',
                 started_at  REAL NOT NULL DEFAULT (strftime('%s','now')),
                 ended_at    REAL,
                 turn_count  INTEGER DEFAULT 0,
@@ -323,16 +325,16 @@ class SQLiteProvider:
                          icon: str = "bot",
                          color: str = "primary",
                          temperature: float = 0.7,
-                         max_tokens: int = 2048) -> dict:
+                         max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_model, voice_id, role, icon, color, temperature, max_tokens)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_model, voice_id, role, icon, color, temperature, max_tokens))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or [])))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -354,6 +356,7 @@ class SQLiteProvider:
                 if d.get("pipeline_mode") is None:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
+                d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
                 return d
             return None
         return await self._run(_do)
@@ -372,6 +375,7 @@ class SQLiteProvider:
                 if d.get("pipeline_mode") is None:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
+                d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
                 return d
             return None
         return await self._run(_do)
@@ -401,11 +405,14 @@ class SQLiteProvider:
                 "name", "description", "persona", "system_prompt", "greeting", "tools_enabled",
                 "llm_model", "voice_id", "role", "icon", "color", "temperature", "max_tokens", "workflow_id",
                 "guardrail_policy", "data_access_policy", "conversation_policy", "pipeline_mode",
-                "agent_task_spec",
+                "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
+                "stt_utterance_end_ms", "first_segment_chars", "audio_frame_normalize", "proactive_prompts",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
                 updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
+            if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
+                updates["proactive_prompts"] = json.dumps(updates["proactive_prompts"])
             if "agent_task_spec" in updates and isinstance(updates["agent_task_spec"], dict):
                 updates["agent_task_spec"] = json.dumps(updates["agent_task_spec"])
             for pol in ("guardrail_policy", "data_access_policy", "conversation_policy"):
@@ -425,7 +432,7 @@ class SQLiteProvider:
             conn = self._get_conn()
             conn.execute("UPDATE bots SET is_active = 0 WHERE id = ?", (bot_id,))
             conn.commit()
-            return True
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
         return await self._run(_do)
 
     # ─── Workflow Management ──────────────────────────────────────────────────
@@ -474,21 +481,24 @@ class SQLiteProvider:
     # ─── Session Management ───────────────────────────────────────────────────
 
     async def create_session(self, session_id: str, bot_id: Optional[str] = None,
-                             user_id: Optional[str] = None, language: str = "en") -> None:
+                             user_id: Optional[str] = None, language: str = "hi") -> None:
         """Register or update a session in SQLite."""
         def _do():
             conn = self._get_conn()
-            # Use OR REPLACE to ensure session data is updated if it exists
+            # 1. Insert session record if it doesn't exist yet
             conn.execute("""
-                INSERT OR REPLACE INTO sessions (id, bot_id, user_id, language, started_at)
-                VALUES (?, ?, ?, ?, (SELECT started_at FROM sessions WHERE id = ?))
-            """, (session_id, bot_id, user_id, language, session_id))
+                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, started_at)
+                VALUES (?, ?, ?, ?, strftime('%s','now'))
+            """, (session_id, bot_id, user_id, language))
             
-            # If it was a new session (the subselect returned NULL), set the started_at now
+            # 2. Update existing session fields (except started_at)
             conn.execute("""
-                UPDATE sessions SET started_at = strftime('%s','now') 
-                WHERE id = ? AND started_at IS NULL
-            """, (session_id,))
+                UPDATE sessions 
+                SET bot_id = COALESCE(?, bot_id),
+                    user_id = COALESCE(?, user_id),
+                    language = ?
+                WHERE id = ?
+            """, (bot_id, user_id, language, session_id))
             
             conn.commit()
         await self._run(_do)
@@ -890,6 +900,8 @@ class SQLiteProvider:
         """Hard-delete a workflow by ID."""
         def _do():
             conn = self._get_conn()
+            # Unlink any bots currently using this workflow
+            conn.execute("UPDATE bots SET workflow_id = NULL WHERE workflow_id = ?", (workflow_id,))
             conn.execute("DELETE FROM workflows WHERE id = ?", (workflow_id,))
             conn.commit()
             return True

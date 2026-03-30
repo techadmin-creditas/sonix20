@@ -113,7 +113,7 @@ async def health_check():
 async def voice_websocket(
     websocket: WebSocket,
     session_id: str,
-    language: str = Query(default="en"),
+    language: str = Query(default="hi"),
     bot_id: Optional[str] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
 ):
@@ -160,6 +160,11 @@ async def voice_websocket(
     if bot_id:
         bot_config = await db.get_bot(bot_id) or {}
         if bot_config:
+            # Override language if bot has a specific default
+            if language == "en" and bot_config.get("default_language"):
+                language = bot_config.get("default_language")
+                logger.info("Bot-specific language override: %s", language)
+            
             logger.info("Loaded persona: %s (%s)", bot_config.get('name'), bot_id)
         else:
             logger.warning("Bot ID '%s' not found, using default fallback", bot_id)
@@ -190,18 +195,23 @@ async def voice_websocket(
             )
             return
 
+    # Bot logic language override
+    # If the bot has a default_language (e.g. 'hi') and the query is just the default 'hi',
+    # use the bot's setting (which might be 'en' or 'hi-en').
+    session_language = bot_config.get("default_language") or language
+
     # Sync session in SQLite (with user_id for cross-session memory)
     await db.create_session(
         session_id=session_id,
         bot_id=bot_config.get("id"),
-        language=language,
+        language=session_language,
         user_id=user_id,
     )
 
     # Initialize Providers with bot-specific overrides
     try:
         # STT
-        stt_provider = DeepgramStreamingProvider(language=language)
+        stt_provider = DeepgramStreamingProvider(language=session_language)
         
         # LLM
         llm_model = bot_config.get("llm_model")
@@ -209,20 +219,27 @@ async def voice_websocket(
             raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no LLM Model configured. Please update its settings.")
         llm_provider = GroqStreamingProvider(model=llm_model)
 
-        # TTS (Detect Provider from voice_id)
+        # TTS (Detect Provider from voice_id + explicit override)
         voice_id = bot_config.get("voice_id")
         if not voice_id:
             raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no Voice Profile configured. Please update its settings.")
             
-        # Select TTS provider.
-        # 'deepgram_ws' → persistent WebSocket (low latency, ~50 ms TTFS).
-        # 'deepgram_http' or aura-* voice ID → HTTP POST per segment (~200-400 ms TTFS).
-        # ElevenLabs voice IDs contain digits (e.g. "21m00Tcm4TlvDq8ikWAM").
         _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
         _is_deepgram_voice = "aura-" in str(voice_id).lower() or not any(c.isdigit() for c in str(voice_id))
 
-        if _tts_prov_name == "deepgram_ws" or (_is_deepgram_voice and _tts_prov_name not in ("deepgram_http", "elevenlabs")):
-            # Use persistent WS TTS when explicitly requested or auto-detected as Deepgram voice.
+        if _tts_prov_name == "elevenlabs":
+            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+            tts_provider = ElevenLabsStreamingProvider(
+                voice_id=voice_id,
+                model_id="eleven_multilingual_v2"
+            )
+            logger.info("Using ElevenLabs TTS (voice=%s, forced_by_config) ✅", voice_id)
+        elif _tts_prov_name == "deepgram_http":
+            from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
+            tts_provider = DeepgramTTSProvider(model=voice_id)
+            logger.info("Using Deepgram HTTP TTS (model=%s, forced_by_config) ✅", voice_id)
+        elif _tts_prov_name == "deepgram_ws" or (_is_deepgram_voice and not _tts_prov_name):
+            # Default to WS for Deepgram voices if not specified otherwise
             from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
             tts_provider = DeepgramWSTTSProvider(model=voice_id)
             try:
@@ -233,14 +250,14 @@ async def voice_websocket(
                 from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
                 tts_provider = DeepgramTTSProvider(model=voice_id)
                 logger.info("Using Deepgram HTTP TTS (model=%s)", voice_id)
-        elif _is_deepgram_voice:
-            from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
-            tts_provider = DeepgramTTSProvider(model=voice_id)
-            logger.info("Using Deepgram HTTP TTS (model=%s)", voice_id)
         else:
+            # Fallback for ElevenLabs style IDs or explicit elevenlabs selection
             from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-            tts_provider = ElevenLabsStreamingProvider(voice_id=voice_id)
-            logger.info("Using ElevenLabs TTS (voice=%s)", voice_id)
+            tts_provider = ElevenLabsStreamingProvider(
+                voice_id=voice_id,
+                model_id="eleven_multilingual_v2"
+            )
+            logger.info("Using ElevenLabs TTS (voice=%s, auto-detected) ✅", voice_id)
             # Attach Redis cache for high-frequency phrase caching
             memory_local = RedisSessionProvider(redis_url=settings.redis_url)
             await memory_local.connect()
@@ -289,6 +306,7 @@ async def voice_websocket(
 
     async def on_audio_output(audio_bytes: bytes):
         if vt.connected:
+            logger.info("📡 Dispatching audio chunk to client: %d bytes", len(audio_bytes))
             await normalizer.push(audio_bytes, vt.send_bytes)
 
     async def on_transcript(text: str, is_final: bool):

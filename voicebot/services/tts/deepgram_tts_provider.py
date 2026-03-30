@@ -69,6 +69,7 @@ class DeepgramTTSProvider:
         payload = {"text": text}
 
         try:
+            logger.info("Deepgram TTS starting: model=%s, text='%s'", self.model, text[:40])
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream(
                     "POST", self._url, params=params, headers=headers, json=payload
