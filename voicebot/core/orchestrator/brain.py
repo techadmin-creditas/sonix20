@@ -1,0 +1,1556 @@
+"""
+Agentic Brain — The core decision engine of the voice bot.
+
+This is the orchestrator's "mind". It:
+  1. Receives partial STT transcripts and decides when a turn is complete
+  2. Constructs LLM prompts with conversation context
+  3. Streams LLM tokens to TTS in real-time
+  4. Detects and handles user interruptions
+  5. Manages conversation flow and state transitions
+
+The brain operates as an async state machine with these states:
+  LISTENING → PROCESSING → SPEAKING → LISTENING (normal flow)
+  SPEAKING → INTERRUPTED → LISTENING (interruption flow)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import async_timeout
+import hashlib
+import json
+import time
+import logging
+from enum import Enum
+from typing import Any, Awaitable, Callable, List, Optional
+
+from voicebot.shared.config import get_settings
+from voicebot.shared.agent_task_spec import parse_agent_task_spec, render_agent_task_spec_appendix
+from voicebot.shared.policy import (
+    cache_ttl_seconds,
+    injection_enabled,
+    injection_threshold,
+    kb_only_mode,
+    parse_json_dict,
+    tts_flush_mode,
+    tts_pipeline_llm,
+    tts_streaming_mode,
+)
+from voicebot.services.guardrail.injection_detector import InjectionDetector
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.models.session import SessionState, TurnRole
+from voicebot.shared.models.tools import ToolCall, ToolDefinition, ToolResult, LLMResponse
+from voicebot.core.orchestrator.turn_detector import TurnDetector
+from voicebot.core.tools.registry import ToolRegistry
+
+from fastapi import WebSocketDisconnect
+try:
+    from uvicorn.protocols.utils import ClientDisconnected
+except ImportError:
+    class ClientDisconnected(Exception): pass
+
+settings = get_settings()
+logger = setup_logger("orchestrator-brain", level=settings.log_level)
+
+_VOICEBOT_PROCESS_START = time.time()
+
+_SCOPE_TOOL_NAMES = {
+    "knowledge": ("search_knowledge",),
+    "appointments": ("book_appointment", "get_appointments"),
+    "user_memory": ("remember_user_fact",),
+    "weather": ("get_weather",),
+}
+
+
+class BotState(str, Enum):
+    """State machine for the voice bot."""
+    IDLE = "idle"
+    LISTENING = "listening"
+    PROCESSING = "processing"
+    SPEAKING = "speaking"
+    INTERRUPTED = "interrupted"
+
+
+class AgenticBrain:
+    """
+    The Agent Brain — coordinates the real-time voice pipeline.
+
+    Design decisions:
+      - Uses asyncio.Event for interruption signaling (zero-latency cancellation)
+      - Accumulates partial transcripts and uses semantic VAD to decide turn boundaries
+      - Streams LLM tokens directly to TTS for minimum latency
+      - Maintains conversation history for context-aware responses
+    """
+
+    def __init__(
+        self,
+        session: SessionState,
+        stt_handler: Any = None,
+        llm_handler: Any = None,
+        tts_handler: Any = None,
+        guardrail_handler: Any = None,
+        memory_handler: Any = None,
+        db_handler: Any = None,  # SQLite long-term memory
+        bot_config: Optional[dict] = None,  # Loaded bot persona from DB
+        on_state_change: Optional[Callable] = None,
+        on_audio_output: Optional[Callable] = None,
+        on_transcript: Optional[Callable] = None,
+        on_bot_transcript: Optional[Callable] = None,
+        on_tool_call: Optional[Callable] = None,
+        on_tool_result: Optional[Callable] = None,
+        on_log: Optional[Callable] = None,
+        on_metrics: Optional[Callable] = None,
+        output_guard_handler: Any = None,
+        on_voice_session_end: Optional[Callable[[str], Awaitable[None]]] = None,
+    ):
+        self.session = session
+        self.state = BotState.LISTENING
+        
+        # Service handlers
+        self.stt = stt_handler
+        self.llm = llm_handler
+        self.tts = tts_handler
+        self.guardrail = guardrail_handler
+        self.memory = memory_handler
+        self.db = db_handler  # SQLite long-term memory
+        self.output_guard = output_guard_handler
+        self._vector_memory = None  # Optional VectorMemoryProvider for RAG
+        self.turn_detector = TurnDetector()
+
+        # Bot config (persona, system prompt, tools from DB)
+        self._bot_config: dict = bot_config or {}
+        self._bot_id: Optional[str] = self._bot_config.get("id")
+        self._guardrail_policy: dict = parse_json_dict(self._bot_config.get("guardrail_policy"))
+        self._data_access_policy: dict = parse_json_dict(self._bot_config.get("data_access_policy"))
+        self._conversation_policy: dict = parse_json_dict(self._bot_config.get("conversation_policy"))
+        self._agent_task_spec: dict = parse_agent_task_spec(self._bot_config.get("agent_task_spec"))
+        self._injection_detector: Optional[InjectionDetector] = None
+        if injection_enabled(self._guardrail_policy):
+            self._injection_detector = InjectionDetector(threshold=injection_threshold(self._guardrail_policy))
+        self._interrupt_prompt_suffix: str = ""
+
+        # Hydrate session from memory if available
+        if self.memory:
+            asyncio.create_task(self._hydrate_session())
+
+        # Eagerly warm the LLM client so the first user turn has no cold-start penalty.
+        if self.llm and hasattr(self.llm, "_get_client"):
+            asyncio.create_task(self.llm._get_client())
+
+        # Callbacks for the WebSocket handler
+        self._on_state_change = on_state_change
+        self._on_audio_output = on_audio_output
+        self._on_transcript = on_transcript
+        self._on_bot_transcript = on_bot_transcript
+        self._on_tool_call = on_tool_call
+        self._on_tool_result = on_tool_result
+        self._on_log = on_log
+        self._on_metrics = on_metrics
+        self._on_voice_session_end = on_voice_session_end
+
+        # Interruption control
+        self._interrupt_event = asyncio.Event()
+        self._current_task: Optional[asyncio.Task] = None
+
+        # Partial transcript accumulation
+        self._partial_buffer: str = ""
+        self._utterance_buffer: str = ""  # Accumulates finalized Deepgram segments across endpoints
+        self._silence_timer: Optional[asyncio.Task] = None
+        self._apply_conversation_policy_derived()
+        self._proactive_timer: Optional[asyncio.Task] = None  # "Still there?" timer
+
+        # STT confidence tracking (for graceful recovery on noisy/unclear speech)
+        self._last_stt_confidence: float = 1.0
+        self._last_utterance_end_time: float = 0.0
+
+        # Cross-session memory (populated by _load_cross_session_context on session start)
+        self._cross_session_context: str = ""
+
+        # Sentiment tracking (rolling per-session for escalation decisions)
+        self._sentiment_history: list[str] = []  # "positive" | "neutral" | "negative" per turn
+        
+        # Tools Registry (loaded based on bot config)
+        self._tools = self._register_tools()
+
+        # Latency tracking
+        self._turn_start_time: float = 0.0
+        self._turn_count: int = 0
+        
+        # Extensible dynamic node workflow
+        self.workflow_engine = None
+
+    def _apply_conversation_policy_derived(self) -> None:
+        """Load timing, TTS chunking, and streaming options from conversation_policy."""
+        pol = self._conversation_policy
+        try:
+            st = float(pol.get("silence_threshold_ms", 400))
+            self._silence_threshold_ms = st if 50 <= st <= 5000 else 400.0
+        except (TypeError, ValueError):
+            self._silence_threshold_ms = 400.0
+        try:
+            # 100 chars (~20 words) flushes sooner → faster first audio to user.
+            # Operators can raise this per-bot if they prefer fewer, longer TTS segments.
+            self._max_tts_buffer_chars = int(pol.get("max_tts_buffer_chars", 100))
+            self._max_tts_buffer_chars = max(30, min(self._max_tts_buffer_chars, 500))
+        except (TypeError, ValueError):
+            self._max_tts_buffer_chars = 100
+        self._tts_flush_mode = tts_flush_mode(pol)
+        self._tts_streaming_mode = tts_streaming_mode(pol)
+        self._tts_pipeline_llm = tts_pipeline_llm(pol) and self._tts_streaming_mode == "chunked"
+
+    async def _set_state(self, new_state: BotState) -> None:
+        """Transition to a new state and notify listeners."""
+        old_state = self.state
+        self.state = new_state
+        logger.info(
+            "State transition: %s → %s (session=%s)",
+            old_state.value,
+            new_state.value,
+            self.session.session_id[:8],
+        )
+        if self._on_state_change:
+            await self._on_state_change(new_state.value)
+        
+        # Log state transition to client terminal
+        tag = "[STATE]"
+        color = "text-primary"
+        if new_state == BotState.PROCESSING:
+            tag = "[BRAIN]"
+            color = "text-indigo-400"
+        elif new_state == BotState.SPEAKING:
+            tag = "[VOICE]"
+            color = "text-cyan-400"
+        elif new_state == BotState.LISTENING:
+            tag = "[EARS]"
+            color = "text-green-400"
+            
+        await self._log_event(tag, f"Transitioned to {new_state.value}", color)
+
+    async def _log_event(self, tag: str, message: str, color: str = "text-outline") -> None:
+        """Helper to send a log event to the client UI terminal."""
+        if self._on_log:
+            await self._on_log(tag, message, color)
+
+    def request_voice_session_end(self, reason: str) -> None:
+        """Mark the voice session to end after the current assistant turn finishes (TTS complete)."""
+        self.session.voice_session_end_requested = True
+        self.session.voice_session_end_reason = (reason or "completed").strip() or "completed"
+
+    def _update_task_phase_from_user_text(self, user_text: str) -> None:
+        """Lightweight heuristics for call_phase / objection_round when agent_task_spec is set."""
+        if not self._agent_task_spec:
+            return
+        t = (user_text or "").lower()
+        meta = self.session.metadata
+        phase = meta.get("call_phase", "open")
+        objection_round = int(meta.get("objection_round", 0) or 0)
+        max_r = self._agent_task_spec.get("max_persuasion_rounds")
+        try:
+            max_r = int(max_r) if max_r is not None else None
+        except (TypeError, ValueError):
+            max_r = None
+
+        refuse_markers = (
+            "not interested",
+            "no thanks",
+            "don't call",
+            "do not call",
+            "stop calling",
+            "leave me alone",
+            "i refuse",
+            "won't pay",
+            "cant pay",
+            "can't pay",
+            "not paying",
+        )
+        if any(m in t for m in refuse_markers):
+            objection_round += 1
+            meta["user_stance"] = "refused"
+            meta["objection_round"] = objection_round
+            if max_r is not None and objection_round >= max_r:
+                meta["call_phase"] = "closing"
+            else:
+                meta["call_phase"] = "handle_objection"
+        elif any(m in t for m in ("how do i pay", "how to pay", "payment link", "where to pay", "pay online")):
+            meta["call_phase"] = "pitch"
+            meta.setdefault("user_stance", "neutral")
+        elif meta.get("call_phase", "open") == "open" and len(self.session.conversation_history) >= 2:
+            meta["call_phase"] = "pitch"
+
+    def _format_task_phase_hint(self) -> str:
+        if not self._agent_task_spec:
+            return ""
+        meta = self.session.metadata
+        phase = meta.get("call_phase")
+        if not phase:
+            return ""
+        parts = [f"\n\n[Session hint: call_phase={phase}"]
+        if meta.get("user_stance"):
+            parts.append(f", user_stance={meta.get('user_stance')}")
+        if meta.get("objection_round") is not None:
+            parts.append(f", objection_round={meta.get('objection_round')}")
+        parts.append("]")
+        if phase == "handle_objection":
+            parts.append(
+                " Respond with empathy; offer one alternative angle from value_props or objection_handling; stay polite."
+            )
+        elif phase == "closing":
+            parts.append(
+                " User has declined repeatedly or exit conditions met: give a brief polite goodbye, then call end_voice_session."
+            )
+        return "".join(parts)
+
+    # ─── Audio Input Handling ────────────────────────────────────────────
+
+    async def process_audio_chunk(self, chunk: bytes) -> None:
+        """
+        Ingest raw audio from the client.
+        Passes it to the STT provider and detects intent patterns.
+        """
+        # Debug metadata for tracking ingestion
+        if len(chunk) > 0:
+            logger.debug("Ingested audio chunk: %d bytes (session=%s)", len(chunk), self.session.session_id[:8])
+
+        if self.state == BotState.IDLE:
+            # If in IDLE, we don't process audio, but we still forward it to STT
+            # to keep the connection alive and potentially detect speech for wake-up.
+            if self.stt:
+                await self.stt.send_audio(chunk)
+            return
+
+        # Always forward audio to STT to keep the connection alive, even when not listening.
+        if self.stt:
+            await self.stt.send_audio(chunk)
+
+        if self.state != BotState.LISTENING:
+            return
+
+        self.session.is_user_speaking = True
+        self._turn_start_time = self._turn_start_time or time.time()
+
+    async def process_stt_partial(self, text: str, is_final: bool, **kwargs: Any) -> None:
+        """
+        Handle a partial or final transcript from STT.
+        """
+        msg_type = kwargs.get("msg_type")
+
+        # Handle interruptions with an 80 ms debounce.
+        # The debounce filters acoustic echo pops that Deepgram's VAD mistakes for real speech.
+        # Genuine barge-ins (user actually speaking) sustain well past 80 ms.
+        if msg_type == "speech_started" and self.state == BotState.SPEAKING:
+            await asyncio.sleep(0.08)
+            if self.state == BotState.SPEAKING:   # Still speaking → real interruption
+                await self.handle_interruption()
+            else:
+                # Debounce suppressed this event — it was likely acoustic echo
+                self.session.false_interruption_count += 1
+            return
+
+        # If we are already processing or speaking, we only care about speech_started (for interruption)
+        if self.state != BotState.LISTENING:
+            return
+
+        # Language Detection Module logic: Update session language if detected with high confidence
+        stt_lang = kwargs.get("language")
+        if stt_lang and stt_lang != self.session.detected_language:
+            # We only switch if it's a stable signal
+            logger.debug("Language Detection: Detected '%s' (current: '%s')", stt_lang, self.session.detected_language)
+            self.session.detected_language = stt_lang
+
+        # Update partial buffer
+        if text.strip():
+            # --- Anticipation Module ---
+            # If not a final transcript and has some length, try to pre-warm LLM
+            if not is_final and len(text.split()) > 2:
+                asyncio.create_task(self._predictive_prewarm(text))
+
+            self._partial_buffer = text  # Latest Deepgram segment text (full text so far in segment)
+
+            if is_final:
+                # Accumulate across Deepgram endpoint segments to handle split utterances.
+                # (User pausing mid-sentence triggers separate Deepgram finals; we join them.)
+                sep = " " if self._utterance_buffer else ""
+                self._utterance_buffer = (self._utterance_buffer + sep + text.strip()).strip()
+
+        # Notify client
+        if self._on_transcript:
+            await self._on_transcript(text, is_final)
+
+        # Store STT confidence for low-confidence graceful recovery
+        incoming_confidence = kwargs.get("confidence")
+        if incoming_confidence is not None:
+            self._last_stt_confidence = float(incoming_confidence)
+
+        if is_final and text.strip():
+            self._last_utterance_end_time = time.time()
+            await self._log_event("[STT]", f"Final transcript: \"{text}\"", "text-yellow-400")
+
+        # Turn Detection Logic
+        if text.strip() or is_final or msg_type == "utterance_end":
+            # Recalculate silence threshold dynamically using text heuristics only
+            # (silence duration is not yet known at this point; it will be passed in _wait_for_silence)
+            confidence = self.turn_detector.compute_turn_complete_confidence(
+                self._utterance_buffer or self._partial_buffer,
+                0,
+            )
+
+            # If we're very sure the user is done (short response), reduce wait time
+            dynamic_threshold = self._silence_threshold_ms
+            if confidence > 0.8:
+                dynamic_threshold = 250 # Snappy response for very clear completions
+            elif confidence > 0.5:
+                dynamic_threshold = 400
+
+            # After a Deepgram final, cap the threshold so we respond promptly.
+            # This applies whether or not a timer was already running.
+            if is_final:
+                dynamic_threshold = min(dynamic_threshold, 150)
+            elif msg_type == "utterance_end":
+                dynamic_threshold = 50  # UtteranceEnd = definitive end of full utterance
+
+            if self._silence_timer:
+                self._silence_timer.cancel()
+
+            self._silence_timer = asyncio.create_task(
+                self._wait_for_silence(dynamic_threshold)
+            )
+
+    async def _wait_for_silence(self, threshold_ms: float) -> None:
+        """
+        Wait for a period of silence, then fire the user turn.
+        Reads the latest accumulated utterance at fire time (not captured at creation),
+        so split-endpoint segments are correctly joined before processing.
+        """
+        try:
+            await asyncio.sleep(threshold_ms / 1000.0)
+
+            # Safety check: are we still in a state where we should start a turn?
+            if self.state != BotState.LISTENING:
+                logger.debug("Silence detected but state is %s. Ignoring turn trigger.", self.state)
+                return
+
+            # Use accumulated utterance buffer (joins multiple Deepgram endpoint finals),
+            # falling back to the latest partial if no finals arrived yet.
+            transcript = (self._utterance_buffer or self._partial_buffer).strip()
+            if not transcript:
+                return
+
+            # Compute actual elapsed silence from when the last utterance ended
+            actual_silence_ms = threshold_ms
+            if self._last_utterance_end_time > 0:
+                actual_silence_ms = (time.time() - self._last_utterance_end_time) * 1000
+
+            # Re-evaluate turn confidence with the actual silence duration now known
+            _final_confidence = self.turn_detector.compute_turn_complete_confidence(
+                transcript, actual_silence_ms
+            )
+            logger.debug(
+                "Turn confidence at fire time: %.2f (silence=%.0fms)",
+                _final_confidence, actual_silence_ms,
+            )
+
+            # Silence threshold reached — user has finished speaking
+            logger.info(
+                "Turn complete (silence detected): threshold=%.0fms, transcript='%s'",
+                threshold_ms,
+                transcript[:50],
+            )
+            self.session.is_user_speaking = False
+
+            # Cancel proactive timer since user just spoke
+            if self._proactive_timer:
+                self._proactive_timer.cancel()
+                self._proactive_timer = None
+
+            await self._process_user_turn(transcript)
+
+            # After the turn, start the proactive silence timer
+            self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
+
+        except asyncio.CancelledError:
+            # More speech arrived — timer was reset
+            pass
+
+    async def _proactive_silence_check(self) -> None:
+        """If user is silent for 10s after a bot response, ask if they're still there."""
+        try:
+            await asyncio.sleep(10.0)
+            if self.state == BotState.LISTENING:
+                logger.info("Proactive silence: user quiet for 10s, prompting...")
+                proactive_messages = [
+                    "Are you still there? Just let me know if you need anything.",
+                    "I'm here whenever you're ready.",
+                    "Take your time — I'm still listening.",
+                ]
+                import random
+                msg = random.choice(proactive_messages)
+                await self._stream_text_to_tts(msg, time.time())
+                if self._on_bot_transcript:
+                    await self._on_bot_transcript(msg, True)
+        except asyncio.CancelledError:
+            pass
+
+    # ─── Core Pipeline: STT → Guardrail → LLM → TTS ────────────────────
+
+    async def _predictive_prewarm(self, text: str) -> None:
+        """
+        Anticipate the user's full request to reduce latency.
+        If certain keywords appear in partials, we start pre-warming the LLM.
+        """
+        text = text.lower()
+        # Extended keyword list covers most common intents.
+        # Pre-warming the LLM client on partial transcripts cuts cold-start latency
+        # by 500–1000 ms on first call and keeps the connection warm between turns.
+        key_intents = [
+            "book", "appointment", "schedule",
+            "hello", "hi", "hey",
+            "weather", "remind", "reminder",
+            "what", "how", "when", "where", "who", "why",
+            "can you", "could you", "please", "help",
+            "check", "find", "look", "search",
+            "payment", "pay", "cancel", "change",
+        ]
+
+        if any(intent in text for intent in key_intents):
+            logger.debug("🎯 Latency: Intent pre-warmed for '%s'", text)
+            # Triggers async Groq client init (lazy → eager)
+            if hasattr(self.llm, "_get_client"):
+                asyncio.create_task(self.llm._get_client())
+            elif hasattr(self.llm, "_get_model"):
+                asyncio.create_task(self.llm._get_model(tools=self._tools))
+
+    async def _load_cross_session_context(self) -> None:
+        """
+        Load 3-layer cross-session memory for a returning user.
+        Populates self._cross_session_context which is injected into _build_system_prompt().
+
+        Layer 1: Persistent user facts (name, account, preferences).
+        Layer 2: Past session summaries (compressed LLM digests of previous calls).
+        Layer 3: Recent turns from most recent prior session (verbatim continuity).
+        """
+        user_id = self.session.user_id
+        if not user_id or not self.db:
+            return
+        try:
+            ctx = await self.db.get_user_cross_session_context(user_id)
+            parts = []
+
+            if ctx.get("facts"):
+                facts_str = " | ".join(f["fact"] for f in ctx["facts"][:10])
+                parts.append(f"Known about this caller: {facts_str}")
+
+            if ctx.get("past_summaries"):
+                lines = [
+                    f"- {s['summary']}"
+                    for s in ctx["past_summaries"]
+                    if s.get("summary")
+                ]
+                if lines:
+                    parts.append("Previous conversations:\n" + "\n".join(lines))
+
+            if ctx.get("recent_turns"):
+                recent = "\n".join(
+                    f"{t['role'].capitalize()}: {t['content']}"
+                    for t in ctx["recent_turns"]
+                )
+                parts.append(f"Last conversation excerpt:\n{recent}")
+
+            if parts:
+                self._cross_session_context = "\n\n".join(parts)
+                logger.info(
+                    "Cross-session context loaded for user '%s' (%d chars)",
+                    user_id, len(self._cross_session_context),
+                )
+        except Exception as e:
+            logger.warning("Failed to load cross-session context: %s", e)
+
+    async def start_conversation(self) -> None:
+        """
+        Trigger the initial greeting from the bot.
+        Uses bot-specific greeting from DB config if available.
+        """
+        logger.info("🎬 Starting conversation (session=%s)", self.session.session_id[:8])
+
+        # Load cross-session memory for returning users before the greeting
+        await self._load_cross_session_context()
+
+        await self._set_state(BotState.PROCESSING)
+        self._interrupt_event.clear()
+        
+        # Load Workflow Engine if applicable
+        if self._bot_config.get("workflow_id") and self.db:
+            wf_data = await self.db.get_workflow(self._bot_config["workflow_id"])
+            if wf_data:
+                from voicebot.core.orchestrator.workflow_engine import WorkflowEngine
+                self.workflow_engine = WorkflowEngine(self, wf_data)
+                logger.info("Loaded generic workflow engine: %s", wf_data.get('name', 'Unknown'))
+            else:
+                self.workflow_engine = None
+
+        # Use custom greeting from bot config if set
+        custom_greeting = self._bot_config.get("greeting")
+        try:
+            if custom_greeting:
+                logger.info("Using bot greeting (session=%s): %s", self.session.session_id[:8], custom_greeting[:60])
+                # We try to speak, but if it fails, we still want the transcript
+                try:
+                    await self._stream_text_to_tts(custom_greeting, time.time())
+                except Exception as tts_err:
+                    logger.warning("Greeting TTS failed: %s", tts_err)
+                    await self._log_event("[SYSTEM]", "Voice greeting failed. Continuing with text.", "text-yellow-400")
+
+                if self._on_bot_transcript:
+                    await self._on_bot_transcript(custom_greeting, True)
+                
+                await self._set_state(BotState.LISTENING)
+                # Log the greeting as an assistant turn
+                self.session.add_turn(TurnRole.ASSISTANT, custom_greeting)
+                if self.db:
+                    await self.db.log_turn(self.session.session_id, "assistant", custom_greeting)
+            else:
+                # LLM-generated greeting based on persona
+                bot_name = self._bot_config.get("name", "Assistant")
+                persona = self._bot_config.get("persona", "helpful and friendly")
+                intro_instruction = f"You are {bot_name}, a {persona} AI assistant. Greet the user warmly in one sentence and invite them to speak."
+                await self._run_llm_turn(intro_instruction, override_system_prompt=True)
+        except Exception as e:
+            logger.error("Critical error in start_conversation: %s", e)
+            await self._set_state(BotState.LISTENING)
+
+        # Start proactive timer after greeting
+        self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
+
+    async def _run_llm_turn(
+        self,
+        instruction: str = "",
+        override_system_prompt: bool = False,
+        cache_key: Optional[str] = None,
+    ) -> None:
+        """
+        Internal method to handle the LLM -> TTS flow.
+        """
+        turn_start = time.time()
+        full_response = ""
+        max_iterations = 3
+        iteration = 0
+
+        system_prompt = self._build_system_prompt()
+        if override_system_prompt:
+            system_prompt = f"{system_prompt}\n\nINSTRUCTION: {instruction}"
+
+        text_accumulated_whole_turn = ""
+
+        try:
+            if self.llm:
+                while iteration < max_iterations:
+                    iteration += 1
+                    context = self.session.get_context_window(max_turns=20)
+                    tts_buffer = ""
+                    tool_calls_this_turn = []
+
+                    whole_turn = getattr(self, "_tts_streaming_mode", "chunked") == "whole_turn"
+                    use_pipeline = bool(getattr(self, "_tts_pipeline_llm", False)) and not whole_turn and bool(self.tts)
+
+                    segment_q: Optional[asyncio.Queue[Optional[str]]] = None
+                    consumer_task: Optional[asyncio.Task] = None
+
+                    async def _consume_tts_queue() -> None:
+                        assert segment_q is not None
+                        while True:
+                            seg = await segment_q.get()
+                            if seg is None:
+                                return
+                            await self._emit_tts_audio_stream(seg)
+
+                    if use_pipeline:
+                        segment_q = asyncio.Queue()
+                        consumer_task = asyncio.create_task(_consume_tts_queue())
+
+                    # First-sentence fast-path: use a smaller char cap for the very first
+                    # TTS flush so the user hears audio ~100-200 ms sooner.
+                    _first_segment_done = False
+                    _first_seg_cap = int(
+                        self._bot_config.get("first_segment_chars")
+                        or self._conversation_policy.get("first_segment_chars")
+                        or 80
+                    )
+
+                    try:
+                        async with async_timeout.timeout(30.0):
+                            async for chunk in self.llm.stream_completion(
+                                system_prompt=system_prompt,
+                                messages=context,
+                                tools=self._tools,
+                                temperature=self._bot_config.get("temperature"),
+                                max_tokens=self._bot_config.get("max_tokens"),
+                            ):
+                                if self._interrupt_event.is_set():
+                                    break
+
+                                if chunk.content:
+                                    full_response += chunk.content
+                                    tts_buffer += chunk.content
+                                    text_accumulated_whole_turn += chunk.content
+
+                                    if whole_turn and self._on_bot_transcript:
+                                        await self._on_bot_transcript(text_accumulated_whole_turn, False)
+
+                                    if not whole_turn and self.tts:
+                                        # First segment: use smaller cap for faster first audio
+                                        flush_cap = _first_seg_cap if not _first_segment_done else self._max_tts_buffer_chars
+                                        if self._is_sentence_boundary(tts_buffer, char_cap=flush_cap):
+                                            safe_tts_text = self._guard_tts_segment(tts_buffer)
+                                            if safe_tts_text:
+                                                if not _first_segment_done:
+                                                    # Record time from turn_start to first TTS flush
+                                                    self.session.first_audio_latency_ms = (
+                                                        time.time() - turn_start
+                                                    ) * 1000
+                                                if use_pipeline and segment_q is not None:
+                                                    await segment_q.put(safe_tts_text)
+                                                else:
+                                                    await self._emit_tts_audio_stream(safe_tts_text)
+                                            if self._on_bot_transcript:
+                                                await self._on_bot_transcript(text_accumulated_whole_turn, False)
+                                            tts_buffer = ""
+                                            _first_segment_done = True
+
+                                if chunk.tool_calls:
+                                    tool_calls_this_turn.extend(chunk.tool_calls)
+                                    for tc in chunk.tool_calls:
+                                        await self._log_event("[PLAN]", f"LLM requested tool: {tc.name}", "text-purple-400")
+
+                        if self._interrupt_event.is_set():
+                            pass
+                        elif whole_turn and tts_buffer.strip() and self.tts:
+                            safe_final = self._guard_tts_segment(tts_buffer)
+                            if safe_final:
+                                await self._emit_tts_audio_stream(safe_final)
+                        elif not whole_turn and tts_buffer.strip() and self.tts and not self._interrupt_event.is_set():
+                            safe_tail = self._guard_tts_segment(tts_buffer)
+                            if safe_tail:
+                                if use_pipeline and segment_q is not None:
+                                    await segment_q.put(safe_tail)
+                                else:
+                                    await self._emit_tts_audio_stream(safe_tail)
+                            if self._on_bot_transcript:
+                                await self._on_bot_transcript(text_accumulated_whole_turn, False)
+
+                    finally:
+                        if use_pipeline and segment_q is not None and consumer_task is not None:
+                            await segment_q.put(None)
+                            try:
+                                await consumer_task
+                            except asyncio.CancelledError:
+                                pass
+
+                    if self._interrupt_event.is_set():
+                        break
+
+                    if tool_calls_this_turn:
+                        tool_results = await self._execute_tools(tool_calls_this_turn)
+                        for res in tool_results:
+                            self.session.add_turn(
+                                TurnRole.SYSTEM, f"Tool Result [{res.name}]: {res.content}"
+                            )
+                            if self.memory:
+                                await self.memory.add_history(
+                                    self.session.session_id,
+                                    {
+                                        "role": "system",
+                                        "content": f"Tool Result [{res.name}]: {res.content}",
+                                    },
+                                )
+                        if self.session.voice_session_end_requested:
+                            break
+                        continue
+                    break
+
+        except (WebSocketDisconnect, ClientDisconnected) as e:
+            logger.info("📡 Client disconnected during turn (session=%s). Stopping generation.", self.session.session_id[:8])
+            self._interrupt_event.set()
+            raise e
+        except Exception as e:
+            logger.error("LLM Turn error: %s", e, exc_info=True)
+            await self._log_event("[SYSTEM]", f"Voice/LLM Error: {str(e)[:100]}", "text-red-400")
+        finally:
+            if text_accumulated_whole_turn and not self._interrupt_event.is_set():
+                ttl = cache_ttl_seconds(self._guardrail_policy)
+                await self._finalize_turn(
+                    text_accumulated_whole_turn,
+                    turn_start,
+                    cache_key=cache_key,
+                    cache_ttl_seconds=ttl,
+                )
+            elif not self._interrupt_event.is_set():
+                # Safety fallback to prevent state hanging
+                await self._set_state(BotState.LISTENING)
+
+    async def _generate_and_speak(self, text: str) -> None:
+        """Speak fixed text (workflows, rejection messages). Logs assistant turn via _finalize_turn."""
+        t = (text or "").strip()
+        if not t:
+            return
+        if self.output_guard:
+            t = self.output_guard.validate_and_mask(t)["masked_text"]
+        turn_start = time.time()
+        self._interrupt_event.clear()
+        await self._stream_text_to_tts(t, turn_start)
+        await self._finalize_turn(t, turn_start)
+
+    async def _process_user_turn(self, user_text: str) -> None:
+
+        await self._set_state(BotState.PROCESSING)
+        self._interrupt_event.clear()
+
+        turn_start = time.time()
+
+        # ── Step 0: STT confidence check — ask for clarification on noisy input ──
+        _min_confidence = float(
+            self._bot_config.get("min_stt_confidence")
+            or self._conversation_policy.get("min_stt_confidence")
+            or 0.5
+        )
+        _word_count = len(user_text.split())
+        if _word_count <= 2 and self._last_stt_confidence < _min_confidence:
+            logger.info(
+                "Low STT confidence (%.2f < %.2f) on short utterance '%s' — asking for repeat",
+                self._last_stt_confidence, _min_confidence, user_text,
+            )
+            await self._set_state(BotState.LISTENING)
+            await self._generate_and_speak(
+                "I didn't quite catch that. Could you say that again?"
+            )
+            return
+
+        # ── Step 1: Guardrail check ──
+        await self._log_event("[BRAIN]", f"Screening input (PII Detection & Safety)...", "text-indigo-400")
+        logger.debug("Phase 1: Guardrail check starting... (session=%s)", self.session.session_id[:8])
+        safe_text = user_text
+        pii_detected = False
+        if self.guardrail:
+            # Apply Input Guardrails (PII Detection)
+            try:
+                logger.debug("Running guardrails on user input...")
+                # Note: PIIDetector.detect_and_mask is synchronous
+                guardrail_result = self.guardrail.detect_and_mask(user_text)
+                pii_detected = bool(guardrail_result.get("detected"))
+                if pii_detected:
+                    logger.warning(
+                        "PII detected in user input! Masked Version: %s",
+                        guardrail_result.get("masked_text"),
+                    )
+                    # We continue with the masked text for the LLM
+                    safe_text = guardrail_result.get("masked_text", user_text)
+                # If not detected, safe_text remains user_text
+            except Exception as e:
+                logger.error("Guardrail check failed: %s", e, exc_info=True)
+                # Fail open — continue with original text (user_text)
+
+        if self._guardrail_policy.get("reject_on_pii") and self.guardrail and pii_detected:
+            msg = self._guardrail_policy.get(
+                "pii_reject_message",
+                "I can't process requests that include that kind of personal information.",
+            )
+            logger.warning("PII reject policy triggered (session=%s)", self.session.session_id[:8])
+            self.session.add_turn(TurnRole.USER, safe_text)
+            if self.memory:
+                await self.memory.add_history(
+                    self.session.session_id, {"role": "user", "content": safe_text}
+                )
+            if self.db:
+                await self.db.log_turn(self.session.session_id, "user", safe_text)
+            self._turn_count += 1
+            await self._generate_and_speak(msg)
+            return
+
+        if self._injection_detector:
+            inj = self._injection_detector.check(safe_text)
+            if inj["detected"] and self._guardrail_policy.get("injection_action", "log") == "block":
+                msg = self._guardrail_policy.get(
+                    "injection_block_message",
+                    "I can't process that request.",
+                )
+                logger.warning("Injection block (session=%s)", self.session.session_id[:8])
+                self.session.add_turn(TurnRole.USER, safe_text)
+                if self.memory:
+                    await self.memory.add_history(
+                        self.session.session_id, {"role": "user", "content": safe_text}
+                    )
+                if self.db:
+                    await self.db.log_turn(self.session.session_id, "user", safe_text)
+                self._turn_count += 1
+                await self._generate_and_speak(msg)
+                return
+
+        # ── Step 2: Update conversation history ──
+        logger.debug("Phase 2: Updating context... (session=%s)", self.session.session_id[:8])
+        self.session.add_turn(TurnRole.USER, safe_text)
+        if self.memory:
+            await self.memory.add_history(self.session.session_id, {"role": "user", "content": safe_text})
+        # Log to SQLite long-term memory
+        if self.db:
+            await self.db.log_turn(self.session.session_id, "user", safe_text)
+        self._turn_count += 1
+        self._update_task_phase_from_user_text(safe_text)
+
+        # ── Step 2.1a: Real-time Sentiment Analysis ──
+        # Run as a background task so it doesn't add to voice latency.
+        asyncio.create_task(self._analyze_and_emit_sentiment(safe_text))
+
+        # ── Step 2.1b: Automatic Entity Extraction ──
+        # Background task: extract named entities and store as user_facts without LLM tool call.
+        if self.session.user_id or self.session.session_id:
+            asyncio.create_task(self._extract_and_store_entities(safe_text))
+
+        # ── Step 2.1: Dynamic Workflow Execution ──
+        if self.workflow_engine:
+            logger.info("Evaluating text via WorkflowEngine & Global Interceptor...")
+            yield_to_llm = await self.workflow_engine.evaluate(safe_text)
+            if not yield_to_llm:
+                # Turn was completely handled by deterministic blocks and pre-flight interceptor
+                # Reset turn state
+                self.session.is_bot_speaking = False
+                self._partial_buffer = ""
+                self._utterance_buffer = ""
+                self._turn_start_time = 0.0
+                if not self._interrupt_event.is_set():
+                    await self._set_state(BotState.LISTENING)
+                return
+
+        # ── Step 2.3: Vector RAG — inject semantically relevant KB snippets ──
+        # Runs only when a VectorMemoryProvider is attached (optional; falls back silently).
+        if hasattr(self, "_vector_memory") and self._vector_memory:
+            try:
+                rag_results = await self._vector_memory.retrieve_context(
+                    query=safe_text,
+                    user_id=self.session.user_id,
+                    top_k=3,
+                )
+                if rag_results:
+                    rag_snippets = "\n".join(
+                        f"- {r['document']}" for r in rag_results if r.get("document")
+                    )
+                    if rag_snippets:
+                        # Append RAG context to the conversation as a hidden system message
+                        self.session.add_turn(
+                            TurnRole.SYSTEM,
+                            f"[Relevant past context retrieved]\n{rag_snippets}",
+                        )
+                        logger.info("RAG: injected %d snippets into context", len(rag_results))
+            except Exception as _rag_err:
+                logger.debug("RAG retrieval error (non-critical): %s", _rag_err)
+
+        # ── Step 2.5: Semantic Cache Lookup ──
+        system_prompt = self._build_system_prompt()
+        context = self.session.get_context_window(max_turns=5)  # Limited window for caching
+        ctx_serialized = json.dumps(context, sort_keys=True, default=str)
+        cache_key = hashlib.md5(
+            f"{system_prompt}:{ctx_serialized}:{safe_text}".encode()
+        ).hexdigest()
+        
+        if self.memory:
+            logger.info("Phase 2.5: Checking semantic cache (key=%s)...", cache_key[:8])
+            cached_response = await self.memory.get_cache(cache_key)
+            if cached_response:
+                logger.info("⚡ Semantic Cache Hit! (key=%s)", cache_key[:8])
+                await self._log_event("[METRIC]", "Semantic Cache HIT (latency minimized)", "text-green-400")
+                if self._on_state_change:
+                   await self._on_state_change("cached") # Notify UI
+                await self._stream_text_to_tts(cached_response, turn_start)
+                await self._finalize_turn(cached_response, turn_start)
+                return
+        
+        # ── Step 3: Generate LLM response ──
+        logger.info("📡 Starting Agentic Turn (session=%s)...", self.session.session_id[:8])
+        await self._run_llm_turn(cache_key=cache_key)
+
+    async def _analyze_and_emit_sentiment(self, text: str) -> None:
+        """
+        Run a lightweight LLM sentiment classifier on the user's utterance.
+        Emits a 'sentiment' WebSocket event and tracks rolling sentiment for auto-escalation.
+        Runs as a background task — does NOT block the voice pipeline.
+        """
+        if not self.llm or not text.strip():
+            return
+        try:
+            prompt = (
+                f'Classify the sentiment of this user utterance with ONE word: '
+                f'positive, neutral, or negative.\n\nUtterance: "{text[:200]}"'
+            )
+            chunks = []
+            async for chunk in self.llm.stream_completion(
+                system_prompt="You are a sentiment classifier. Reply only: positive, neutral, or negative.",
+                messages=[{"role": "user", "content": prompt}],
+            ):
+                chunks.append(chunk.content or "")
+            raw = "".join(chunks).strip().lower()
+            label = "neutral"
+            if "positive" in raw:
+                label = "positive"
+            elif "negative" in raw:
+                label = "negative"
+
+            self._sentiment_history.append(label)
+            if len(self._sentiment_history) > 10:
+                self._sentiment_history = self._sentiment_history[-10:]
+
+            # Emit real-time sentiment event to the UI
+            if self._on_metrics:
+                await self._on_metrics({
+                    "type": "sentiment",
+                    "label": label,
+                    "turn_sentiment": label,
+                    "rolling_negative": self._sentiment_history.count("negative"),
+                })
+
+            # Auto-escalation: 3+ consecutive negative turns → trigger escalation
+            _recent = self._sentiment_history[-3:] if len(self._sentiment_history) >= 3 else []
+            if len(_recent) == 3 and all(s == "negative" for s in _recent):
+                logger.warning(
+                    "3 consecutive negative sentiment turns — requesting escalation (session=%s)",
+                    self.session.session_id[:8],
+                )
+                self.request_voice_session_end("escalated_sentiment")
+                await self._generate_and_speak(
+                    "I can hear this is frustrating. Let me connect you with a team member who can help you directly."
+                )
+
+            await self._log_event(
+                "[SENTIMENT]",
+                f"Turn sentiment: {label} (history: {self._sentiment_history[-5:]})",
+                "text-emerald-400",
+            )
+        except Exception as e:
+            logger.debug("Sentiment analysis failed (non-critical): %s", e)
+
+    async def _extract_and_store_entities(self, text: str) -> None:
+        """
+        Extract key entities from the user's utterance and persist them as user_facts.
+        Runs as a background task — does NOT block the voice pipeline.
+
+        Extracts: caller name, account/loan reference, amounts, payment dates, phone numbers.
+        """
+        if not self.db or not text.strip():
+            return
+        import re
+
+        entities_found: list[tuple[str, str]] = []
+
+        # Name patterns: "my name is X", "I am X", "this is X"
+        name_match = re.search(
+            r"\b(?:my name is|i(?:'m| am)|this is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+            text, re.IGNORECASE,
+        )
+        if name_match:
+            entities_found.append(("name", f"Caller name: {name_match.group(1).strip()}"))
+
+        # Indian currency amounts: ₹5000, Rs 2000, 5000 rupees
+        amount_match = re.search(
+            r"(?:₹|Rs\.?\s*|INR\s*)(\d[\d,]+(?:\.\d{1,2})?)"
+            r"|(\d[\d,]+(?:\.\d{1,2})?)\s*(?:rupees?|rs\.?)",
+            text, re.IGNORECASE,
+        )
+        if amount_match:
+            amount = (amount_match.group(1) or amount_match.group(2) or "").replace(",", "")
+            entities_found.append(("amount", f"Amount mentioned: ₹{amount}"))
+
+        # Account/loan reference: alphanumeric IDs after keywords
+        ref_match = re.search(
+            r"\b(?:account|loan|reference|ref|id|number)\s*(?:number|no\.?)?\s*[:#]?\s*([A-Z0-9]{4,20})",
+            text, re.IGNORECASE,
+        )
+        if ref_match:
+            entities_found.append(("account_ref", f"Account/loan ref: {ref_match.group(1)}"))
+
+        # Payment date: "by the 25th", "on March 25", "by end of month"
+        date_match = re.search(
+            r"\b(?:by|on|before)\s+(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?(?:\s+of)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|end of (?:month|week))",
+            text, re.IGNORECASE,
+        )
+        if date_match:
+            entities_found.append(("payment_date", f"Promised payment by: {date_match.group(1)}"))
+
+        for category, fact in entities_found:
+            try:
+                await self.db.save_user_fact(
+                    fact=fact,
+                    session_id=self.session.session_id,
+                    user_id=self.session.user_id,
+                    category=category,
+                )
+                logger.debug("Auto-extracted entity [%s]: %s", category, fact)
+            except Exception as e:
+                logger.debug("Entity save failed (non-critical): %s", e)
+
+        if entities_found:
+            await self._log_event(
+                "[ENTITY]",
+                f"Auto-extracted {len(entities_found)} entities from utterance",
+                "text-blue-400",
+            )
+
+    def _guard_tts_segment(self, raw_buffer: str) -> str:
+        """Strip and apply output guard to a TTS phrase."""
+        t = (raw_buffer or "").strip()
+        if not t:
+            return ""
+        if self.output_guard:
+            return str(self.output_guard.validate_and_mask(t).get("masked_text") or t).strip()
+        return t
+
+    async def _emit_tts_audio_stream(self, text: str) -> None:
+        """Stream one TTS synthesis to the client; one short log per segment (not per audio chunk)."""
+        t = (text or "").strip()
+        if not self.tts or not t:
+            return
+        await self._set_state(BotState.SPEAKING)
+        if self._on_log:
+            await self._log_event(
+                "[STREAM]",
+                f"TTS segment ({len(t)} chars)",
+                "text-cyan-400",
+            )
+        _tts_t0 = time.time()
+        _first_chunk = True
+        interrupted = False
+        async for audio_chunk in self.tts.stream_speech(t):
+            if self._interrupt_event.is_set():
+                interrupted = True
+                break
+            if _first_chunk:
+                # Track time-to-first-sound for metrics
+                self.session.last_tts_latency_ms = (time.time() - _tts_t0) * 1000
+                _first_chunk = False
+            if self._on_audio_output:
+                await self._on_audio_output(audio_chunk)
+        # On interruption, reset the WS TTS buffer so stale synthesis doesn't
+        # trickle through on the next turn (no-op for HTTP provider).
+        if interrupted and hasattr(self.tts, "reset"):
+            await self.tts.reset()
+
+    async def _stream_text_to_tts(self, text: str, turn_start: float) -> None:
+        """Helper to stream a static text through the TTS pipeline."""
+        if not self.tts:
+            return
+        await self._emit_tts_audio_stream(text)
+
+    async def _finalize_turn(
+        self,
+        full_response: str,
+        turn_start: float,
+        cache_key: Optional[str] = None,
+        cache_ttl_seconds: int = 3600,
+    ) -> None:
+        """Common logic to end a turn: history update, tracking, and cache save."""
+        self.session.add_turn(TurnRole.ASSISTANT, full_response)
+        
+        if self.memory:
+            await self.memory.add_history(self.session.session_id, {"role": "assistant", "content": full_response})
+            if cache_key:
+                await self.memory.set_cache(cache_key, full_response, ttl=cache_ttl_seconds)
+
+        # Log to SQLite long-term memory
+        if self.db:
+            await self.db.log_turn(self.session.session_id, "assistant", full_response)
+
+        # ── Track total latency ──
+        total_latency = (time.time() - turn_start) * 1000
+        self.session.last_total_latency_ms = total_latency
+        
+        # Emit structured metrics for the dashboard
+        if self._on_metrics:
+            _tts_name = type(self.tts).__name__ if self.tts else "none"
+            self.session.tts_provider_used = _tts_name
+            await self._on_metrics({
+                "stt": round(self.session.last_stt_latency_ms, 0),
+                "llm": round(self.session.last_llm_latency_ms, 0),
+                "tts_ttfs": round(self.session.last_tts_latency_ms, 0),
+                "first_audio": round(self.session.first_audio_latency_ms, 0),
+                "inter_segment_gap": round(self.session.inter_segment_gap_ms, 0),
+                "false_interruptions": self.session.false_interruption_count,
+                "tts_provider": _tts_name,
+                "total": round(total_latency, 0),
+            })
+
+        # Persist per-turn latency metrics to SQLite for analytics
+        if self.db and hasattr(self.db, "log_turn_metrics"):
+            try:
+                asyncio.create_task(self.db.log_turn_metrics(
+                    session_id=self.session.session_id,
+                    stt_ms=self.session.last_stt_latency_ms,
+                    llm_ms=self.session.last_llm_latency_ms,
+                    tts_ms=self.session.last_tts_latency_ms,
+                    total_ms=total_latency,
+                    first_audio_ms=self.session.first_audio_latency_ms,
+                ))
+            except Exception:
+                pass
+
+        await self._log_event("[METRIC]", f"Turn complete: TAT={total_latency:.0f}ms | LLM={self.session.last_llm_latency_ms:.0f}ms", "text-yellow-400")
+
+        # Reset state
+        self.session.is_bot_speaking = False
+        self._partial_buffer = ""
+        self._utterance_buffer = ""
+        self._turn_start_time = 0.0
+
+        if self._on_bot_transcript:
+            await self._on_bot_transcript(full_response, True)
+
+        if not self._interrupt_event.is_set():
+            if self.session.voice_session_end_requested and self._on_voice_session_end:
+                reason = self.session.voice_session_end_reason or "completed"
+                self.session.voice_session_end_requested = False
+                self.session.voice_session_end_reason = None
+                if self._proactive_timer:
+                    self._proactive_timer.cancel()
+                    self._proactive_timer = None
+                try:
+                    await self._on_voice_session_end(reason)
+                except Exception as e:
+                    logger.warning("on_voice_session_end error: %s", e)
+                return
+            await self._set_state(BotState.LISTENING)
+
+    # ─── Interruption Handling ───────────────────────────────────────────
+
+    async def handle_interruption(self) -> None:
+        """
+        Handle user interruption of bot speech.
+
+        Strategy:
+          1. Set the interrupt event (signals all streaming loops to stop)
+          2. Stop TTS playback
+          3. Transition back to LISTENING
+          4. Record the partial response in history
+        """
+        if self.state != BotState.SPEAKING:
+            return
+
+        logger.info(
+            "Interruption detected — session=%s", self.session.session_id[:8]
+        )
+
+        # Signal all streaming loops to stop immediately
+        self._interrupt_event.set()
+        self._utterance_buffer = ""  # Discard any accumulated utterance on interrupt
+        self.session.mark_interrupted()
+        if self._conversation_policy.get("interrupt_aware_reply", True):
+            self._interrupt_prompt_suffix = (
+                "The user interrupted your previous spoken reply. Acknowledge briefly and respond to what they say next."
+            )
+
+        # Stop TTS if it's playing.
+        # For the persistent WS TTS provider, reset() clears Deepgram's buffer
+        # so stale synthesis doesn't leak into the next turn.
+        if self.tts:
+            if hasattr(self.tts, "reset"):
+                await self.tts.reset()
+            else:
+                await self.tts.stop()
+
+        await self._set_state(BotState.LISTENING)
+
+    # ─── Tools & Functions ───────────────────────────────────────────────
+
+    def _register_tools(self) -> List[ToolDefinition]:
+        """Define available tools. Only register tools enabled for this bot."""
+        enabled = set(self._bot_config.get("tools_enabled") or [
+            "search_knowledge", "book_appointment", "get_appointments",
+            "remember_user_fact", "get_weather"
+        ])
+        scopes = self._data_access_policy.get("enabled_scopes")
+        if scopes and isinstance(scopes, list) and len(scopes) > 0:
+            allowed: set[str] = set()
+            for s in scopes:
+                key = str(s).lower()
+                for n in _SCOPE_TOOL_NAMES.get(key, ()):
+                    allowed.add(n)
+            if allowed:
+                enabled = enabled & allowed
+
+        registered_tools = []
+        for name in enabled:
+            tool_cls = ToolRegistry.get_tool_class(name)
+            if tool_cls:
+                # We instantiate just to get the definition for LLM config
+                tool = tool_cls()
+                registered_tools.append(ToolDefinition(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.parameters
+                ))
+        return registered_tools
+
+    async def _execute_tools(self, calls: List[ToolCall]) -> List[ToolResult]:
+        """Execute tool calls — backed by real SQLite DB where applicable."""
+        results = []
+        for call in calls:
+            try:
+                logger.info("⚙️  Executing tool: %s with args: %s", call.name, call.arguments)
+                if self._on_tool_call:
+                    await self._on_tool_call(call.name, call.arguments)
+
+                args = call.arguments
+                
+                # Dynamic Tool Loading from Registry
+                tool_instance = ToolRegistry.instantiate_tool(
+                    call.name,
+                    session=self.session,
+                    db=self.db,
+                    data_access_policy=self._data_access_policy,
+                    brain=self,
+                )
+
+                if tool_instance:
+                    result_text = await tool_instance.execute(
+                        bot_id=self._bot_id,
+                        data_access=self._data_access_policy,
+                        **args,
+                    )
+                else:
+                    result_text = f"Tool '{call.name}' is not currently implemented."
+
+                if self._on_tool_result:
+                    await self._on_tool_result(call.name, result_text)
+
+                results.append(ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    content=result_text
+                ))
+
+            except Exception as e:
+                logger.error("Tool execution error [%s]: %s", call.name, e, exc_info=True)
+                if self._on_tool_result:
+                    await self._on_tool_result(call.name, f"Error: {str(e)}")
+                results.append(ToolResult(
+                    tool_call_id=call.id,
+                    name=call.name,
+                    content=f"Tool error: {str(e)}",
+                    is_error=True
+                ))
+        return results
+
+    # ─── System Prompt Construction ──────────────────────────────────────
+    
+    async def get_infra_status(self) -> dict:
+        """Helper to get current infrastructure health status."""
+        up = int(time.time() - _VOICEBOT_PROCESS_START)
+        status = {
+            "redis": "online",
+            "stt": "online",
+            "llm": "online",
+            "tts": "online",
+            "uptime_seconds": up,
+            "uptime": f"{up}s",
+        }
+        
+        # Redis check
+        if self.memory:
+            try:
+                # Basic ping if available, otherwise assume online if provider exists
+                if hasattr(self.memory, 'ping'):
+                    await self.memory.ping()
+            except:
+                status["redis"] = "offline"
+        else:
+            status["redis"] = "unavailable"
+            
+        # Check providers (if they have keys/configured)
+        if not self.llm: status["llm"] = "offline"
+        if not self.stt: status["stt"] = "offline"
+        if not self.tts: status["tts"] = "offline"
+        
+        return status
+
+    def _build_system_prompt(self) -> str:
+        """
+        Build the system prompt for the LLM.
+        Uses bot config from DB if available, otherwise defaults.
+        """
+        lang = self.session.detected_language or "en"
+        lang_instruction = ""
+        if lang != "en":
+            lang_instruction = (
+                f"\nIMPORTANT: The user is speaking in '{lang}'. "
+                f"You MUST respond in the SAME language ('{lang}'). "
+                f"Do NOT switch to English unless the user speaks English."
+            )
+
+        extra = ""
+        if self._interrupt_prompt_suffix:
+            extra = f"\n\n[Context: {self._interrupt_prompt_suffix}]"
+            self._interrupt_prompt_suffix = ""
+        if kb_only_mode(self._guardrail_policy):
+            extra += (
+                "\n\nFor factual questions about the business, policies, or services, "
+                "use the search_knowledge tool and base answers on retrieved text; do not invent details."
+            )
+
+        spec_block = render_agent_task_spec_appendix(self._agent_task_spec)
+        phase_hint = self._format_task_phase_hint()
+
+        # Cross-session memory block: injected when a returning user_id is known
+        memory_block = ""
+        if self._cross_session_context:
+            memory_block = (
+                "\n\n[CALLER MEMORY — use this to personalize your responses]\n"
+                + self._cross_session_context
+                + "\n[END CALLER MEMORY]"
+            )
+
+        # Use DB-configured system prompt if available
+        if self._bot_config.get("system_prompt"):
+            return (
+                self._bot_config["system_prompt"]
+                + lang_instruction + extra + memory_block + spec_block + phase_hint
+            )
+
+        # Fallback default
+        bot_name = self._bot_config.get("name", "Assistant")
+        return (
+            f"You are {bot_name}, a helpful, friendly AI voice assistant. "
+            "You are having a real-time voice conversation with a human.\n\n"
+            "Guidelines:\n"
+            "- Keep responses concise and conversational (1-3 sentences)\n"
+            "- Speak naturally — use contractions, filler words sparingly\n"
+            "- Never use markdown, bullet points, or formatting\n"
+            "- Never mention that you are an AI unless directly asked\n"
+            "- If you don't understand, ask for clarification\n"
+            "- Be warm, empathetic, and professional\n"
+            "- Never reveal sensitive information (passwords, OTPs, card numbers)\n"
+            f"{lang_instruction}{extra}{memory_block}{spec_block}{phase_hint}"
+        )
+
+    async def switch_bot(self, bot_config: dict) -> None:
+        """
+        Hot-swap the bot persona mid-call without disconnecting.
+        Updates system prompt, greeting, tools, and LLM model.
+        """
+        old_name = self._bot_config.get("name", "current bot")
+        new_name = bot_config.get("name", "new bot")
+        logger.info("🔄 Switching bot: %s → %s (session=%s)", old_name, new_name, self.session.session_id[:8])
+
+        self._bot_config = bot_config
+        self._bot_id = bot_config.get("id")
+        self._guardrail_policy = parse_json_dict(bot_config.get("guardrail_policy"))
+        self._data_access_policy = parse_json_dict(bot_config.get("data_access_policy"))
+        self._conversation_policy = parse_json_dict(bot_config.get("conversation_policy"))
+        self._agent_task_spec = parse_agent_task_spec(bot_config.get("agent_task_spec"))
+        self._injection_detector = None
+        if injection_enabled(self._guardrail_policy):
+            self._injection_detector = InjectionDetector(threshold=injection_threshold(self._guardrail_policy))
+        self._apply_conversation_policy_derived()
+
+        # Load Workflow Engine if applicable
+        if bot_config.get("workflow_id") and self.db:
+            wf_data = await self.db.get_workflow(bot_config["workflow_id"])
+            if wf_data:
+                from voicebot.core.orchestrator.workflow_engine import WorkflowEngine
+                self.workflow_engine = WorkflowEngine(self, wf_data)
+                logger.info("Swapped active generic workflow to: %s", wf_data.get("name"))
+            else:
+                self.workflow_engine = None
+        else:
+            self.workflow_engine = None
+
+        # Reload tools for new bot
+        self._tools = self._register_tools()
+        # Optionally update LLM model
+        if bot_config.get("llm_model") and self.llm:
+            self.llm.model = bot_config["llm_model"]
+
+        # Announce the switch
+        greeting = bot_config.get("greeting") or f"Hello! I'm {new_name}. How can I help you?"
+        await self._stream_text_to_tts(greeting, time.time())
+        if self._on_bot_transcript:
+            await self._on_bot_transcript(greeting, True)
+        self.session.add_turn(TurnRole.ASSISTANT, greeting)
+        if self.db:
+            await self.db.log_turn(self.session.session_id, "assistant", greeting,
+                                   metadata={"event": "bot_switch", "new_bot": new_name})
+        await self._set_state(BotState.LISTENING)
+
+    # ─── Cleanup ─────────────────────────────────────────────────────────
+
+    async def _hydrate_session(self) -> None:
+        """Load previous conversation history from Redis into the active session."""
+        if not self.memory:
+            return
+        
+        logger.info("Hydrating session history from Redis... (session=%s)", self.session.session_id[:8])
+        history = await self.memory.get_history(self.session.session_id)
+        for msg in history:
+            role = TurnRole.USER if msg["role"] == "user" else TurnRole.ASSISTANT
+            self.session.add_turn(role, msg["content"])
+        
+        if history:
+            logger.info("Loaded %d messages from history", len(history))
+
+    async def cleanup(self) -> None:
+        """Clean up resources when the session ends."""
+        if self._silence_timer:
+            self._silence_timer.cancel()
+        if self._proactive_timer:
+            self._proactive_timer.cancel()
+        if self._current_task:
+            self._current_task.cancel()
+        self.session.is_active = False
+
+        # Mark session as ended in SQLite
+        if self.db:
+            try:
+                await self.db.close_session(self.session.session_id, turn_count=self._turn_count)
+            except Exception:
+                pass
+
+        logger.info("Brain cleanup complete — session=%s", self.session.session_id[:8])
+
+    def _is_sentence_boundary(self, text: str, char_cap: Optional[int] = None) -> bool:
+        """
+        Decide whether to flush the TTS buffer at the current text length.
+
+        Rules (in priority order):
+        1. Never flush mid-word — if the last character is alphanumeric and we
+           are still under the char cap, wait for a space / punctuation so that
+           TTS never receives a half-token like "Hel" from a streaming LLM chunk.
+        2. Hard sentence end (.!?) → always flush.
+        3. Clause boundary (;:) → flush if buffer is past ⅓ of the cap.
+        4. Comma → flush if buffer is past half the cap.
+        5. Character cap fallback → flush unconditionally.
+
+        char_cap: overrides _max_tts_buffer_chars (used by first-sentence
+                  fast-path which passes a smaller value for faster first audio).
+        tts_flush_mode: 'sentence_only' restricts flushing to rule 2/5 only.
+        """
+        text = text.rstrip()
+        if not text:
+            return False
+
+        cap = char_cap if char_cap is not None else getattr(self, "_max_tts_buffer_chars", 100)
+        mode = getattr(self, "_tts_flush_mode", "balanced")
+        last = text[-1]
+
+        # Rule 1: Never flush mid-word (prevents audio cuts on partial tokens).
+        if (last.isalpha() or last.isdigit()) and len(text) < cap:
+            return False
+
+        if mode == "sentence_only":
+            return last in ".!?" or len(text) >= cap
+
+        # Rule 2: hard sentence end
+        if last in ".!?":
+            return True
+
+        # Rule 3: clause boundary — only if past ⅓ of cap
+        if last in ";:" and len(text) > cap // 3:
+            return True
+
+        # Rule 4: comma — only if past half of cap
+        if last == "," and len(text) > cap // 2:
+            return True
+
+        # Rule 5: cap fallback
+        return len(text) >= cap

@@ -1,0 +1,158 @@
+'use client';
+
+import { useVoiceBot } from '@/hooks/useVoiceBot';
+import { VoiceOrb } from '@/components/VoiceOrb';
+import { Transcript } from '@/components/Transcript';
+import { PipelineVisualizer } from '@/components/PipelineVisualizer';
+import { Settings, LogOut, Terminal, Activity, Zap, Shield, HelpCircle, User, MessageCircle, FileText } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export default function Home() {
+  const { state, transcripts, error, startSession, endSession, interrupt } = useVoiceBot();
+
+  return (
+    <main className="min-h-screen bg-[#050608] text-slate-100 flex flex-col font-sans selection:bg-blue-500/30">
+      
+      {/* 🚀 Header */}
+      <header className="h-20 border-b border-white/5 bg-slate-900/10 backdrop-blur-xl flex items-center justify-between px-8 sticky top-0 z-50">
+        <div className="flex items-center gap-3 group cursor-pointer">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center group-hover:rotate-12 transition-all duration-300">
+             <Zap size={20} fill="white" className="text-white" />
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-bold tracking-tight text-white">Agentic Voice</h1>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
+               <Activity size={10} className="text-blue-500" /> Platform Active
+            </span>
+          </div>
+        </div>
+
+        <nav className="hidden md:flex items-center gap-8 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+           <a href="#" className="hover:text-white transition-colors">Architecture</a>
+           <a href="#" className="hover:text-white transition-colors">API Keys</a>
+           <a href="#" className="hover:text-white transition-colors">Environment</a>
+           <a href="#" className="hover:text-white transition-colors font-black text-blue-400 border-b-2 border-blue-500 pb-1">Real-time Lab</a>
+        </nav>
+
+        <div className="flex items-center gap-4">
+           {error && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-bold max-w-[200px] truncate">
+                 <Shield size={12} /> {error}
+              </motion.div>
+           )}
+           <button className="p-2.5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/10 transition-all text-slate-400">
+              <Settings size={20} />
+           </button>
+           <button className="bg-white/95 text-black px-4 py-2 rounded-xl text-xs font-bold hover:bg-white transition-all shadow-lg hover:translate-y-[-2px] active:translate-y-[0px]">
+              Deploy Hub
+           </button>
+        </div>
+      </header>
+
+      <section className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto p-6 lg:p-10 gap-8 min-h-0">
+        
+        {/* 🦾 Live Experience (Left) */}
+        <div className="flex-[1.4] flex flex-col gap-8">
+           
+           <motion.div 
+             initial={{ opacity: 0, scale: 0.98 }}
+             animate={{ opacity: 1, scale: 1 }}
+             className="bg-slate-900/30 border border-white/10 rounded-3xl p-10 flex flex-col items-center justify-center relative overflow-hidden group shadow-2xl"
+           >
+              {/* Background Glow */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-500/5 via-transparent to-transparent opacity-50 pointer-events-none" />
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent" />
+
+              <VoiceOrb state={state} onClick={state === 'idle' ? startSession : interrupt} className="mb-12" />
+
+              {/* Real-time Flow Chart */}
+              <div className="w-full max-w-[700px] mt-8 mb-4">
+                 <div className="flex items-center justify-between px-2 mb-4">
+                    <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2">
+                       <Activity size={12} className="text-blue-500" /> Pipeline Flow
+                    </h2>
+                    <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest italic">
+                       Latency: {state === 'idle' ? '0ms' : 'Active'}
+                    </span>
+                 </div>
+                 <PipelineVisualizer state={state} />
+              </div>
+
+              <div className="flex gap-4 mt-12">
+                 <button 
+                   onClick={startSession}
+                   disabled={state !== 'idle'}
+                   className="px-8 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-30 transition-all font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20"
+                 >
+                   {state === 'idle' ? 'Start Laboratory Session' : 'Reconnect'}
+                 </button>
+                 <button 
+                   onClick={endSession}
+                   disabled={state === 'idle'}
+                   className="px-8 py-3 rounded-2xl border border-white/10 hover:bg-white/5 disabled:opacity-30 transition-all font-black text-xs uppercase tracking-widest flex items-center gap-2"
+                 >
+                   <LogOut size={16} /> End Stream
+                 </button>
+              </div>
+           </motion.div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6 group cursor-default">
+                 <div className="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Shield size={20} className="text-blue-500" />
+                 </div>
+                 <h3 className="text-xs font-black text-white mb-2 uppercase tracking-widest">Security Guardrails</h3>
+                 <p className="text-[10px] text-slate-500 font-bold leading-relaxed tracking-wider">
+                    In-memory PII filtering and Prompt Injection protection active. 
+                    Latency impact: <span className="text-emerald-500">&lt; 2ms</span>
+                 </p>
+              </div>
+              <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6 group cursor-default">
+                 <div className="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Terminal size={20} className="text-purple-500" />
+                 </div>
+                 <h3 className="text-xs font-black text-white mb-2 uppercase tracking-widest">Real-time STT Context</h3>
+                 <p className="text-[10px] text-slate-500 font-bold leading-relaxed tracking-wider">
+                    Using Deepgram Nova-2 with Interim Results enabled. 
+                    Confidence Scoring: <span className="text-purple-500">92% Average</span>
+                 </p>
+              </div>
+           </div>
+
+        </div>
+
+        {/* 📜 History (Right) */}
+        <div className="flex-[0.6] flex flex-col bg-slate-900/30 border border-white/10 rounded-3xl overflow-hidden min-h-[500px] lg:min-h-0 backdrop-blur-sm">
+           <div className="p-6 border-b border-white/5 bg-slate-900/40 flex items-center justify-between">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-200 flex items-center gap-2">
+                 <FileText size={14} className="text-indigo-400" /> Live Transcript
+              </h2>
+              <div className="flex gap-2">
+                 <div className="w-1.5 h-1.5 rounded-full bg-blue-500/50 animate-pulse" />
+                 <div className="w-1.5 h-1.5 rounded-full bg-white/10" />
+              </div>
+           </div>
+           
+           <Transcript transcripts={transcripts} className="flex-1" />
+           
+           <div className="p-6 border-t border-white/5 bg-slate-900/20 text-center">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 flex items-center justify-center gap-2 italic">
+                 <HelpCircle size={10} /> Conversation history is stored in local session cache
+              </p>
+           </div>
+        </div>
+
+      </section>
+
+      {/* 🧭 Footing */}
+      <footer className="h-14 border-t border-white/5 bg-slate-900/10 flex items-center justify-center px-8 text-slate-500 text-[10px] font-bold uppercase tracking-[0.3em] opacity-40">
+         Agentic AI Platform v1.5.0-monolith — Secure Build 0xEE22
+      </footer>
+
+      {/* 🪄 Floating Glow Elements */}
+      <div className="fixed top-[20%] right-[10%] w-[500px] h-[500px] bg-blue-600/5 blur-[150px] rounded-full -z-10 pointer-events-none" />
+      <div className="fixed bottom-[10%] left-[5%] w-[400px] h-[400px] bg-indigo-600/5 blur-[150px] rounded-full -z-10 pointer-events-none" />
+
+    </main>
+  );
+}

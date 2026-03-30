@@ -1,0 +1,48 @@
+# 🐍 Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+
+# 🧩 Projects & IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 🌎 Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# 📦 Dependency managers
+node_modules/
+package-lock.json
+
+# 🪵 Logs & Temps
+*.log
+/tmp/
+/voicebot_logs/
+
+# 🗄️ Databases & Assets
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+postgres_data/
+redis_data/
+grafana_data/
+
+# 🏗️ Local-only
+legacy/
+voicebot/services/tts/cache/

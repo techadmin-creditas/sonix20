@@ -1,0 +1,185 @@
+# =============================================================================
+# Kubernetes Base Deployment — Orchestrator Service
+# =============================================================================
+# This is a sample deployment. Apply with: kubectl apply -f .
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator_service
+  labels:
+    app: voicebot
+    service: orchestrator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      service: orchestrator
+  template:
+    metadata:
+      labels:
+        app: voicebot
+        service: orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: voicebot/orchestrator_service:latest
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: voicebot-secrets
+            - configMapRef:
+                name: voicebot-config
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator_service
+  labels:
+    app: voicebot
+    service: orchestrator
+spec:
+  selector:
+    service: orchestrator
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orchestrator-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orchestrator_service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+# Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway_service
+  labels:
+    app: voicebot
+    service: gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      service: gateway
+  template:
+    metadata:
+      labels:
+        app: voicebot
+        service: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: voicebot/gateway_service:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: voicebot-secrets
+            - configMapRef:
+                name: voicebot-config
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway_service
+  labels:
+    app: voicebot
+    service: gateway
+spec:
+  selector:
+    service: gateway
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+  type: LoadBalancer
+---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voicebot-config
+data:
+  APP_ENV: "production"
+  APP_DEBUG: "false"
+  APP_LOG_LEVEL: "INFO"
+  STT_PROVIDER: "deepgram"
+  LLM_PROVIDER: "openai"
+  TTS_PROVIDER: "elevenlabs"
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+---
+# Secret placeholder (populate with real values)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: voicebot-secrets
+type: Opaque
+stringData:
+  DEEPGRAM_API_KEY: "REPLACE_ME"
+  OPENAI_API_KEY: "REPLACE_ME"
+  ELEVENLABS_API_KEY: "REPLACE_ME"
+  JWT_SECRET_KEY: "REPLACE_ME"
+  REDIS_PASSWORD: ""
+  POSTGRES_PASSWORD: "REPLACE_ME"
