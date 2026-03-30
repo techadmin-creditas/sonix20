@@ -86,12 +86,26 @@ class DeepgramWSTTSProvider:
         headers = {"Authorization": f"Token {self.api_key}"}
 
         try:
-            self._ws = await websockets.connect(
-                url,
-                additional_headers=headers,
-                ping_interval=20,
-                ping_timeout=10,
-            )
+            # Use `certifi` CA bundle so TLS verification works in dev
+            # environments that may not have the expected system trust store.
+            import ssl
+            ssl_context: ssl.SSLContext | None = None
+            try:
+                import certifi  # type: ignore
+
+                ssl_context = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                ssl_context = None
+
+            connect_kwargs: dict[str, object] = {
+                "additional_headers": headers,
+                "ping_interval": 20,
+                "ping_timeout": 10,
+            }
+            if ssl_context is not None:
+                connect_kwargs["ssl"] = ssl_context
+
+            self._ws = await websockets.connect(url, **connect_kwargs)
             self._connected = True
             self._receive_task = asyncio.create_task(self._receive_loop())
             logger.info(

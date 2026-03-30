@@ -73,14 +73,15 @@ class DeepgramStreamingProvider:
         self._on_transcript = on_transcript
 
         # Optimized for low-latency barge-in and accurate turn-taking.
-        # endpointing=300: 300 ms silence before sending a final (was 200 ms).
-        #   - Reduces false finals on natural breath pauses mid-sentence.
-        #   - Alexa/Gemini use 300-400 ms; 200 ms fires too eagerly on fast speakers.
-        # utterance_end_ms=800: definitive utterance end after 800 ms silence (was 1000 ms).
-        #   - Slightly faster fallback trigger without sacrificing accuracy.
-        # no_delay=true: minimize Deepgram's internal frame-assembly latency.
-        # punctuate=true: provides richer sentence boundaries for _is_sentence_boundary().
-        # filler_words=false: strips "uh", "um" for cleaner LLM prompts.
+        #
+        # Note: Deepgram's listen WebSocket rejects some query params with HTTP 400
+        # (notably `utterance_end_ms` / `no_delay` / `filler_words` for our current setup).
+        # Keep to the known-good parameter set so STT actually connects and we get
+        # real transcripts from mic audio.
+        #
+        # endpointing=300: 300 ms silence before sending a final.
+        # punctuate=true: provides richer sentence boundaries.
+        # vad_events=true: enable VAD events for better turn-taking.
         # Build language/detect_language params based on session language.
         # "en" or "en-US" → pin to en-US for best accuracy.
         # "auto" or multi-language code → enable Deepgram's automatic detection.
@@ -101,11 +102,8 @@ class DeepgramStreamingProvider:
             "interim_results": "true",
             "smart_format": "true",
             "punctuate": "true",
-            "filler_words": "false",
             "vad_events": "true",        # Fires SpeechStarted immediately for barge-in
             "endpointing": "300",        # 300 ms silence = end of utterance segment
-            "utterance_end_ms": "800",   # Definitive utterance end after 800 ms silence
-            "no_delay": "true",          # Minimize Deepgram internal buffering
             **_lang_params,
         }
         logger.info("Deepgram Params: %s", params)
@@ -115,13 +113,27 @@ class DeepgramStreamingProvider:
 
         headers = {"Authorization": f"Token {self.api_key}"}
 
+        # websockets/ssl in some environments may not pick up the system trust store
+        # correctly; using `certifi`'s CA bundle makes TLS verify work reliably.
+        import ssl
+        ssl_context: Optional[ssl.SSLContext] = None
         try:
-            self._ws = await websockets.connect(
-                url,
-                additional_headers=headers,
-                ping_interval=20,
-                ping_timeout=10,
-            )
+            import certifi  # type: ignore
+
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            ssl_context = None
+
+        try:
+            connect_kwargs: dict[str, Any] = {
+                "additional_headers": headers,
+                "ping_interval": 20,
+                "ping_timeout": 10,
+            }
+            if ssl_context is not None:
+                connect_kwargs["ssl"] = ssl_context
+
+            self._ws = await websockets.connect(url, **connect_kwargs)
             self._connected = True
             logger.info("Connected to Deepgram streaming API")
 
