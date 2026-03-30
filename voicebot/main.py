@@ -373,6 +373,8 @@ async def voice_websocket(
 
     # STT Callback — forward confidence to brain for low-confidence recovery
     async def stt_callback(text, is_final, lang, confidence, **kwargs):
+        if text.strip():
+            logger.info("🎙️ stt_callback (final=%s, lang=%s): '%s'", is_final, lang, text)
         await brain.process_stt_partial(text, is_final, confidence=confidence, **kwargs)
         
     try:
@@ -417,10 +419,14 @@ async def voice_websocket(
         except Exception as e:
             logger.error("Greeting failed: %s", e)
 
+        chunk_count = 0
         while True:
             data = await websocket.receive()
             
             if "bytes" in data:
+                chunk_count += 1
+                if chunk_count % 50 == 0:  # Log every 50 frames (~1 second of audio)
+                    logger.info("🔉 Receiving audio bytes: %d bytes (Total chunks: %d)", len(data["bytes"]), chunk_count)
                 await brain.process_audio_chunk(data["bytes"])
             elif "text" in data:
                 logger.info("📩 Message received: %s", data["text"][:100])
@@ -523,18 +529,22 @@ async def voice_websocket(
                     sum_llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
                     
                     # Generate Summary
-                    prompt = "Summarize the following conversation in exactly 1 or 2 concise sentences. Focus solely on the user's primary intent and the resolution. Do not add conversational filler:\n\n" + transcript_text
+                    system_summary = "You are a concise banking assistant. Summarize the user's inquiry and the outcome."
+                    prompt = transcript_text
                     sum_parts = []
-                    async for chunk in sum_llm.stream_completion([{"role": "user", "content": prompt}]):
-                        sum_parts.append(chunk)
+                    async for chunk in sum_llm.stream_completion(system_summary, [{"role": "user", "content": prompt}]):
+                        if chunk.content:
+                            sum_parts.append(chunk.content)
                     if sum_parts:
                          summary = "".join(sum_parts).strip()
                          
                     # Generate Intent Tag
-                    intent_prompt = "Based on the following conversation, provide a strict 1-3 word noun phrase representing the core operational intent (e.g., 'Password Reset', 'Technical Inquiry', 'General Chat'). Output ONLY the tag, nothing else.\n\n" + transcript_text
+                    system_intent = "You are a classification assistant. Output ONLY a 1-3 word noun phrase for the intent."
+                    intent_prompt = transcript_text
                     intent_parts = []
-                    async for chunk in sum_llm.stream_completion([{"role": "user", "content": intent_prompt}]):
-                        intent_parts.append(chunk)
+                    async for chunk in sum_llm.stream_completion(system_intent, [{"role": "user", "content": intent_prompt}]):
+                        if chunk.content:
+                            intent_parts.append(chunk.content)
                     if intent_parts:
                         intent = "".join(intent_parts).strip()
                         

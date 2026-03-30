@@ -97,6 +97,11 @@ class WorkflowEngine:
 
         self.current_node_id: Optional[str] = workflow_data.get("start_node_id")
 
+        # --- Advanced State Management ---
+        self.history: List[str] = [] # Stack of visited node IDs
+        self.session_data: Dict[str, Any] = {} # Extracted entities / user data
+        self.last_user_text: str = ""
+
         # Auto-detect start node: node with no incoming edges
         if not self.current_node_id and self.nodes:
             targets = {e.get("target") for e in self.edges}
@@ -132,6 +137,14 @@ class WorkflowEngine:
                 await self._log("[GLOBAL]", "User requested escalation to human.", "text-orange-400")
                 await self._handle_escalation()
                 return False
+
+            # --- Advanced: Detect Navigational Intent (Reversibility) ---
+            nav_intent = await self._detect_navigational_intent(user_text)
+            if nav_intent and nav_intent.get("action") == "BACKTRACK":
+                target_label = nav_intent.get("target_label")
+                if await self._handle_backtrack(target_label):
+                    # Resume from the new backtrack target
+                    return await self._execute_node_chain(user_text)
 
         # ─── If we're paused on a userInput node, advance past it first ────────
         node = self.nodes[self.current_node_id]
@@ -210,12 +223,22 @@ class WorkflowEngine:
 
             # ── Bot Says ────────────────────────────────────────────────────────
             if node_type == "speech":
+                data = node.get("data") or {}
+                mode = data.get("mode", "direct") # direct | llm
                 text = _node_speech(node)
+
+                if mode == "llm":
+                    text = await self._generate_dynamic_speech(node, user_text)
+
                 if text:
                     await self.brain._generate_and_speak(text)
                 else:
                     logger.warning("[WorkflowEngine] Speech node %s has no text configured.", self.current_node_id)
                     await self.brain._generate_and_speak("...")
+
+                # Record visit in history
+                if self.current_node_id not in self.history:
+                    self.history.append(self.current_node_id)
 
                 if edges:
                     next_node = self.nodes.get(edges[0].get("target"))
@@ -524,3 +547,109 @@ class WorkflowEngine:
         except Exception as e:
             logger.error("[WorkflowEngine] Language detection error: %s", e)
             return "en"
+
+    # ─── Advanced AI Orchestration ──────────────────────────────────────────
+
+    async def _generate_dynamic_speech(self, node: dict, last_user_text: str) -> str:
+        """Use LLM to generate context-aware speech for a workflow node."""
+        label = (node.get("data") or {}).get("label") or "Response"
+        base_text = _node_speech(node)
+        
+        # Build context from previous turns
+        context_str = ""
+        try:
+            turns = self.brain.session.get_context_window(max_turns=6)
+            context_str = "\n".join([f"{t['role'].capitalize()}: {t['content']}" for t in turns])
+        except Exception:
+            pass
+
+        prompt = (
+            f"You are a sophisticated AI voice bot. Your current workflow step is: {label}.\n"
+            f"Base Instruction: {base_text}\n\n"
+            f"Context from conversation:\n{context_str}\n\n"
+            f"Recent User Input: {last_user_text}\n\n"
+            "Your Task: Generate a warm, professional response that fulfills the bridge between the conversation context and the workflow goal.\n"
+            "Keep it concise (1-2 sentences) and suitable for high-quality voice synthesis.\n"
+            "If the user mentioned specific details (e.g., their name, a date), acknowledge them naturally."
+        )
+
+        try:
+            chunks = []
+            async for chunk in self.brain.llm.stream_completion(
+                system_prompt="You are a natural-sounding voice assistant. Speak concisely and empathetically.",
+                messages=[{"role": "user", "content": prompt}]
+            ):
+                chunks.append(chunk.content or "")
+            return "".join(chunks).strip()
+        except Exception as e:
+            logger.error("[WorkflowEngine] Dynamic speech error: %s", e)
+            return base_text
+
+    async def _detect_navigational_intent(self, text: str) -> Optional[dict]:
+        """Detect if user wants to jump back or change a previous answer."""
+        if not text or len(text.split()) < 2:
+            return None
+
+        prompt = (
+            "Analyze the user's voice transcript for 'navigational' intent.\n"
+            "Does the user want to:\n"
+            "1. Go back to a previous topic or step? (e.g., 'Wait, go back to the start', 'Can we change the payment date?')\n"
+            "2. Skip a step?\n"
+            "3. Restart the call?\n\n"
+            "Reply with a JSON object:\n"
+            '{"action": "BACKTRACK" | "SKIP" | "RESTART" | "CONTINUE", "target_label": "the name of the step or topic mentioned", "reason": "..."}'
+            f'\n\nTranscript: "{text}"'
+        )
+
+        try:
+            chunks = []
+            async for chunk in self.brain.llm.stream_completion(
+                system_prompt="You are a navigation intent detector. Reply ONLY with valid JSON.",
+                messages=[{"role": "user", "content": prompt}]
+            ):
+                chunks.append(chunk.content or "")
+            
+            resp = "".join(chunks).strip()
+            # Basic JSON cleanup if LLM adds backticks
+            if resp.startswith("```"): resp = resp.split("```")[1]
+            if resp.startswith("json"): resp = resp[4:]
+            
+            data = json.loads(resp)
+            if data.get("action") == "CONTINUE":
+                return None
+            return data
+        except Exception as e:
+            logger.error("[WorkflowEngine] Nav intent error: %s", e)
+            return None
+
+    async def _handle_backtrack(self, target_label: Optional[str]) -> bool:
+        """Find the best node in history to jump back to."""
+        if not self.history:
+            return False
+
+        target_node_id = None
+        
+        if target_label:
+            # Try to match history labels
+            for node_id in reversed(self.history):
+                node = self.nodes.get(node_id)
+                if node and target_label.lower() in (node.get("data", {}).get("label") or "").lower():
+                    target_node_id = node_id
+                    break
+        
+        if not target_node_id:
+            # Pop last item (current node's parent)
+            target_node_id = self.history[-1] if self.history else None
+
+        if target_node_id:
+            await self._log("[NAV]", f"Backtracking → {target_node_id}", "text-purple-400")
+            self.current_node_id = target_node_id
+            # Truncate history after the jump
+            try:
+                idx = self.history.index(target_node_id)
+                self.history = self.history[:idx]
+            except ValueError:
+                pass
+            return True
+        
+        return False

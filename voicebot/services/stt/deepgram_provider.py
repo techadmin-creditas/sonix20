@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator, Callable, Optional
 
 from voicebot.shared.config import get_settings
 
-logger = logging.getLogger("stt-deepgram")
+logger = logging.getLogger("voicebot.stt.deepgram")
 settings = get_settings()
 
 

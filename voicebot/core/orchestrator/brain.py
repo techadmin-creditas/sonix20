@@ -59,6 +59,7 @@ _SCOPE_TOOL_NAMES = {
     "appointments": ("book_appointment", "get_appointments"),
     "user_memory": ("remember_user_fact",),
     "weather": ("get_weather",),
+    "banking": ("verify_customer", "get_account_balance", "get_loan_status"),
 }
 
 
@@ -333,6 +334,7 @@ class AgenticBrain:
         Handle a partial or final transcript from STT.
         """
         msg_type = kwargs.get("msg_type")
+        logger.info("🧠 Brain STT Ingested: '%s' [final=%s, type=%s, state=%s]", text, is_final, msg_type, self.state.value)
 
         # Handle interruptions with an 80 ms debounce.
         # The debounce filters acoustic echo pops that Deepgram's VAD mistakes for real speech.

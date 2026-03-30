@@ -283,6 +283,7 @@ export default function WorkflowEditor() {
   const [simInput, setSimInput] = useState('');
   const [simChat, setSimChat] = useState<{role: string, text: string}[]>([]);
   const [simNode, setSimNode] = useState<string | undefined>();
+  const [simHistory, setSimHistory] = useState<string[]>([]);
   const [simRunning, setSimRunning] = useState(false);
 
   const [nodes, setNodes] = useState<Node[]>([
@@ -426,6 +427,9 @@ export default function WorkflowEditor() {
         setSimNode(undefined);
       } else {
         setSimNode(res.next_node_id);
+        // Sync history from backend if returned (mocked for now)
+        if (res.history) setSimHistory(res.history);
+        else if (res.next_node_id) setSimHistory(prev => [...prev, res.next_node_id]);
       }
       if (res.yield_to_llm) {
         setSimChat(prev => [...prev, { role: 'system', text: '— YIELDED TO FREEFORM LLM —' }]);
@@ -464,9 +468,11 @@ export default function WorkflowEditor() {
               className="font-headline font-extrabold text-2xl tracking-tight text-on-surface bg-transparent border-b border-transparent focus:border-primary/50 focus:outline-none w-64 pb-0.5"
               placeholder="Workflow Name"
             />
-            <p className="text-xs text-on-surface-variant font-medium uppercase tracking-widest mt-0.5">
-              {id ? 'Editing existing flow' : 'New conversational flow'}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">
+                {id ? 'Existing Flow' : 'New Flow'}
+              </p>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -599,18 +605,51 @@ export default function WorkflowEditor() {
                 </div>
 
                 {selectedNode.type === 'speech' && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Bot's Response</label>
-                    <textarea 
-                      className="w-full h-32 bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/30" 
-                      placeholder="What should the bot say?"
-                      value={selectedNode.data.speech || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
-                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
-                      }}
-                    />
+                  <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-2">
+                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Speech Generation Mode</label>
+                        <div className="flex p-1 bg-surface-container-highest rounded-2xl">
+                            <button 
+                                onClick={() => {
+                                    setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'direct' } } : n));
+                                    setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'direct' } });
+                                }}
+                                className={cn(
+                                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
+                                    (selectedNode.data.mode || 'direct') === 'direct' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
+                                )}
+                            >
+                                Standard (Direct)
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'llm' } } : n));
+                                    setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'llm' } });
+                                }}
+                                className={cn(
+                                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
+                                    selectedNode.data.mode === 'llm' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
+                                )}
+                            >
+                                <Sparkles className="size-3 inline mr-1" /> AI Dynamic
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">
+                            {(selectedNode.data.mode || 'direct') === 'direct' ? "Bot's Response" : "AI Base Guidance"}
+                        </label>
+                        <textarea 
+                        className="w-full h-32 bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/30" 
+                        placeholder={selectedNode.data.mode === 'llm' ? "What goal should the AI achieve in this turn?" : "What should the bot say?"}
+                        value={selectedNode.data.speech || ''}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
+                            setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
+                        }}
+                        />
+                    </div>
                   </div>
                 )}
 
@@ -790,6 +829,16 @@ export default function WorkflowEditor() {
                   <Play className="size-6 mx-auto mb-2 opacity-40" />
                   Type a message to simulate a user turn through the current live graph.
                   <div className="mt-2 font-mono text-[10px]">Start: {simNode || nodes[0]?.id || '—'}</div>
+                </div>
+              )}
+              {simHistory.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-4 p-2 bg-black/20 rounded-lg border border-white/5">
+                    <span className="text-[8px] font-bold text-outline uppercase tracking-widest w-full mb-1">Path History</span>
+                    {simHistory.map((h, i) => (
+                        <div key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                            {nodes.find(n => n.id === h)?.data.label || h}
+                        </div>
+                    ))}
                 </div>
               )}
               {simChat.map((msg, i) => (
