@@ -50,6 +50,7 @@ class DeepgramStreamingProvider:
         self.sample_rate = sample_rate
         self.channels = channels
         self.encoding = encoding
+        self.provider = "deepgram"
 
         self._ws = None
         self._connected = False
@@ -83,19 +84,23 @@ class DeepgramStreamingProvider:
         # punctuate=true: provides richer sentence boundaries.
         # vad_events=true: enable VAD events for better turn-taking.
         # Build language/detect_language params based on session language.
-        # "en" or "en-US" → pin to en-US for best accuracy.
-        # "auto" or multi-language code → enable Deepgram's automatic detection.
+        #
+        # IMPORTANT: Deepgram treats `language` and `detect_language` as mutually
+        # exclusive. Sending both causes HTTP 400. Rules:
+        #   • "auto" / "detect" / "multilingual" → detect_language=true only
+        #   • any specific language code         → language=<code> only
+        #   • "en" / "en-*"                      → pin to en-US for best accuracy
         _lang = (self.language or "en").lower().strip()
         if _lang in ("auto", "detect", "multilingual"):
             _lang_params: dict = {"detect_language": "true"}
         elif _lang.startswith("en"):
             _lang_params = {"language": "en-US"}
         else:
-            # Map 2-letter ISO to Deepgram BCP-47 format where needed
-            _lang_params = {"language": _lang, "detect_language": "true"}
+            # Pin to the requested language; do NOT add detect_language alongside it.
+            _lang_params = {"language": _lang}
 
         params = {
-            "model": "nova-2",
+            "model": self.model or "nova-2",
             "encoding": "linear16",
             "sample_rate": "16000",
             "channels": "1",

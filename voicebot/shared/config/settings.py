@@ -89,6 +89,7 @@ class LLMSettings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o", alias="OPENAI_MODEL")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     anthropic_model: str = Field(
         default="claude-sonnet-4-20250514", alias="ANTHROPIC_MODEL"
     )
@@ -156,6 +157,19 @@ class AppSettings(BaseSettings):
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     anthropic_model: str = Field(default="claude-sonnet-4-20250514", alias="ANTHROPIC_MODEL")
     groq_model: str = Field(default="llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
+    openrouter_default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct", alias="OPENROUTER_DEFAULT_MODEL")
+
+    # Classifier LLM — used for intent/sentiment/interceptor classification tasks.
+    # Override via env vars or per-bot via bot_config["classifier_llm_provider"].
+    # Supported: groq | openrouter | anthropic | gemini  (empty = auto-pick)
+    classifier_llm_provider: str = Field(default="", alias="CLASSIFIER_LLM_PROVIDER")
+    classifier_llm_model: str = Field(default="", alias="CLASSIFIER_LLM_MODEL")
+
+    # Session inactivity timeout — how long (seconds) the bot waits in LISTENING
+    # state before ending the call. Per-bot override via bot_config.inactivity_timeout_seconds.
+    inactivity_timeout_seconds: int = Field(default=60, alias="INACTIVITY_TIMEOUT_SECONDS")
+    serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
 
     tts_provider: str = Field(default="elevenlabs", alias="TTS_PROVIDER")
     elevenlabs_api_key: str = Field(default="", alias="ELEVENLABS_API_KEY")

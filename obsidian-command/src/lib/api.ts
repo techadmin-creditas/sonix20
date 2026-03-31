@@ -66,6 +66,8 @@ export interface Bot {
   tts_provider?: string;
   default_language?: string;
   proactive_prompts?: string[];
+  topic_restriction?: string;
+  refuse_off_topic?: boolean;
 }
 
 export interface SessionFeedback {
@@ -360,6 +362,21 @@ export const api = {
   async getVectorHealth(): Promise<{ status: string; doc_count: number }> {
     const res = await fetch(`${BASE_URL}/health/vector`);
     if (!res.ok) throw new Error('Failed to fetch vector health');
+    return res.json();
+  },
+
+  async getLearnedMemory(botId: string): Promise<KnowledgeEntry[]> {
+    const res = await fetch(`${BASE_URL}/bots/${botId}/memory`);
+    if (!res.ok) throw new Error('Failed to fetch learned memory');
+    const data = await res.json();
+    return data.facts;
+  },
+
+  async deleteLearnedMemory(factId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/memory/${factId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete memory fact');
     return res.json();
   },
 };

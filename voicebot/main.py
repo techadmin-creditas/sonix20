@@ -24,6 +24,43 @@ settings = get_settings()
 logger = setup_logger("voicebot-unified", level=settings.log_level)
 
 
+def _make_summariser_llm(bot_config: dict):
+    """
+    Return the right LLM provider for post-call summarisation.
+
+    Priority:
+      1. Bot's own llm_provider + llm_model (same model used during the call)
+      2. OpenRouter default model (if key is configured)
+      3. Groq llama-3.3-70b (last resort)
+    """
+    prov = str(bot_config.get("llm_provider") or "").lower()
+    model = bot_config.get("llm_model") or ""
+
+    if prov == "openrouter" or ("/" in model and prov not in ("gemini", "openai", "groq", "anthropic")):
+        from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+        return OpenRouterStreamingProvider(model=model or settings.openrouter_default_model)
+
+    if prov == "openai" and model:
+        from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
+        return OpenAIStreamingProvider(model=model)
+
+    if prov == "anthropic" and model:
+        from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
+        return AnthropicStreamingProvider(model=model)
+
+    if prov == "groq" and model:
+        from voicebot.services.llm.groq_provider import GroqStreamingProvider
+        return GroqStreamingProvider(model=model)
+
+    # Fallback: OpenRouter if key present, else Groq
+    if settings.openrouter_api_key:
+        from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+        return OpenRouterStreamingProvider(model=settings.openrouter_default_model or "meta-llama/llama-3.3-70b-instruct")
+
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    return GroqStreamingProvider(model="llama-3.3-70b-versatile")
+
+
 class AudioFrameNormalizer:
     """
     Converts variable-size TTS audio chunks into uniform 10 ms PCM frames.
@@ -67,7 +104,14 @@ class AudioFrameNormalizer:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Unified VoiceBot Server starting (ENV=%s)...", settings.env)
+    # Initialize shared services
+    from voicebot.services.memory.redis_provider import RedisSessionProvider
+    global _shared_redis
+    _shared_redis = RedisSessionProvider(redis_url=settings.redis_url)
+    await _shared_redis.connect()
     yield
+    if _shared_redis:
+        await _shared_redis.disconnect()
     logger.info("🛑 Unified VoiceBot Server shutting down...")
 
 
@@ -93,13 +137,17 @@ app.include_router(gateway_v1_router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():
-    """Aggregated health check for all internal modules."""
+    """Aggregated health check for all internal modules + Redis."""
+    redis_status = "offline"
+    if _shared_redis:
+        redis_status = "online" if await _shared_redis.ping() else "offline"
+
     return {
-        "status": "healthy",
+        "status": "healthy" if redis_status == "online" else "degraded",
         "env": settings.env,
         "services": {
             "gateway": "online",
-            "orchestrator": "online",
+            "redis": redis_status,
             "stt": settings.stt_provider,
             "llm": settings.llm_provider,
             "tts": settings.tts_provider,
@@ -107,7 +155,10 @@ async def health_check():
     }
 
 
-# ─── Unified WebSocket Handler ──────────────────────────────────────────
+# Globally track active voice sessions to enforce singleton behavior per user/session_id.
+# This prevents orphaned backgrounds from consuming tokens when a user refreshes or starts new session.
+_active_voice_sessions: dict[str, WebSocket] = {}
+_shared_redis = None # Initialized in lifespan
 
 @app.websocket("/ws/voice/{session_id}")
 async def voice_websocket(
@@ -213,11 +264,30 @@ async def voice_websocket(
         # STT
         stt_provider = DeepgramStreamingProvider(language=session_language)
         
-        # LLM
+        # LLM — auto-detect provider from bot config or model slug
         llm_model = bot_config.get("llm_model")
         if not llm_model:
             raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no LLM Model configured. Please update its settings.")
-        llm_provider = GroqStreamingProvider(model=llm_model)
+
+        _llm_prov = str(bot_config.get("llm_provider") or "").lower()
+        # OpenRouter models use "provider/model" slugs (e.g. "anthropic/claude-3.5-sonnet")
+        if _llm_prov == "openrouter" or ("/" in str(llm_model) and _llm_prov not in ("gemini", "openai", "groq", "anthropic")):
+            from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+            llm_provider = OpenRouterStreamingProvider(model=llm_model)
+            logger.info("Using OpenRouter LLM (model=%s) ✅", llm_model)
+        elif _llm_prov == "openai":
+            llm_provider = OpenAIStreamingProvider(model=llm_model)
+            logger.info("Using OpenAI LLM (model=%s) ✅", llm_model)
+        elif _llm_prov == "gemini":
+            llm_provider = GeminiStreamingProvider(model=llm_model)
+            logger.info("Using Gemini LLM (model=%s) ✅", llm_model)
+        elif _llm_prov == "anthropic":
+            from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
+            llm_provider = AnthropicStreamingProvider(model=llm_model)
+            logger.info("Using Anthropic LLM (model=%s) ✅", llm_model)
+        else:
+            llm_provider = GroqStreamingProvider(model=llm_model)
+            logger.info("Using Groq LLM (model=%s) ✅", llm_model)
 
         # TTS (Detect Provider from voice_id + explicit override)
         voice_id = bot_config.get("voice_id")
@@ -297,6 +367,29 @@ async def voice_websocket(
             await websocket.close(code=4000)
         return
 
+    # Step 0: Ensure singleton session for this session_id or user_id
+    # This prevents ghost sessions from eating tokens.
+    if session_id in _active_voice_sessions:
+        old_ws = _active_voice_sessions[session_id]
+        try:
+            logger.info("👋 Closing existing session for %s", session_id[:8])
+            await old_ws.close(code=1000, reason="New connection for same session_id")
+        except Exception: pass
+    
+    if user_id:
+        existing_matches = [sid for sid, ws in _active_voice_sessions.items() if getattr(ws, "_user_id", None) == user_id]
+        for sid in existing_matches:
+            old_ws = _active_voice_sessions.pop(sid, None)
+            if old_ws:
+                try:
+                    logger.info("👋 Closing old session for user %s (%s)", user_id, sid[:8])
+                    await old_ws.close(code=1000, reason="New connection for same user_id")
+                except Exception: pass
+
+    # Track this websocket
+    _active_voice_sessions[session_id] = websocket
+    setattr(websocket, "_user_id", user_id)
+
     # Callback definitions (via transport abstraction for WebSocket / future WebRTC)
     async def on_state_change(state: str):
         if vt.connected:
@@ -306,7 +399,19 @@ async def voice_websocket(
 
     async def on_audio_output(audio_bytes: bytes):
         if vt.connected:
-            logger.info("📡 Dispatching audio chunk to client: %d bytes", len(audio_bytes))
+            # Log to server console
+            logger.debug("📡 Dispatching audio chunk to transport: %d bytes", len(audio_bytes))
+            # Also send a small log message to the client to confirm synthesis is working
+            # (only log first few chunks to avoid flooding the UI)
+            if not getattr(on_audio_output, "_warm", False):
+                await vt.send_json({
+                    "type": "log",
+                    "tag": "[AUDIO]",
+                    "message": "First audio bytes dispatched to WebSocket",
+                    "color": "text-green-400"
+                })
+                on_audio_output._warm = True
+
             await normalizer.push(audio_bytes, vt.send_bytes)
 
     async def on_transcript(text: str, is_final: bool):
@@ -320,6 +425,8 @@ async def voice_websocket(
         # bot's full turn is complete (is_final == True from _finalize_turn).
         if is_final and vt.connected:
             await normalizer.flush(vt.send_bytes)
+            # Reset warm flag for next turn
+            on_audio_output._warm = False
 
     async def on_tool_call(name: str, args: dict):
         if vt.connected:
@@ -394,22 +501,40 @@ async def voice_websocket(
         if text.strip():
             logger.info("🎙️ stt_callback (final=%s, lang=%s): '%s'", is_final, lang, text)
         await brain.process_stt_partial(text, is_final, confidence=confidence, **kwargs)
-        
+
     try:
-        # Step 1: Attempt to connect to STT (Deepgram)
-        try:
-            await asyncio.wait_for(stt_provider.connect(on_transcript=stt_callback), timeout=5.0)
-            logger.info("✅ STT Bridge established (session=%s)", session_id[:8])
-        except Exception as e:
-            logger.warning("⚠️ STT Bridge failed: %s. Reverting to Simulator Mode.", e)
-            await vt.send_json({
-                "type": "log", 
-                "tag": "[SYSTEM]", 
-                "message": "STT Offline: Using Simulator Mode only.", 
-                "color": "text-yellow-400"
-            })
-            # We don't re-raise here; we want the session to continue for text/simulator usage.
-        
+        # Step 1: Connect STT in the background so the greeting can start immediately.
+        # Brain._hydrate_session is already a background task from __init__; STT
+        # connection (Deepgram WS handshake, ~2s) runs in parallel with the greeting
+        # TTS synthesis, shaving 2-3 seconds off session start time.
+        stt_ok = False
+
+        async def _connect_stt() -> bool:
+            """Returns True on success, False on failure (never raises)."""
+            try:
+                await asyncio.wait_for(
+                    stt_provider.connect(on_transcript=stt_callback), timeout=5.0
+                )
+                logger.info("✅ STT Bridge established (session=%s)", session_id[:8])
+                return True
+            except Exception as _e:
+                logger.warning("⚠️ STT Bridge failed: %s. Reverting to Simulator Mode.", _e)
+                await vt.send_json({
+                    "type": "log",
+                    "tag": "[SYSTEM]",
+                    "message": f"STT Offline ({type(_e).__name__}): Using Simulator Mode only.",
+                    "color": "text-yellow-400",
+                })
+                try:
+                    _st = await brain.get_infra_status()
+                    await vt.send_json({"type": "infra_status", **_st})
+                except Exception:
+                    pass
+                return False
+
+        # Fire STT connect as a background task — it runs while we do the rest of setup.
+        _stt_task = asyncio.create_task(_connect_stt())
+
         # Step 2: Notify ready state
         await vt.send_json({
             "type": "status",
@@ -417,6 +542,9 @@ async def voice_websocket(
             "session_id": session_id,
             "message": "Voice bot ready."
         })
+
+        # Collect STT result before we enter the main receive loop
+        stt_ok = await _stt_task
 
         # --- INFRA HEARTBEAT ---
         async def infra_heartbeat():
@@ -430,6 +558,27 @@ async def voice_websocket(
         
         heartbeat_task = asyncio.create_task(infra_heartbeat())
 
+        # --- INACTIVITY MONITOR ---
+        last_activity_time = time.time()
+        
+        async def inactivity_monitor():
+            nonlocal last_activity_time
+            while vt.connected:
+                elapsed = time.time() - last_activity_time
+                if elapsed > 60.0:
+                    logger.info("😴 Session %s timed out (60s inactivity)", session_id[:8])
+                    await vt.send_json({
+                        "type": "log",
+                        "tag": "[SYSTEM]",
+                        "message": "Session timed out due to 60s inactivity.",
+                        "color": "text-red-400"
+                    })
+                    await brain.request_session_end("inactivity")
+                    break
+                await asyncio.sleep(2.0)
+        
+        inactivity_task = asyncio.create_task(inactivity_monitor())
+
         # --- AUTO GREETING ---
         # Trigger initial greeting turn. Even if TTS fails, transcript will be sent.
         try:
@@ -441,23 +590,28 @@ async def voice_websocket(
         while True:
             data = await websocket.receive()
             
-            if "bytes" in data:
+            if data.get("bytes") is not None:
+                last_activity_time = time.time()
                 chunk_count += 1
                 if chunk_count % 50 == 0:  # Log every 50 frames (~1 second of audio)
-                    logger.info("🔉 Receiving audio bytes: %d bytes (Total chunks: %d)", len(data["bytes"]), chunk_count)
-                await brain.process_audio_chunk(data["bytes"])
-            elif "text" in data:
-                logger.info("📩 Message received: %s", data["text"][:100])
+                    logger.info("🔉 Receiving audio bytes: %d bytes (Total chunks: %d)", len(data.get("bytes")), chunk_count)
+                await brain.process_audio_chunk(data.get("bytes"))
+            elif data.get("text") is not None:
+                last_activity_time = time.time()
+                logger.info("📩 Message received: %s", data.get("text")[:100])
                 try:
-                    msg = json.loads(data["text"])
+                    msg = json.loads(data.get("text"))
                     msg_type = msg.get("type")
                     
                     if msg_type == "config":
                         # DYNAMIC RECONFIGURATION
                         llm_choice = msg.get("llm", "groq")
                         llm_model = msg.get("llmModel")
-                        
-                        if llm_choice == "gemini":
+
+                        if llm_choice == "openrouter" or ("/" in str(llm_model) and llm_choice not in ("gemini", "openai", "groq", "anthropic")):
+                            from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+                            brain.llm = OpenRouterStreamingProvider(model=llm_model)
+                        elif llm_choice == "gemini":
                             brain.llm = GeminiStreamingProvider(model=llm_model)
                         elif llm_choice == "groq":
                             brain.llm = GroqStreamingProvider(model=llm_model)
@@ -543,29 +697,33 @@ async def voice_websocket(
             
             if len(log_entries) > 1 and transcript_text.strip():
                 try:
-                    from voicebot.services.llm.groq_provider import GroqStreamingProvider
-                    sum_llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
-                    
+                    # Reuse the bot's own provider — same model used during the call.
+                    # brain.cleanup() nulled _client; _get_client() lazy-reinits on first use.
+                    sum_llm = llm_provider
+                    logger.info(
+                        "Post-call summarisation using bot LLM: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
+
                     # Generate Summary
-                    system_summary = "You are a concise banking assistant. Summarize the user's inquiry and the outcome."
-                    prompt = transcript_text
+                    system_summary = "You are a concise assistant. In 1-2 sentences summarize the user's inquiry and the outcome."
                     sum_parts = []
-                    async for chunk in sum_llm.stream_completion(system_summary, [{"role": "user", "content": prompt}]):
+                    async for chunk in sum_llm.stream_completion(system_summary, [{"role": "user", "content": transcript_text}]):
                         if chunk.content:
                             sum_parts.append(chunk.content)
                     if sum_parts:
-                         summary = "".join(sum_parts).strip()
-                         
+                        summary = "".join(sum_parts).strip()
+
                     # Generate Intent Tag
                     system_intent = "You are a classification assistant. Output ONLY a 1-3 word noun phrase for the intent."
-                    intent_prompt = transcript_text
                     intent_parts = []
-                    async for chunk in sum_llm.stream_completion(system_intent, [{"role": "user", "content": intent_prompt}]):
+                    async for chunk in sum_llm.stream_completion(system_intent, [{"role": "user", "content": transcript_text}]):
                         if chunk.content:
                             intent_parts.append(chunk.content)
                     if intent_parts:
                         intent = "".join(intent_parts).strip()
-                        
+
                 except Exception as llm_err:
                     logger.error("LLM Summarization failed: %s", llm_err)
             
@@ -607,6 +765,10 @@ async def voice_websocket(
 
         except Exception as archive_err:
             logger.error("Failed to archive session %s: %s", session_id[:8], archive_err)
+        finally:
+            # Remove from singleton registry (always keyed by session_id)
+            if _active_voice_sessions.get(session_id) == websocket:
+                _active_voice_sessions.pop(session_id, None)
 
 async def _handle_speech_speech_session(
     websocket: WebSocket,
@@ -673,12 +835,12 @@ async def _handle_speech_speech_session(
         while True:
             data = await websocket.receive()
 
-            if "bytes" in data:
-                await bridge.send_audio(data["bytes"])
+            if data.get("bytes") is not None:
+                await bridge.send_audio(data.get("bytes"))
 
-            elif "text" in data:
+            elif data.get("text") is not None:
                 try:
-                    msg      = json.loads(data["text"])
+                    msg      = json.loads(data.get("text"))
                     msg_type = msg.get("type")
 
                     if msg_type == "interrupt":
@@ -731,8 +893,12 @@ async def _handle_speech_speech_session(
 
             if len(log_entries) > 1 and transcript_text.strip():
                 try:
-                    from voicebot.services.llm.groq_provider import GroqStreamingProvider
-                    sum_llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
+                    sum_llm = _make_summariser_llm(bot_config)
+                    logger.info(
+                        "S2S post-call summarisation using: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
 
                     sum_prompt = (
                         "Summarize the following conversation in exactly 1 or 2 concise sentences. "

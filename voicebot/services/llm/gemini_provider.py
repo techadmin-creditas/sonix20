@@ -33,6 +33,7 @@ class GeminiStreamingProvider:
         self.temperature = temperature
         self.max_output_tokens = max_tokens
         self._gen_model = None
+        self.provider = "gemini"
 
     async def _get_model(self, tools: Optional[List[ToolDefinition]] = None):
         # Hash tools to check for changes
@@ -136,6 +137,18 @@ class GeminiStreamingProvider:
                 except Exception as e:
                     logger.warning("Error parsing Gemini chunk: %s", e)
                     continue
+
+            # Emit Final Usage Metadata
+            try:
+                # Usage metadata is typically available on the response object after the stream is fully consumed
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    yield LLMResponse(usage={
+                        "prompt_tokens": response.usage_metadata.prompt_token_count,
+                        "completion_tokens": response.usage_metadata.candidates_token_count,
+                        "total_tokens": response.usage_metadata.total_token_count
+                    })
+            except Exception as e:
+                logger.warning("Failed to extract Gemini usage: %s", e)
 
         except Exception as e:
             logger.error("Gemini streaming error: %s", e, exc_info=True)

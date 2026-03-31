@@ -48,6 +48,7 @@ class OpenAIStreamingProvider:
         self.api_key = api_key or settings.openai_api_key
         self.model = model or settings.openai_model or "gpt-4o"
         self.max_tokens = max_tokens or 1024
+        self.provider = "openai"
         self.temperature = temperature if temperature is not None else 0.7
         self._client = None
 
@@ -109,6 +110,7 @@ class OpenAIStreamingProvider:
                 temperature=temperature or self.temperature,
                 max_tokens=max_tokens or self.max_tokens,
                 stream=True,
+                stream_options={"include_usage": True},
                 presence_penalty=0.1,
                 frequency_penalty=0.1,
             )
@@ -118,6 +120,14 @@ class OpenAIStreamingProvider:
             active_tool_calls: dict[int, dict[str, Any]] = {}
 
             async for chunk in stream:
+                # Capture usage block from final chunk(s)
+                if hasattr(chunk, "usage") and chunk.usage:
+                    yield LLMResponse(usage={
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens
+                    })
+
                 if not chunk.choices: continue
                 delta = chunk.choices[0].delta
                 

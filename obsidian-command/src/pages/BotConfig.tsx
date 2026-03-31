@@ -80,6 +80,8 @@ export default function BotConfig() {
     actions_webhook_url: '',
     post_call_webhook_url: '',
     min_stt_confidence: 0.6,
+    topic_restriction: '',
+    refuse_off_topic: false,
   });
 
   const [policyDraft, setPolicyDraft] = React.useState({
@@ -464,6 +466,40 @@ export default function BotConfig() {
                 value={policyDraft.conversation}
                 onChange={(e) => setPolicyDraft((p) => ({ ...p, conversation: e.target.value }))}
               />
+            </div>
+          </section>
+          
+          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border border-primary/20">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="size-5 text-primary" />
+              <h3 className="font-headline font-bold text-lg">Self-Driving Guardrails (Auto-RAG)</h3>
+            </div>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              Define the expertise boundary. If <code className="text-primary/80">Strict Refusal</code> is on, the bot will politely decline any query that is not semantically related to the focus topic.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Domain Focus Topic</label>
+                <input 
+                  className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30" 
+                  type="text" 
+                  placeholder="e.g. Indian Personal Banking"
+                  value={formData.topic_restriction || ''}
+                  onChange={e => setFormData(prev => ({ ...prev, topic_restriction: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Enforcement</label>
+                <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
+                  <span className="text-sm font-bold text-on-surface-variant group-hover:text-primary">Strict Topic Refusal</span>
+                  <input 
+                    checked={formData.refuse_off_topic || false} 
+                    onChange={e => setFormData(prev => ({ ...prev, refuse_off_topic: e.target.checked }))}
+                    className="rounded border-outline-variant bg-surface-variant text-primary focus:ring-primary/20 size-6" 
+                    type="checkbox" 
+                  />
+                </label>
+              </div>
             </div>
           </section>
 

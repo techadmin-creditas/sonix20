@@ -7,10 +7,11 @@ class BaseTool(ABC):
     Abstract base class for all bot tools.
     Each tool must define its name, description, and parameter schema.
     """
-    def __init__(self, session: Any = None, db: Any = None, data_access_policy: Any = None):
+    def __init__(self, session: Any = None, db: Any = None, data_access_policy: Any = None, brain: Any = None):
         self.session = session
         self.db = db
         self.data_access_policy = data_access_policy or {}
+        self.brain = brain
 
     @property
     @abstractmethod

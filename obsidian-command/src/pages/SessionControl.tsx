@@ -19,6 +19,7 @@ import {
   Cpu,
   UserCircle2,
   Tags,
+  Brain,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,13 +54,21 @@ export default function SessionControl() {
   const [isLive, setIsLive] = useState(false);
   const [activeLogTab, setActiveLogTab] = useState<'neural' | 'tools' | 'vitals' | 'entities'>('neural');
   const [metrics, setMetrics] = useState({ stt: 0, llm: 0, tts: 0, total: 0 });
-  const [infra, setInfra] = useState({ 
-    redis: 'online', 
-    stt: 'online', 
-    llm: 'online', 
-    tts: 'online', 
-    uptime: '99.98%' 
+  const [infra, setInfra] = useState({
+    redis: 'unavailable',
+    stt:   'unavailable',
+    llm:   'unavailable',
+    tts:   'unavailable',
+    uptime: '--',
+    stt_provider: 'STT',
+    llm_provider: 'LLM',
+    tts_provider: 'TTS',
   });
+  const [tokenPulse, setTokenPulse] = useState(false);
+  const [sessionTokens, setSessionTokens] = useState({ input: 0, output: 0, total: 0 });
+  const [modelLimits, setModelLimits] = useState<any[]>([]);
+  const [toolSuccessRate, setToolSuccessRate] = useState(100.0);
+  
   // Caller identity & cross-session memory
   const [userId, setUserId] = useState('');
   // Live sentiment
@@ -86,6 +95,10 @@ export default function SessionControl() {
       setAvailableBots(bots);
       if (bots.length > 0) setSelectedBot(bots[0]);
     });
+    // Fetch real-time model capability data
+    api.getModels()
+      .then(models => setModelLimits(models || []))
+      .catch(err => console.error("Failed to load model specs:", err));
   }, []);
 
   // Audio Processing Refs
@@ -370,6 +383,17 @@ export default function SessionControl() {
             });
           }
         }
+      } else if (msg.type === 'infra_status') {
+        setInfra({
+          redis: msg.redis || 'offline',
+          stt: msg.stt || 'offline',
+          llm: msg.llm || 'offline',
+          tts: msg.tts || 'offline',
+          uptime: msg.uptime || '100%',
+          stt_provider: msg.stt_provider,
+          llm_provider: msg.llm_provider,
+          tts_provider: msg.tts_provider
+        });
       } else if (msg.type === 'metrics') {
         setMetrics({
           stt: msg.stt || 0,
@@ -377,14 +401,21 @@ export default function SessionControl() {
           tts: msg.tts || 0,
           total: msg.total || 0
         });
-      } else if (msg.type === 'infra_status') {
-        setInfra({
-          redis: msg.redis || 'offline',
-          stt: msg.stt || 'offline',
-          llm: msg.llm || 'offline',
-          tts: msg.tts || 'offline',
-          uptime: msg.uptime || '99.98%'
-        });
+        
+        if (msg.tool_success_rate !== undefined) {
+          setToolSuccessRate(msg.tool_success_rate);
+        }
+        
+        // Handle Token Consumption (Cognitive Load)
+        if (msg.tokens_output > 0 || msg.tokens_input > 0) {
+           setTokenPulse(true);
+           setTimeout(() => setTokenPulse(false), 2000); // 2s glow duration
+           setSessionTokens(prev => ({
+             input: msg.session_tokens_input || (prev.input + msg.tokens_input),
+             output: msg.session_tokens_output || (prev.output + msg.tokens_output),
+             total: msg.session_tokens_total || (prev.total + msg.tokens_total)
+           }));
+        }
       } else if (msg.type === 'session_ended') {
         setStatus(`Call ended${msg.reason ? ` · ${msg.reason}` : ''}`);
         setLogs((prev) => [
@@ -396,6 +427,20 @@ export default function SessionControl() {
             color: 'text-primary',
           },
         ]);
+        
+        // Special alert for inactivity timeout
+        if (msg.reason === 'inactivity_timeout') {
+          setLogs((prev) => [
+            ...prev,
+            {
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              tag: '[SYSTEM]',
+              content: 'DISCONNECT: 10 seconds of silence detected. Session terminated to preserve tokens.',
+              color: 'text-red-400 font-bold animate-pulse',
+            },
+          ]);
+        }
+        
         setIsLive(false);
         stopAudio();
         setWs(null);
@@ -604,21 +649,24 @@ export default function SessionControl() {
         title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'} 
         subtitle={isLive ? 'Live Operations • Session Active' : 'Standby Mode'}
         actions={
-          <div className="flex gap-4">
+          <>
+            {/* ── Bot Selector ────────────────────────────────── */}
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setIsBotSelectorOpen(!isBotSelectorOpen)}
                 disabled={isConnecting || isLive}
-                className="bg-surface-high text-on-surface px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10 shadow-sm disabled:opacity-70"
+                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] sm:max-w-none"
               >
-                  <BotIcon className="size-4 text-primary" />
-                  <span>{selectedBot?.name || 'Select Agent'}</span>
-                  <ChevronDown className={cn("size-4 transition-transform", isBotSelectorOpen && "rotate-180")} />
+                <BotIcon className="size-4 text-primary shrink-0" />
+                <span className="truncate hidden xs:inline sm:inline">{selectedBot?.name || 'Select Agent'}</span>
+                <ChevronDown className={cn("size-3.5 shrink-0 text-outline transition-transform", isBotSelectorOpen && "rotate-180")} />
               </button>
-                
+
               {isBotSelectorOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 glass-panel rounded-2xl p-2 z-100 shadow-2xl animate-in fade-in slide-in-from-top-2 border border-white/5">
-                  <div className="text-[10px] font-bold text-outline uppercase tracking-widest p-2 mb-1">Select Persona</div>
+                <div className="absolute top-full right-0 mt-2 w-60 glass-panel rounded-2xl p-2 z-100 shadow-2xl animate-in fade-in slide-in-from-top-2 border border-white/5">
+                  <div className="text-[10px] font-bold text-outline uppercase tracking-widest px-2 py-1.5 mb-1">
+                    Select Persona
+                  </div>
                   {availableBots.map((persona) => (
                     <button
                       key={persona.id}
@@ -630,18 +678,18 @@ export default function SessionControl() {
                         }
                       }}
                       className={cn(
-                        "w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left",
-                        selectedBot?.id === persona.id ? "bg-primary/10 text-primary" : "hover:bg-surface-highest text-on-surface-variant"
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left",
+                        selectedBot?.id === persona.id
+                          ? "bg-primary/10 text-primary"
+                          : "hover:bg-surface-highest text-on-surface-variant"
                       )}
                     >
-                      <div className={cn(
-                        "size-8 rounded-lg flex items-center justify-center bg-primary/20 text-primary"
-                      )}>
-                        <BotIcon className="size-4" />
+                      <div className="size-7 rounded-lg flex items-center justify-center bg-primary/20 text-primary shrink-0">
+                        <BotIcon className="size-3.5" />
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold">{persona.name}</span>
-                        <span className="text-[10px] opacity-60">{persona.role}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-bold truncate">{persona.name}</span>
+                        <span className="text-[10px] opacity-60 truncate">{persona.role}</span>
                       </div>
                     </button>
                   ))}
@@ -649,75 +697,85 @@ export default function SessionControl() {
               )}
             </div>
 
+            {/* ── Pre-live: setup controls ─────────────────────── */}
             {!isLive ? (
               <>
-              <div className="relative">
-                <UserCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-on-surface-variant pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Caller ID (optional)"
-                  value={userId}
-                  onChange={e => setUserId(e.target.value)}
-                  disabled={isConnecting}
-                  title="Enables cross-session memory. Leave blank for anonymous session."
-                  className="bg-surface-high text-on-surface pl-9 pr-4 py-2.5 rounded-xl text-sm border border-outline-variant/20 font-medium w-44 disabled:opacity-60"
-                />
-              </div>
-              <select
-                value={sessionTransport}
-                onChange={(e) => setSessionTransport(e.target.value as 'websocket' | 'webrtc')}
-                disabled={isConnecting}
-                className="bg-surface-high text-on-surface px-4 py-2.5 rounded-xl text-sm border border-outline-variant/20 font-semibold"
-                title="WebSocket: full voice bot via /ws/voice. WebRTC: LiveKit room only (no /ws/voice — mic to room until agent joins)."
-              >
-                <option value="websocket">WebSocket (voice bot)</option>
-                <option value="webrtc">WebRTC (LiveKit room only)</option>
-              </select>
-              <button 
-                onClick={startSession}
-                disabled={!selectedBot || isConnecting}
-                className="ember-gradient text-on-primary-fixed px-8 py-2.5 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-w-[180px] justify-center"
-              >
-                {isConnecting ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="size-4" />
-                    Initialize Bridge
-                  </>
-                )}
-              </button>
+                {/* Caller ID + Transport — grouped as a pill pair on sm+, stacked on xs */}
+                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl overflow-hidden px-1">
+                  <UserCircle2 className="size-3.5 text-on-surface-variant ml-2 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Caller ID"
+                    value={userId}
+                    onChange={e => setUserId(e.target.value)}
+                    disabled={isConnecting}
+                    title="Enables cross-session memory. Leave blank for anonymous session."
+                    className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
+                  />
+                  <div className="w-px h-5 bg-outline-variant/20 mx-0.5 shrink-0" />
+                  <select
+                    value={sessionTransport}
+                    onChange={(e) => setSessionTransport(e.target.value as 'websocket' | 'webrtc')}
+                    disabled={isConnecting}
+                    title="WebSocket: full voice bot. WebRTC: LiveKit room only."
+                    className="bg-transparent text-on-surface py-2 pr-2 text-sm font-semibold outline-none cursor-pointer disabled:opacity-60"
+                  >
+                    <option value="websocket">WS</option>
+                    <option value="webrtc">WebRTC</option>
+                  </select>
+                </div>
+
+                {/* Initialize Bridge CTA */}
+                <button
+                  onClick={startSession}
+                  disabled={!selectedBot || isConnecting}
+                  className="ember-gradient text-on-primary-fixed px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {isConnecting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span className="hidden sm:inline">Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="size-4" />
+                      <span className="hidden sm:inline">Initialize Bridge</span>
+                      <span className="sm:hidden">Init</span>
+                    </>
+                  )}
+                </button>
               </>
             ) : (
-              <div className="flex gap-4">
-                <button 
+              /* ── Live: session controls ──────────────────────── */
+              <>
+                <button
                   onClick={() => setIsConfigOpen(true)}
-                  className="bg-surface-high text-on-surface px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
+                  title="Session Config"
+                  className="bg-surface-high text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
                 >
-                  <Settings2 className="size-4" />
-                  Config
+                  <Settings2 className="size-4 shrink-0" />
+                  <span className="hidden md:inline">Config</span>
                 </button>
-                <button 
+                <button
                   onClick={handleExportLogs}
                   disabled={isExporting}
-                  className="bg-surface-highest text-on-surface px-6 py-2.5 rounded-xl font-bold text-sm border border-white/10 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70"
+                  title="Export Logs"
+                  className="bg-surface-highest text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-sm border border-white/10 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-70"
                 >
-                  {isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                  Logs
+                  {isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4 shrink-0" />}
+                  <span className="hidden md:inline">Logs</span>
                 </button>
-                <button 
+                <button
                   onClick={endSession}
-                  className="bg-red-500/10 text-red-500 hover:bg-red-500/20 px-6 py-2.5 rounded-xl font-bold text-sm border border-red-500/20 transition-all flex items-center gap-2"
+                  title="Terminate Session"
+                  className="bg-red-500/10 text-red-400 hover:bg-red-500/20 px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-sm border border-red-500/20 transition-all flex items-center gap-2"
                 >
-                  <XCircle className="size-4" />
-                  Term
+                  <XCircle className="size-4 shrink-0" />
+                  <span className="hidden md:inline">Terminate</span>
                 </button>
-              </div>
+              </>
             )}
-          </div>
+          </>
         }
       />
       {livekitHint && (
@@ -833,15 +891,15 @@ export default function SessionControl() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 px-10 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-8">
+      <main className="flex-1 px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 flex flex-col min-h-0 overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4 sm:gap-6 lg:gap-8 flex-1 min-h-0">
           {/* Left Panel */}
-          <div className="flex flex-col gap-8">
-            <div className="glass-panel rounded-3xl p-12 flex flex-col items-center justify-center min-h-[460px] relative overflow-hidden">
+          <div className="flex flex-col gap-4 sm:gap-6 lg:gap-8 min-h-0">
+            <div className="glass-panel rounded-3xl p-6 sm:p-10 lg:p-12 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] lg:min-h-[460px] relative overflow-hidden">
               {/* Voice Orb Animation */}
               <div className="absolute inset-0 bg-primary/5 blur-[100px]"></div>
               
-              <div className="relative size-64 flex items-center justify-center">
+              <div className="relative size-48 sm:size-56 lg:size-64 flex items-center justify-center">
                 <motion.div 
                   animate={{ scale: [1, 1.2, 1] }}
                   transition={{ duration: 3, repeat: Infinity }}
@@ -852,8 +910,8 @@ export default function SessionControl() {
                   transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
                   className="absolute inset-10 border border-primary/40 rounded-full"
                 />
-                <div className="size-40 rounded-full bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600 shadow-[0_0_60px_rgba(6,182,212,0.4)] flex items-center justify-center border border-white/10">
-                  <Activity className="size-16 text-white" />
+                <div className="size-32 sm:size-36 lg:size-40 rounded-full bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600 shadow-[0_0_60px_rgba(6,182,212,0.4)] flex items-center justify-center border border-white/10">
+                  <Activity className="size-10 sm:size-12 lg:size-16 text-white" />
                 </div>
               </div>
 
@@ -870,26 +928,26 @@ export default function SessionControl() {
               </div>
 
               {isLive && (
-                <div className="mt-10 flex gap-4 z-10 animate-in fade-in slide-in-from-bottom-4">
+                <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-3 z-10 animate-in fade-in slide-in-from-bottom-4">
                   <button 
                     onClick={sendInterrupt}
-                    className="bg-red-900/40 hover:bg-red-800/60 text-red-100 border border-red-500/30 px-8 py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-3 active:scale-95"
+                    className="bg-red-900/40 hover:bg-red-800/60 text-red-100 border border-red-500/30 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
-                    <StopCircle className="size-5" />
+                    <StopCircle className="size-4 sm:size-5" />
                     Interrupt
                   </button>
                   <button 
                     onClick={endSession}
-                    className="bg-surface-highest/60 hover:bg-surface-highest text-on-surface border border-outline-variant/20 px-8 py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-3 active:scale-95"
+                    className="bg-surface-highest/60 hover:bg-surface-highest text-on-surface border border-outline-variant/20 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
-                    <XCircle className="size-5" />
+                    <XCircle className="size-4 sm:size-5" />
                     End Session
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <MetricCard label="STT Latency" value={metrics.stt.toString()} unit="ms" color="border-primary/40" />
               <MetricCard label="LLM TTFT" value={metrics.llm.toString()} unit="ms" color="border-cyan-500/40" />
               <MetricCard label="TTS Latency" value={metrics.tts.toString()} unit="ms" color="border-indigo-500/40" />
@@ -898,25 +956,119 @@ export default function SessionControl() {
           </div>
 
           {/* Right Panel */}
-          <div className="flex flex-col gap-8">
-            <div className="surface-high rounded-3xl p-6 border border-outline-variant/10">
-              <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-4 sm:gap-5 min-h-0">
+            <div className="surface-high rounded-3xl p-4 sm:p-6 border border-outline-variant/10 shrink-0">
+              <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Infrastructure</h4>
                 <span className="text-[10px] text-outline">UPTIME: {infra.uptime}</span>
               </div>
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-2 sm:gap-3">
                 <StatusBadge label="Redis" status={infra.redis} />
-                <StatusBadge label="Deepgram" status={infra.stt} />
-                <StatusBadge label="Groq" status={infra.llm} />
+                <StatusBadge label={infra.stt_provider || "STT"} status={infra.stt} />
+                <StatusBadge label={infra.llm_provider || "LLM"} status={infra.llm} />
+                <StatusBadge label={infra.tts_provider || "TTS"} status={infra.tts} />
               </div>
             </div>
+            
+            {/* Cognitive Load Widget */}
+            {/* <div className={cn(
+              "glass-panel rounded-3xl p-4 sm:p-6 transition-all duration-700 shrink-0",
+              tokenPulse ? "border-primary/50 shadow-[0_0_40px_rgba(251,140,0,0.15)] ring-1 ring-primary/30" : "border-outline-variant/10"
+            )}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Brain className={cn("size-4 transition-colors", tokenPulse ? "text-primary" : "text-on-surface-variant")} />
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Cognitive Load</h4>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <AnimatePresence>
+                    {tokenPulse && (
+                      <motion.span 
+                        initial={{ opacity: 0, x: 5 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="text-[10px] font-black text-primary px-1.5 py-0.5 rounded bg-primary/10"
+                      >
+                         PULSED
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  <span className="text-[10px] text-outline font-mono">LIVE CONSUMPTION</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-bold text-outline tracking-tighter opacity-70">Session Input</p>
+                  <p className="text-xl font-headline font-black text-on-surface">
+                    {sessionTokens.input.toLocaleString()}
+                    <span className="text-[10px] font-normal text-outline/50 ml-1">tokens</span>
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase font-bold text-outline tracking-tighter opacity-70">Session Output</p>
+                  <p className={cn("text-xl font-headline font-black transition-colors", tokenPulse ? "text-primary" : "text-on-surface")}>
+                     {sessionTokens.output.toLocaleString()}
+                     <span className="text-[10px] font-normal text-outline/50 ml-1">tokens</span>
+                  </p>
+                </div>
+              </div> */}
+              
+              {/* <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+                 <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-outline uppercase tracking-widest">Efficiency</span>
+                        <span className={cn("text-xs font-bold transition-colors", toolSuccessRate < 90 ? "text-amber-400" : "text-emerald-400")}>
+                          {toolSuccessRate}% Precision
+                        </span>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-[9px] font-black text-outline uppercase tracking-widest">Total cost</span>
+                        <span className="text-xs font-bold text-on-surface">
+                          ${(() => {
+                            const model = modelLimits.find(m => m.id === (selectedBot?.llm_model || 'llama-3.3-70b-versatile'));
+                            const rate = model?.cost_per_1k || 0.002;
+                            return ((sessionTokens.total / 1000) * rate).toFixed(4);
+                          })()}
+                        </span>
+                    </div>
+                 </div> */}
 
-            <div className="glass-panel rounded-3xl p-6 flex-1 flex flex-col min-h-[500px] h-[600px]">
-              <div className="flex items-center justify-between mb-4">
+                 {/* Token Headroom / Context Window Progress */}
+                 {/* {(() => {
+                    const model = modelLimits.find(m => m.id === (selectedBot?.llm_model || 'llama-3.3-70b-versatile'));
+                    if (!model) return null;
+                    const percent = Math.min(100, (sessionTokens.total / (model.context_window || 128000)) * 100);
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-[9px] uppercase font-black tracking-widest text-outline">
+                          <span>Context Headroom</span>
+                          <span>{sessionTokens.total.toLocaleString()} / {(model.context_window || 128000).toLocaleString()}</span>
+                        </div>
+                        <div className="h-1 bg-surface-highest rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${percent}%` }}
+                            className={cn(
+                              "h-full transition-all duration-1000",
+                              percent > 80 ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]" : 
+                              percent > 50 ? "bg-amber-500" : "bg-primary"
+                            )}
+                          />
+                        </div>
+                      </div>
+                    );
+                 })()}
+              </div> */}
+            {/* </div> */}
+
+            <div className="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col flex-1 min-h-[320px] max-h-[550px] overflow-hidden">
+              {/* Transcript Header */}
+              <div className="flex items-center justify-between mb-3 shrink-0">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Live Transcript</h4>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
                   {isLive && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <div className={cn(
                         "size-2 rounded-full",
                         currentSentiment === 'positive' ? "bg-emerald-400" :
@@ -929,29 +1081,33 @@ export default function SessionControl() {
                       )}>{currentSentiment}</span>
                     </div>
                   )}
-                  {isLive && <div className="flex items-center gap-2">
-                    <div className="size-2 rounded-full bg-primary animate-pulse" />
-                    <span className="text-[10px] text-primary font-bold uppercase">Real-time STT</span>
-                  </div>}
+                  {isLive && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="size-2 rounded-full bg-primary animate-pulse" />
+                      <span className="text-[10px] text-primary font-bold uppercase hidden sm:inline">Real-time STT</span>
+                      <span className="text-[10px] text-primary font-bold uppercase sm:hidden">STT</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Sentiment Alert Banner */}
               {negativeSentimentCount >= 3 && (
-                <div className="mb-3 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 animate-pulse">
-                  <div className="size-2 rounded-full bg-amber-400" />
+                <div className="mb-3 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 animate-pulse shrink-0">
+                  <div className="size-2 rounded-full bg-amber-400 shrink-0" />
                   <span className="text-xs font-bold text-amber-400 uppercase tracking-widest">Sentiment Alert — Caller distress detected</span>
                 </div>
               )}
-              
+
+              {/* Scrollable transcript body — min-h-0 is required for overflow-y to engage in a flex column */}
               <div 
                 ref={transcriptRef}
-                className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar scroll-smooth"
+                className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 sm:pr-2 custom-scrollbar scroll-smooth"
               >
                 {transcripts.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-8 opacity-40">
-                    <div className="size-16 rounded-full bg-surface-highest flex items-center justify-center mb-4">
-                      <Terminal className="size-8 text-outline" />
+                  <div className="flex flex-col items-center justify-center h-full text-center p-6 opacity-40">
+                    <div className="size-14 rounded-full bg-surface-highest flex items-center justify-center mb-3">
+                      <Terminal className="size-7 text-outline" />
                     </div>
                     <p className="text-sm font-medium">Waiting for communication...</p>
                   </div>
@@ -959,7 +1115,7 @@ export default function SessionControl() {
                   transcripts.map((t, i) => (
                     <div key={i} className={cn(
                       "flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300",
-                      t.role === 'User' ? "items-end pl-10" : "items-start pr-10"
+                      t.role === 'User' ? "items-end pl-6 sm:pl-10" : "items-start pr-6 sm:pr-10"
                     )}>
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className={cn(
@@ -982,9 +1138,9 @@ export default function SessionControl() {
                           />
                         )}
                       </div>
-                      
+
                       <div className={cn(
-                        "px-4 py-3 rounded-2xl text-sm shadow-sm transition-all relative group",
+                        "px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl text-sm shadow-sm transition-all relative",
                         t.role === 'User' 
                           ? "bg-surface-highest text-on-surface rounded-tr-none border border-white/5" 
                           : "bg-primary/10 border border-primary/20 text-on-surface rounded-tl-none"
@@ -996,9 +1152,10 @@ export default function SessionControl() {
                   ))
                 )}
               </div>
-              
+
+              {/* Simulator text input */}
               {isLive && (
-                <div className="mt-4 pt-4 border-t border-white/5">
+                <div className="mt-3 pt-3 border-t border-white/5 shrink-0">
                   <form 
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -1014,7 +1171,7 @@ export default function SessionControl() {
                       name="query"
                       type="text" 
                       placeholder="Type a message (Simulator Mode)..."
-                      className="w-full bg-surface-highest border border-white/5 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:border-primary/40 transition-all text-on-surface"
+                      className="w-full bg-surface-highest border border-white/5 rounded-xl py-2.5 pl-4 pr-11 text-sm focus:outline-none focus:border-primary/40 transition-all text-on-surface"
                     />
                     <button type="submit" className="absolute right-2 top-1.5 p-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-all">
                       <Zap className="size-4" />
@@ -1024,7 +1181,7 @@ export default function SessionControl() {
               )}
             </div>
 
-            <div className="surface-lowest rounded-3xl p-6 font-mono text-[10px] h-[300px] flex flex-col border border-outline-variant/5">
+            <div className="surface-lowest rounded-3xl p-4 sm:p-6 font-mono text-[10px] h-[220px] sm:h-[260px] lg:h-[300px] flex flex-col shrink-0 border border-outline-variant/5">
               <div className="flex items-center justify-between mb-4 border-b border-outline-variant/10 pb-2">
                 <div className="flex items-center gap-2">
                   <Terminal className="size-4 text-primary" />
@@ -1109,17 +1266,32 @@ function MetricCard({ label, value, unit, color, highlight }: any) {
 }
 
 function StatusBadge({ label, status = 'online' }: any) {
-  const isOnline = status === 'online';
+  const cfg: Record<string, { dot: string; border: string; pill: string; hint: string }> = {
+    online:      { dot: 'bg-green-500',  border: 'border-green-500/20',  pill: '',                          hint: 'Online'     },
+    offline:     { dot: 'bg-red-500',    border: 'border-red-500/30',    pill: 'bg-red-500/10 text-red-400', hint: 'Offline'    },
+    simulator:   { dot: 'bg-yellow-400', border: 'border-yellow-400/30', pill: 'bg-yellow-400/10 text-yellow-400', hint: 'Simulator' },
+    degraded:    { dot: 'bg-orange-400', border: 'border-orange-400/30', pill: 'bg-orange-400/10 text-orange-400', hint: 'Degraded' },
+    unavailable: { dot: 'bg-zinc-500',   border: 'border-zinc-500/20',   pill: 'bg-zinc-500/10 text-zinc-400', hint: 'N/A'      },
+  };
+  const s = cfg[status] ?? cfg.offline;
   return (
-    <div className={cn(
-      "flex items-center gap-2 bg-background/50 px-3 py-1.5 rounded-lg border",
-      isOnline ? "border-green-500/20" : "border-red-500/20"
-    )}>
+    <div
+      className={cn(
+        'flex items-center gap-2 bg-background/50 px-3 py-1.5 rounded-lg border transition-colors',
+        s.border,
+        s.pill,
+      )}
+      title={`${label}: ${s.hint}`}
+    >
       <div className={cn(
-        "size-1.5 rounded-full",
-        isOnline ? "bg-green-500" : "bg-red-500"
-      )}></div>
+        'size-1.5 rounded-full shrink-0',
+        s.dot,
+        status === 'online' && 'animate-pulse',
+      )} />
       <span className="text-xs font-medium">{label}</span>
+      {status !== 'online' && (
+        <span className="text-[10px] opacity-70 font-mono">{s.hint}</span>
+      )}
     </div>
   );
 }

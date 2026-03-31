@@ -46,7 +46,5 @@ class ToolRegistry:
         """Create an instance of a tool with the provided context."""
         tool_cls = ToolRegistry.get_tool_class(name)
         if tool_cls:
-            if name == "end_voice_session":
-                return tool_cls(session=session, db=db, data_access_policy=data_access_policy, brain=brain)
-            return tool_cls(session=session, db=db, data_access_policy=data_access_policy)
+            return tool_cls(session=session, db=db, data_access_policy=data_access_policy, brain=brain)
         return None

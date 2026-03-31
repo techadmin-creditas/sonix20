@@ -36,9 +36,10 @@ class AnthropicStreamingProvider:
         max_tokens: int = 1024,
     ):
         self.api_key = api_key or settings.anthropic_api_key
-        self.model = model or settings.anthropic_model or "claude-haiku-4-20250514"
         self.max_tokens = max_tokens
         self._client = None
+        self.provider = "anthropic"
+        self.model = model or settings.anthropic_model or "claude-haiku-4-20250514"
 
     async def _get_client(self):
         """Lazily initialize the Anthropic async client."""
@@ -107,9 +108,18 @@ class AnthropicStreamingProvider:
             ) as stream:
                 pending_tool_calls: list[dict] = []
                 current_tool: dict = {}
+                usage_stats = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
                 async for event in stream:
                     event_type = type(event).__name__
+
+                    # Capture usage from message start or delta
+                    if hasattr(event, "message") and hasattr(event.message, "usage"):
+                        usage_stats["prompt_tokens"] = event.message.usage.input_tokens
+                        usage_stats["completion_tokens"] = event.message.usage.output_tokens
+                    elif hasattr(event, "usage"):
+                        # In delta events, output_tokens are provided
+                        usage_stats["completion_tokens"] = event.usage.output_tokens
 
                     # Text delta
                     if event_type == "RawContentBlockDeltaEvent":
@@ -151,6 +161,10 @@ class AnthropicStreamingProvider:
                                 )
                             )
                             current_tool = {}
+
+                # Emit cumulative usage
+                usage_stats["total_tokens"] = usage_stats["prompt_tokens"] + usage_stats["completion_tokens"]
+                yield LLMResponse(usage=usage_stats)
 
                 # Emit accumulated tool calls at end of stream
                 if pending_tool_calls:

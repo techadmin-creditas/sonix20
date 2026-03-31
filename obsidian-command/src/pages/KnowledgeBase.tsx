@@ -22,16 +22,24 @@ export default function KnowledgeBase() {
   const [selectedEntry, setSelectedEntry] = useState<KnowledgeEntry | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Global');
+  const [activeTab, setActiveTab] = useState<'manual' | 'learned'>('manual');
+  const [bots, setBots] = useState<any[]>([]);
+  const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [formData, setFormData] = useState({ question: '', answer: '', topic: 'General', priority: 2 });
 
   const loadEntries = async () => {
+    setLoading(true);
     try {
-      const data = await api.getKnowledgeEntries();
-      setEntries(data);
-      if (data.length > 0 && !selectedEntry) {
-        setSelectedEntry(data[0]);
+      if (activeTab === 'manual') {
+        const data = await api.getKnowledgeEntries();
+        setEntries(data);
+      } else if (selectedBotId) {
+        const data = await api.getLearnedMemory(selectedBotId);
+        setEntries(data);
+      } else {
+        setEntries([]);
       }
     } catch (err) {
       console.error(err);
@@ -40,9 +48,25 @@ export default function KnowledgeBase() {
     }
   };
 
+  const loadBots = async () => {
+    try {
+      const data = await api.getBots();
+      setBots(data);
+      if (data.length > 0 && !selectedBotId) {
+        setSelectedBotId(data[0].id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  React.useEffect(() => {
+    loadBots();
+  }, []);
+
   React.useEffect(() => {
     loadEntries();
-  }, []);
+  }, [activeTab, selectedBotId]);
 
   const filteredEntries = entries.filter(entry => {
     const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -53,9 +77,13 @@ export default function KnowledgeBase() {
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this key knowledge entry?')) {
+    if (confirm('Are you sure you want to delete this knowledge entry?')) {
       try {
-        await api.deleteKnowledgeEntry(id);
+        if (activeTab === 'manual') {
+          await api.deleteKnowledgeEntry(id);
+        } else {
+          await api.deleteLearnedMemory(id.toString());
+        }
         setEntries(prev => prev.filter(ent => ent.id !== id));
         if (selectedEntry?.id === id) {
           setSelectedEntry(null);
@@ -107,8 +135,8 @@ export default function KnowledgeBase() {
           </div>
         </div>
 
-        <div className="mb-10 space-y-6">
-          <div className="relative group">
+        <div className="mb-10 flex flex-col md:flex-row gap-6 items-center">
+          <div className="relative flex-1 group">
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 size-6 text-outline group-focus-within:text-primary transition-colors" />
             <input 
               type="text" 
@@ -118,17 +146,52 @@ export default function KnowledgeBase() {
               className="w-full h-16 pl-16 pr-6 bg-surface-low rounded-xl border-none ring-1 ring-white/5 focus:ring-primary/40 focus:bg-surface transition-all text-lg placeholder:text-outline/50 text-on-surface shadow-xl"
             />
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Models:</span>
-            {['Global', 'Alex', 'Nova', 'Max'].map(filter => (
-              <FilterChip 
-                key={filter} 
-                label={filter} 
-                active={activeFilter === filter} 
-                onClick={() => setActiveFilter(filter)}
-              />
-            ))}
+          <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0">
+             <button 
+                onClick={() => setActiveTab('manual')}
+                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest", 
+                  activeTab === 'manual' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+             >
+                Manual Core
+             </button>
+             <button 
+                onClick={() => setActiveTab('learned')}
+                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest", 
+                  activeTab === 'learned' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+             >
+                Autonomous Memory
+             </button>
           </div>
+        </div>
+
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
+            {activeTab === 'manual' ? (
+                ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
+                    <FilterChip 
+                        key={filter} 
+                        label={filter} 
+                        active={activeFilter === filter} 
+                        onClick={() => setActiveFilter(filter)}
+                    />
+                ))
+            ) : (
+                bots.map(bot => (
+                    <FilterChip 
+                        key={bot.id} 
+                        label={bot.name} 
+                        active={selectedBotId === bot.id} 
+                        onClick={() => setSelectedBotId(bot.id)}
+                    />
+                ))
+            )}
+          </div>
+          {activeTab === 'learned' && (
+            <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20">
+              Live Vector Stream Active
+            </div>
+          )}
         </div>
 
         <div className="flex gap-8 relative">

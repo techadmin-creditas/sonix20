@@ -7,7 +7,7 @@ import {
   Search, Filter, Download, MoreVertical, 
   Play, MessageSquare, Clock, Calendar,
   ChevronRight, Smile, BarChart2, Trash2,
-  Loader2,
+  Loader2, Zap, Terminal,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { api, SessionRecord } from '../lib/api';
@@ -191,6 +191,27 @@ export default function Sessions() {
                       <span className="text-[10px] text-outline">—</span>
                     )}
                   </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 text-outline">
+                      <Zap className="size-3" />
+                      <span className="text-[10px] font-bold uppercase">Tokens</span>
+                    </div>
+                    <p className="text-xs font-bold">{session.metadata?.tokens?.total?.toLocaleString() || '—'}</p>
+                  </div>
+                  {session.metadata?.tool_performance?.success_rate != null && (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 text-outline">
+                        <Terminal className="size-3" />
+                        <span className="text-[10px] font-bold uppercase">Precision</span>
+                      </div>
+                      <p className={cn(
+                        "text-xs font-bold", 
+                        session.metadata.tool_performance.success_rate < 90 ? "text-amber-500" : "text-emerald-500"
+                      )}>
+                        {session.metadata.tool_performance.success_rate}%
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Time & Action */}

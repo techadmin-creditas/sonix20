@@ -219,20 +219,29 @@ async def get_session_facts(session_id: str):
 
 @router.get("/bots", tags=["bots"])
 async def list_bots():
-    """List all active bot configurations."""
+    """List all active bot configurations with aggregate usage."""
     db = await get_db()
     bots = await db.list_bots()
-    return {"bots": bots, "count": len(bots)}
+    
+    # Enrich with lifetime usage
+    enriched = []
+    for bot in bots:
+        usage = await db.get_bot_usage(bot["id"])
+        enriched.append({**bot, "lifetime_usage": usage})
+        
+    return {"bots": enriched, "count": len(bots)}
 
 
 @router.get("/bots/{bot_id}", tags=["bots"])
 async def get_bot(bot_id: str):
-    """Get a specific bot configuration by ID."""
+    """Get a specific bot configuration by ID with usage stats."""
     db = await get_db()
     bot = await db.get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
-    return bot
+    
+    usage = await db.get_bot_usage(bot_id)
+    return {**bot, "lifetime_usage": usage}
 
 
 @router.post("/bots", tags=["bots"])
@@ -539,19 +548,118 @@ async def delete_knowledge(entry_id: int):
 # ─── Metadata Endpoints ───────────────────────────────────────────────────────
 @router.get("/metadata/models", tags=["metadata"])
 async def get_supported_models():
-    """List supported LLM models across providers. Anthropic models included when key is set."""
-    import os
+    """List supported LLM models across providers. Keys checked via settings (loaded from .env)."""
     models = [
-        {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq)", "provider": "groq"},
-        {"id": "llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq)", "provider": "groq"},
-        {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "provider": "gemini"},
-        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "gemini"},
-        {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai"},
+        {
+            "id": "llama-3.3-70b-versatile",
+            "name": "Llama 3.3 70B (Groq)",
+            "provider": "groq",
+            "context_window": 128000,
+            "max_tpm": 6000, # Approx for Groq free tier or common tier
+            "cost_per_1k": 0.0006
+        },
+        {
+            "id": "llama-3.1-8b-instant",
+            "name": "Llama 3.1 8B (Groq)",
+            "provider": "groq",
+            "context_window": 128000,
+            "max_tpm": 30000,
+            "cost_per_1k": 0.00005
+        },
+        {
+            "id": "gemini-1.5-flash",
+            "name": "Gemini 1.5 Flash",
+            "provider": "gemini",
+            "context_window": 1000000,
+            "max_tpm": 1000000,
+            "cost_per_1k": 0.000075
+        },
+        {
+            "id": "gemini-1.5-pro",
+            "name": "Gemini 1.5 Pro",
+            "provider": "gemini",
+            "context_window": 2000000,
+            "max_tpm": 1000000,
+            "cost_per_1k": 0.0035
+        },
+        {
+            "id": "gpt-4o",
+            "name": "GPT-4o",
+            "provider": "openai",
+            "context_window": 128000,
+            "max_tpm": 200000,
+            "cost_per_1k": 0.005
+        },
     ]
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if settings.openrouter_api_key:
         models += [
-            {"id": "claude-haiku-3-5", "name": "Claude Haiku 3.5 (Anthropic)", "provider": "anthropic"},
-            {"id": "claude-sonnet-3-5", "name": "Claude Sonnet 3.5 (Anthropic)", "provider": "anthropic"},
+            {
+                "id": "google/gemini-flash-1.5-8b",
+                "name": "Gemini Flash 1.5 (OpenRouter Free)",
+                "provider": "openrouter",
+                "context_window": 1000000,
+                "max_tpm": 20000,
+                "cost_per_1k": 0.0
+            },
+            {
+                "id": "anthropic/claude-3-haiku",
+                "name": "Claude Haiku (OpenRouter Fast)",
+                "provider": "openrouter",
+                "context_window": 200000,
+                "max_tpm": 20000,
+                "cost_per_1k": 0.0
+            },
+            {
+                "id": "meta-llama/llama-3.3-70b-instruct:free",
+                "name": "Llama 70B (OpenRouter Free)",
+                "provider": "openrouter",
+                "context_window": 131000,
+                "max_tpm": 15000,
+                "cost_per_1k": 0.0
+            },
+            {
+                "id": "meta-llama/llama-3.1-8b-instruct",
+                "name": "Llama 8B (OpenRouter Free)",
+                "provider": "openrouter",
+                "context_window": 131000,
+                "max_tpm": 15000,
+                "cost_per_1k": 0.0
+            },
+            {
+                "id": "anthropic/claude-3.5-sonnet",
+                "name": "Claude 3.5 Sonnet (OpenRouter)",
+                "provider": "openrouter",
+                "context_window": 200000,
+                "max_tpm": 80000,
+                "cost_per_1k": 0.003
+            },
+            {
+                "id": "openai/gpt-4o-mini",
+                "name": "GPT-4o mini (OpenRouter)",
+                "provider": "openrouter",
+                "context_window": 128000,
+                "max_tpm": 200000,
+                "cost_per_1k": 0.005
+            },
+        ]
+    if settings.anthropic_api_key:
+        models += [
+            {
+                "id": "claude-haiku-3-5",
+                "name": "Claude Haiku 3.5 (Anthropic)",
+                "provider": "anthropic",
+                "context_window": 200000,
+                "max_tpm": 100000,
+                "cost_per_1k": 0.00025
+            },
+            {
+                "id": "claude-sonnet-3-5",
+                "name": "Claude Sonnet 3.5 (Anthropic)",
+                "provider": "anthropic",
+                "context_window": 200000,
+                "max_tpm": 80000,
+                "cost_per_1k": 0.003
+            },
         ]
     return {"models": models}
 
@@ -640,13 +748,40 @@ async def get_intent_analytics(limit: int = 100):
     return {"intents": intents, "count": len(intents)}
 
 
+_vector_db: Optional[VectorMemoryProvider] = None
+
+async def get_vector_db() -> VectorMemoryProvider:
+    global _vector_db
+    if _vector_db is None:
+        from voicebot.services.memory.vector_provider import VectorMemoryProvider
+        _vector_db = VectorMemoryProvider()
+        await _vector_db.connect()
+    elif not _vector_db._available:
+        # Re-attempt connection if it was previously unavailable (e.g. chromadb just installed)
+        await _vector_db.connect()
+    return _vector_db
+
+@router.get("/bots/{bot_id}/memory")
+async def get_bot_memory(bot_id: str):
+    """Retrieve all learned knowledge and memory for a specific bot."""
+    provider = await get_vector_db()
+    facts = await provider.list_bot_knowledge(bot_id)
+    return {"bot_id": bot_id, "facts": facts, "count": len(facts)}
+
+@router.delete("/memory/{fact_id}")
+async def delete_memory_fact(fact_id: str):
+    """Delete a specific learned fact from vector memory."""
+    provider = await get_vector_db()
+    success = await provider.delete_fact(fact_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Fact not found or delete failed")
+    return {"status": "deleted", "id": fact_id}
+
 @router.get("/health/vector", tags=["health"])
 async def vector_health():
     """Check ChromaDB vector memory status and document count."""
     try:
-        from voicebot.services.memory.vector_provider import VectorMemoryProvider
-        provider = VectorMemoryProvider()
-        await provider.connect()
+        provider = await get_vector_db()
         if not provider._available:
             return {"status": "offline", "doc_count": 0, "reason": "chromadb not installed"}
         doc_count = 0

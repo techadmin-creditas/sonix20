@@ -42,6 +42,18 @@ class DeepgramTTSProvider:
         
         self._url = "https://api.deepgram.com/v1/speak"
         self._stopped = False
+        # Persistent HTTP client — reused across TTS calls to avoid TCP handshake
+        # overhead (~150-300ms) on every synthesis.
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Lazy-init a persistent httpx client (HTTP/2 keepalive)."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
+                http2=True,
+            )
+        return self._http_client
 
     async def stream_speech(
         self,
@@ -49,6 +61,7 @@ class DeepgramTTSProvider:
     ) -> AsyncIterator[bytes]:
         """
         Stream audio chunks for the given text.
+        Reuses a persistent HTTP client to avoid per-call TCP connection overhead.
         """
         if not text.strip():
             return
@@ -70,25 +83,30 @@ class DeepgramTTSProvider:
 
         try:
             logger.info("Deepgram TTS starting: model=%s, text='%s'", self.model, text[:40])
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                async with client.stream(
-                    "POST", self._url, params=params, headers=headers, json=payload
-                ) as response:
-                    if response.status_code != 200:
-                        logger.error("Deepgram TTS error status: %d", response.status_code)
-                        # Avoid reading response here if it might hang
-                        return
+            client = await self._get_http_client()
+            async with client.stream(
+                "POST", self._url, params=params, headers=headers, json=payload
+            ) as response:
+                if response.status_code != 200:
+                    logger.error("Deepgram TTS error status: %d", response.status_code)
+                    return
 
-                    chunk_count = 0
-                    async for chunk in response.aiter_bytes(chunk_size=4096):
-                        if self._stopped:
-                            break
-                        chunk_count += 1
-                        if chunk_count % 5 == 0:
-                            logger.debug("Received TTS chunk %d (size=%d bytes)", chunk_count, len(chunk))
-                        yield chunk
-                    logger.info("Deepgram TTS streaming complete (total chunks: %d)", chunk_count)
+                chunk_count = 0
+                async for chunk in response.aiter_bytes(chunk_size=4096):
+                    if self._stopped:
+                        break
+                    chunk_count += 1
+                    if chunk_count % 5 == 0:
+                        logger.debug("Received TTS chunk %d (size=%d bytes)", chunk_count, len(chunk))
+                    yield chunk
+                logger.info("Deepgram TTS streaming complete (total chunks: %d)", chunk_count)
 
+        except httpx.HTTPStatusError as hse:
+            try:
+                error_body = await hse.response.aread()
+                logger.error("Deepgram TTS API error (%d): %s", hse.response.status_code, error_body.decode())
+            except Exception:
+                logger.error("Deepgram TTS API error (%d)", hse.response.status_code)
         except Exception as e:
             logger.error("Deepgram TTS streaming error: %s", e)
 
@@ -97,6 +115,9 @@ class DeepgramTTSProvider:
         self._stopped = True
 
     async def disconnect(self) -> None:
-        """Cleanup resources."""
+        """Cleanup resources and close the persistent HTTP client."""
         self._stopped = True
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
         logger.info("Deepgram TTS provider disconnected")

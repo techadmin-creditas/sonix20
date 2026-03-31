@@ -42,6 +42,7 @@ class GroqStreamingProvider:
         self.max_tokens = max_tokens or 1024
         self.temperature = temperature if temperature is not None else 0.7
         self._client = None
+        self.provider = "groq"
 
     async def _get_client(self):
         """Lazy-initialize the async Groq client."""
@@ -103,6 +104,14 @@ class GroqStreamingProvider:
             active_tool_calls: dict[int, dict[str, Any]] = {}
 
             async for chunk in stream:
+                # Handle usage data (usually in final chunk with null choices)
+                if hasattr(chunk, "usage") and chunk.usage:
+                    yield LLMResponse(usage={
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens
+                    })
+
                 if not chunk.choices: continue
                 delta = chunk.choices[0].delta
                 

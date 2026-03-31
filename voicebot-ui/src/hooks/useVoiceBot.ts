@@ -81,6 +81,8 @@ export function useVoiceBot(botId?: string) {
     }
   }, []);
 
+  const [metrics, setMetrics] = useState<any>(null);
+
   const handleTextData = (msg: any) => {
     switch (msg.type) {
       case 'status':
@@ -88,6 +90,9 @@ export function useVoiceBot(botId?: string) {
         if (msg.state === 'bot_switched' && msg.bot) {
           setActiveBotName(msg.bot);
         }
+        break;
+      case 'metrics':
+        setMetrics(msg);
         break;
       case 'transcript':
         updateTranscript(msg.text, 'user', msg.is_final);
@@ -108,7 +113,7 @@ export function useVoiceBot(botId?: string) {
   };
 
   const updateTranscript = (text: string, role: 'user' | 'bot', isFinal: boolean) => {
-    setTranscripts(prev => {
+    setTranscripts((prev: Transcript[]) => {
       const last = prev[prev.length - 1];
 
       // If the last entry is the same role AND still a partial, update it in place
@@ -208,7 +213,7 @@ export function useVoiceBot(botId?: string) {
   };
 
   const stopAudioCapture = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current?.getTracks().forEach((track: MediaStreamTrack) => track.stop());
     processorRef.current?.disconnect();
     audioContextRef.current?.close();
   };
@@ -242,5 +247,6 @@ export function useVoiceBot(botId?: string) {
     endSession,
     interrupt,
     switchBot,
+    metrics,
   };
 }

@@ -1,14 +1,34 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useVoiceBot } from '@/hooks/useVoiceBot';
 import { VoiceOrb } from '@/components/VoiceOrb';
 import { Transcript } from '@/components/Transcript';
 import { PipelineVisualizer } from '@/components/PipelineVisualizer';
-import { Settings, LogOut, Terminal, Activity, Zap, Shield, HelpCircle, User, MessageCircle, FileText } from 'lucide-react';
+import { KnowledgeMemory } from '@/components/KnowledgeMemory';
+import { Settings, LogOut, Terminal, Activity, Zap, Shield, HelpCircle, User, MessageCircle, FileText, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Home() {
-  const { state, transcripts, error, startSession, endSession, interrupt } = useVoiceBot();
+  const { state, transcripts, error, startSession, endSession, interrupt, metrics } = useVoiceBot();
+  const [activeTab, setActiveTab] = useState<'transcript' | 'memory'>('transcript');
+  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch active bot on mount
+    const fetchBots = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/v1/bots');
+        const data = await res.json();
+        if (data.bots && data.bots.length > 0) {
+          setActiveBotId(data.bots[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch bots:', err);
+      }
+    };
+    fetchBots();
+  }, []);
 
   return (
     <main className="min-h-screen bg-[#050608] text-slate-100 flex flex-col font-sans selection:bg-blue-500/30">
@@ -108,37 +128,85 @@ export default function Home() {
                  </p>
               </div>
               <div className="bg-slate-900/40 border border-white/5 rounded-3xl p-6 group cursor-default">
-                 <div className="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <Terminal size={20} className="text-purple-500" />
+                 <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform relative">
+                    <Brain size={20} className="text-amber-500" />
+                    {metrics?.tokens_turn?.total_tokens > 0 && (
+                       <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full animate-ping" />
+                    )}
                  </div>
-                 <h3 className="text-xs font-black text-white mb-2 uppercase tracking-widest">Real-time STT Context</h3>
-                 <p className="text-[10px] text-slate-500 font-bold leading-relaxed tracking-wider">
-                    Using Deepgram Nova-2 with Interim Results enabled. 
-                    Confidence Scoring: <span className="text-purple-500">92% Average</span>
-                 </p>
+                 <h3 className="text-xs font-black text-white mb-2 uppercase tracking-widest flex items-center gap-2">
+                    Cognitive Load
+                    {metrics?.tokens_turn?.total_tokens > 0 && (
+                       <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 animate-pulse">
+                          +{metrics.tokens_turn.total_tokens}
+                       </span>
+                    )}
+                 </h3>
+                 <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-black text-amber-500 tracking-tight">
+                       {metrics?.tokens_session?.total?.toLocaleString() || '0'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">Tokens consumed</span>
+                 </div>
+                 <div className="mt-4 flex gap-4 border-t border-white/5 pt-4">
+                    <div className="flex flex-col">
+                       <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Input</span>
+                       <span className="text-[11px] font-mono text-slate-300">
+                          {metrics?.tokens_session?.prompt?.toLocaleString() || '0'}
+                       </span>
+                    </div>
+                    <div className="flex flex-col">
+                       <span className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Output</span>
+                       <span className="text-[11px] font-mono text-slate-300">
+                          {metrics?.tokens_session?.completion?.toLocaleString() || '0'}
+                       </span>
+                    </div>
+                 </div>
               </div>
            </div>
 
         </div>
 
-        {/* 📜 History (Right) */}
+        {/* 📜 Center/Right Panel: Tabs for History vs Memory */}
         <div className="flex-[0.6] flex flex-col bg-slate-900/30 border border-white/10 rounded-3xl overflow-hidden min-h-[500px] lg:min-h-0 backdrop-blur-sm">
-           <div className="p-6 border-b border-white/5 bg-slate-900/40 flex items-center justify-between">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-200 flex items-center gap-2">
-                 <FileText size={14} className="text-indigo-400" /> Live Transcript
-              </h2>
-              <div className="flex gap-2">
+           <div className="p-2 border-b border-white/5 bg-slate-900/40 flex items-center justify-between">
+              <div className="flex p-1 bg-black/20 rounded-xl">
+                 <button 
+                   onClick={() => setActiveTab('transcript')}
+                   className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                     activeTab === 'transcript' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                   }`}
+                 >
+                    <FileText size={12} /> Transcript
+                 </button>
+                 <button 
+                   onClick={() => setActiveTab('memory')}
+                   className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                     activeTab === 'memory' ? 'bg-white/10 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                   }`}
+                 >
+                    <Brain size={12} /> Knowledge
+                 </button>
+              </div>
+              <div className="flex gap-2 pr-4">
                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500/50 animate-pulse" />
                  <div className="w-1.5 h-1.5 rounded-full bg-white/10" />
               </div>
            </div>
            
-           <Transcript transcripts={transcripts} className="flex-1" />
-           
-           <div className="p-6 border-t border-white/5 bg-slate-900/20 text-center">
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 flex items-center justify-center gap-2 italic">
-                 <HelpCircle size={10} /> Conversation history is stored in local session cache
-              </p>
+           <div className="flex-1 overflow-hidden flex flex-col">
+              {activeTab === 'transcript' ? (
+                 <>
+                   <Transcript transcripts={transcripts} className="flex-1" />
+                   <div className="p-6 border-t border-white/5 bg-slate-900/20 text-center">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 flex items-center justify-center gap-2 italic">
+                         <HelpCircle size={10} /> Conversation history is stored in local session cache
+                      </p>
+                   </div>
+                 </>
+              ) : (
+                 <KnowledgeMemory botId={activeBotId || 'default'} className="flex-1 border-none bg-transparent" />
+              )}
            </div>
         </div>
 

@@ -69,6 +69,11 @@ class SessionState(BaseModel):
     tts_provider_used: str = ""            # 'deepgram_ws' | 'deepgram_http' | 'elevenlabs' | 's2s'
     false_interruption_count: int = 0      # Echo-triggered self-interruptions this session
 
+    # Resource usage tracking
+    cumulative_prompt_tokens: int = 0
+    cumulative_completion_tokens: int = 0
+    cumulative_total_tokens: int = 0
+
     # Metadata for the session (task phase, slots, counters — see AgenticBrain)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

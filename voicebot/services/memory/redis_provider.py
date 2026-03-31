@@ -151,6 +151,16 @@ class RedisSessionProvider:
         except Exception:
             pass
 
+    async def ping(self) -> bool:
+        """Check if Redis is alive and responding."""
+        if not self._redis:
+            return False
+        try:
+            await self._redis.ping()
+            return True
+        except Exception:
+            return False
+
     async def disconnect(self) -> None:
         """Close Redis connection."""
         if self._redis:

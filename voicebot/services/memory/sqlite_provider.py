@@ -109,6 +109,8 @@ class SQLiteProvider:
             ("audio_frame_normalize", "INTEGER DEFAULT 1"),       # 1 = normalize to 20 ms frames
             ("default_language", "TEXT DEFAULT 'hi'"),
             ("proactive_prompts", "TEXT DEFAULT '[]'"),
+            ("topic_restriction", "TEXT DEFAULT NULL"),
+            ("refuse_off_topic", "INTEGER DEFAULT 0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -325,16 +327,17 @@ class SQLiteProvider:
                          icon: str = "bot",
                          color: str = "primary",
                          temperature: float = 0.7,
-                         max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None) -> dict:
+                         max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
+                         topic_restriction: Optional[str] = None, refuse_off_topic: bool = False) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or [])))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -384,7 +387,7 @@ class SQLiteProvider:
         """List all active bots."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
+            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
             results = []
             for r in rows:
                 d = dict(r)
@@ -406,13 +409,17 @@ class SQLiteProvider:
                 "llm_model", "voice_id", "role", "icon", "color", "temperature", "max_tokens", "workflow_id",
                 "guardrail_policy", "data_access_policy", "conversation_policy", "pipeline_mode",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
+                "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
                 "stt_utterance_end_ms", "first_segment_chars", "audio_frame_normalize", "proactive_prompts",
+                "topic_restriction", "refuse_off_topic",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
                 updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
             if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
                 updates["proactive_prompts"] = json.dumps(updates["proactive_prompts"])
+            if "refuse_off_topic" in updates:
+                updates["refuse_off_topic"] = 1 if updates["refuse_off_topic"] else 0
             if "agent_task_spec" in updates and isinstance(updates["agent_task_spec"], dict):
                 updates["agent_task_spec"] = json.dumps(updates["agent_task_spec"])
             for pol in ("guardrail_policy", "data_access_policy", "conversation_policy"):
@@ -548,11 +555,16 @@ class SQLiteProvider:
             conn = self._get_conn()
             rows = conn.execute("""
                 SELECT s.id, s.bot_id, b.name as bot_name, s.user_id, s.language,
-                       s.started_at, s.ended_at, s.turn_count
+                       s.started_at, s.ended_at, s.turn_count, s.metadata
                 FROM sessions s LEFT JOIN bots b ON s.bot_id = b.id
                 ORDER BY s.started_at DESC LIMIT ?
             """, (limit,)).fetchall()
-            return [dict(r) for r in rows]
+            results = []
+            for r in rows:
+                d = dict(r)
+                d["metadata"] = json.loads(d["metadata"]) if d.get("metadata") else {}
+                results.append(d)
+            return results
         return await self._run(_do)
 
     # ─── Conversation Logging ─────────────────────────────────────────────────
@@ -865,8 +877,10 @@ class SQLiteProvider:
         tts_ms: float = 0.0,
         total_ms: float = 0.0,
         first_audio_ms: float = 0.0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
     ) -> None:
-        """Persist per-turn pipeline latency metrics for analytics."""
+        """Persist per-turn pipeline latency and token metrics."""
         def _do():
             conn = self._get_conn()
             conn.execute("""
@@ -878,9 +892,41 @@ class SQLiteProvider:
                 "tts_ms": round(tts_ms, 1),
                 "total_ms": round(total_ms, 1),
                 "first_audio_ms": round(first_audio_ms, 1),
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens
             })))
             conn.commit()
         await self._run(_do)
+
+    async def get_bot_usage(self, bot_id: str) -> dict:
+        """Aggregate lifetime token usage for a specific bot."""
+        def _do():
+            conn = self._get_conn()
+            # We join sessions and tool_logs to find metrics for this bot
+            cursor = conn.execute("""
+                SELECT t.arguments 
+                FROM tool_logs t
+                JOIN sessions s ON t.session_id = s.id
+                WHERE s.bot_id = ? AND t.tool_name = '__metrics__'
+            """, (bot_id,))
+            
+            total_prompt = 0
+            total_completion = 0
+            for row in cursor:
+                try:
+                    metrics = json.loads(row[0])
+                    total_prompt += metrics.get("prompt_tokens", 0)
+                    total_completion += metrics.get("completion_tokens", 0)
+                except Exception:
+                    continue
+            
+            return {
+                "prompt_tokens": total_prompt,
+                "completion_tokens": total_completion,
+                "total_tokens": total_prompt + total_completion
+            }
+        return await self._run(_do)
 
     async def log_tool_call(self, session_id: str, tool_name: str,
                              arguments: dict, result: str, is_error: bool = False) -> None:

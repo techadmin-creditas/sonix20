@@ -38,3 +38,4 @@ class LLMResponse(BaseModel):
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
     finish_reason: Optional[str] = None
+    usage: Optional[Dict[str, int]] = Field(default=None)  # {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
