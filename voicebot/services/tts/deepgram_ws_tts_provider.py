@@ -145,8 +145,17 @@ class DeepgramWSTTSProvider:
         get audio in ~50 ms instead of the 200–400 ms for a new HTTP POST.
         """
         text = (text or "").strip()
-        if not text or not self._connected:
+        if not text:
             return
+
+        # Auto-heal transient WS disconnects (e.g. provider policy close) so
+        # subsequent bot turns still produce audio instead of silent failures.
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                logger.warning("WS TTS reconnect failed; skipping segment")
+                return
 
         async with self._speak_lock:
             self._flushed_event.clear()

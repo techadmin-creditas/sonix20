@@ -364,14 +364,15 @@ class AgenticBrain:
         # while the bot is speaking, causing false interrupts that cut off bot audio.
         # 350 ms filters echo reliably; genuine human barge-ins sustain well past this.
         # Override per bot via bot_config["barge_in_debounce_ms"].
-        # Handle interruptions with a configurable debounce (default 250 ms).
-        # We now allow interruptions during SPEAKING and PROCESSING.
-        if msg_type == "speech_started" and self.state in (BotState.SPEAKING, BotState.PROCESSING):
+        # Handle interruptions with a configurable debounce.
+        # IMPORTANT: only allow barge-in while SPEAKING (not PROCESSING) to avoid
+        # cutting off replies due to transient VAD spikes during think time.
+        if msg_type == "speech_started" and self.state == BotState.SPEAKING:
             _debounce_ms = int(
-                (self._bot_config or {}).get("barge_in_debounce_ms", 250)
+                (self._bot_config or {}).get("barge_in_debounce_ms", 500)
             )
             await asyncio.sleep(_debounce_ms / 1000.0)
-            if self.state in (BotState.SPEAKING, BotState.PROCESSING):   # Still active → real interruption
+            if self.state == BotState.SPEAKING:   # Still speaking → real interruption
                 await self.handle_interruption()
             else:
                 # Debounce suppressed this event — it was likely acoustic echo
