@@ -106,6 +106,16 @@ export function useVoiceBot(botId?: string) {
         setState('error');
         stopAudioCapture();
         break;
+      case 'audio_interrupt':
+        // Invalidate any in-flight arrayBuffer() promises so they discard their result.
+        interruptGenRef.current++;
+        // Stop the currently playing node and drain the queue so no stale
+        // audio plays after the user interrupted the bot.
+        try { currentSourceRef.current?.stop(); } catch (_) { /* already ended */ }
+        currentSourceRef.current = null;
+        audioQueueRef.current = [];
+        isPlayingRef.current = false;
+        break;
       case 'pong':
         // console.log('Pong received');
         break;
@@ -137,12 +147,17 @@ export function useVoiceBot(botId?: string) {
   // 🔊 Audio Out — Receive and Play
   const audioQueueRef = useRef<Int16Array[]>([]);
   const isPlayingRef = useRef(false);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  // Incremented on every audio_interrupt; blobs that resolve after the increment are stale.
+  const interruptGenRef = useRef(0);
 
   const handleAudioData = async (data: Blob) => {
+    const gen = interruptGenRef.current;     // capture generation before the async gap
     const buffer = await data.arrayBuffer();
+    if (gen !== interruptGenRef.current) return; // interrupt fired while we were awaiting — discard
     const pcm = new Int16Array(buffer);
     audioQueueRef.current.push(pcm);
-    
+
     if (!isPlayingRef.current) {
       playNextInQueue();
     }
@@ -172,6 +187,7 @@ export function useVoiceBot(botId?: string) {
     const source = audioCtx.createBufferSource();
     source.buffer = buffer;
     source.connect(audioCtx.destination);
+    currentSourceRef.current = source;
     source.onended = () => playNextInQueue();
     source.start();
   };

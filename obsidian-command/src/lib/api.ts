@@ -146,6 +146,20 @@ export interface Workflow {
   updated_at?: number;
 }
 
+export interface RawVectorEntry {
+  id: string;
+  content: string;
+  metadata: any;
+}
+
+export interface QACacheEntry {
+  id: string;
+  question: string;
+  answer: string;
+  bot_id: string;
+  cached_at: string;
+}
+
 export const api = {
   async getBots(): Promise<Bot[]> {
     const res = await fetch(`${BASE_URL}/bots`);
@@ -378,5 +392,19 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to delete memory fact');
     return res.json();
+  },
+
+  async getAllVectorMemory(limit = 100): Promise<RawVectorEntry[]> {
+    const res = await fetch(`${BASE_URL}/memory/all?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to fetch raw vector memory');
+    const data = await res.json();
+    return data.items;
+  },
+
+  async getQACacheMemory(limit = 100): Promise<QACacheEntry[]> {
+    const res = await fetch(`${BASE_URL}/memory/qa?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to fetch QA cache memory');
+    const data = await res.json();
+    return data.items;
   },
 };

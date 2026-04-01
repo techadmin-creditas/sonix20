@@ -7,7 +7,6 @@ import Sessions from './pages/Sessions';
 import SessionDetail from './pages/SessionDetail';
 import Personas from './pages/Personas';
 import BotConfig from './pages/BotConfig';
-import CreateBot from './pages/CreateBot';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
@@ -26,7 +25,7 @@ function App() {
             <Route path="/sessions/live" element={<SessionControl />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="/personas" element={<Personas />} />
-            <Route path="/personas/create" element={<CreateBot />} />
+            <Route path="/personas/create" element={<BotConfig />} />
             <Route path="/personas/:id/config" element={<BotConfig />} />
             <Route path="/knowledge" element={<KnowledgeBase />} />
             <Route path="/workflows" element={<Workflows />} />

@@ -108,7 +108,7 @@ class DeepgramStreamingProvider:
             "smart_format": "true",
             "punctuate": "true",
             "vad_events": "true",        # Fires SpeechStarted immediately for barge-in
-            "endpointing": "300",        # 300 ms silence = end of utterance segment
+            "endpointing": "200",        # 200 ms silence = end of utterance segment (saves ~100ms/turn)
             **_lang_params,
         }
         logger.info("Deepgram Params: %s", params)

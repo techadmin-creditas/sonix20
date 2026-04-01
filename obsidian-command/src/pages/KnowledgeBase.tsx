@@ -9,20 +9,25 @@ import {
   Trash2, 
   CheckCircle2,
   ExternalLink,
-  X
+  X,
+  Cpu,
+  History,
+  Terminal,
+  Activity
 } from 'lucide-react';
 import { KNOWLEDGE_BASE } from '../constants';
 import { cn } from '../lib/utils';
-import { api, KnowledgeEntry } from '../lib/api';
+import { api, KnowledgeEntry, RawVectorEntry, QACacheEntry } from '../lib/api';
 import { Loader2 } from 'lucide-react';
 
 export default function KnowledgeBase() {
-  const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
+  const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedEntry, setSelectedEntry] = useState<KnowledgeEntry | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Global');
-  const [activeTab, setActiveTab] = useState<'manual' | 'learned'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'learned' | 'vector'>('manual');
+  const [vectorSubTab, setVectorSubTab] = useState<'memory' | 'qa'>('memory');
   const [bots, setBots] = useState<any[]>([]);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,11 +40,45 @@ export default function KnowledgeBase() {
       if (activeTab === 'manual') {
         const data = await api.getKnowledgeEntries();
         setEntries(data);
-      } else if (selectedBotId) {
-        const data = await api.getLearnedMemory(selectedBotId);
-        setEntries(data);
-      } else {
-        setEntries([]);
+      } else if (activeTab === 'learned') {
+        if (selectedBotId) {
+          const data = await api.getLearnedMemory(selectedBotId);
+          // Map to match KnowledgeEntry shape roughly for the UI
+          setEntries(data.map((d: any) => ({
+            id: d.id,
+            question: d.category.toUpperCase() + ": " + d.source,
+            answer: d.content,
+            topic: d.category,
+            priority: 1,
+            created_at: parseFloat(d.timestamp) || Date.now() / 1000
+          })));
+        } else {
+          setEntries([]);
+        }
+      } else if (activeTab === 'vector') {
+        if (vectorSubTab === 'memory') {
+          const data = await api.getAllVectorMemory();
+          setEntries(data.map(d => ({
+            id: d.id,
+            question: `Document Shard: ${d.id.slice(0, 8)}...`,
+            answer: d.content,
+            topic: d.metadata?.type || 'Summary',
+            priority: 0,
+            created_at: parseFloat(d.metadata?.timestamp) || Date.now() / 1000,
+            rawMetadata: d.metadata
+          })));
+        } else {
+          const data = await api.getQACacheMemory();
+          setEntries(data.map(d => ({
+            id: d.id,
+            question: d.question,
+            answer: d.answer,
+            topic: 'QA Cache',
+            priority: 0,
+            created_at: parseFloat(d.cached_at) || Date.now() / 1000,
+            bot_id: d.bot_id
+          })));
+        }
       }
     } catch (err) {
       console.error(err);
@@ -66,7 +105,7 @@ export default function KnowledgeBase() {
 
   React.useEffect(() => {
     loadEntries();
-  }, [activeTab, selectedBotId]);
+  }, [activeTab, selectedBotId, vectorSubTab]);
 
   const filteredEntries = entries.filter(entry => {
     const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -130,8 +169,8 @@ export default function KnowledgeBase() {
       <div className="flex-1 overflow-y-auto px-10 pb-10 custom-scrollbar z-10">
         <div className="flex justify-between items-end mb-10 mt-8">
           <div>
-            <h2 className="text-4xl font-extrabold text-on-surface tracking-tight">Domain Knowledge Explorer</h2>
-            <p className="text-outline mt-2 text-lg">Manage and tune the core intelligence of your voice agents.</p>
+            <h2 className="text-4xl font-extrabold text-on-surface tracking-tight">Intelligence & Memory</h2>
+            <p className="text-outline mt-2 text-lg">Manage domain knowledge and explore the autonomous vector store.</p>
           </div>
         </div>
 
@@ -146,53 +185,74 @@ export default function KnowledgeBase() {
               className="w-full h-16 pl-16 pr-6 bg-surface-low rounded-xl border-none ring-1 ring-white/5 focus:ring-primary/40 focus:bg-surface transition-all text-lg placeholder:text-outline/50 text-on-surface shadow-xl"
             />
           </div>
-          <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0">
+          <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0 overflow-x-auto no-scrollbar">
              <button 
                 onClick={() => setActiveTab('manual')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest", 
+                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
                   activeTab === 'manual' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
              >
                 Manual Core
              </button>
              <button 
                 onClick={() => setActiveTab('learned')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest", 
+                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
                   activeTab === 'learned' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
              >
                 Autonomous Memory
              </button>
+             <button 
+                onClick={() => setActiveTab('vector')}
+                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
+                  activeTab === 'vector' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+             >
+                Vector Explorer
+             </button>
           </div>
         </div>
 
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
-            {activeTab === 'manual' ? (
-                ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
-                    <FilterChip 
-                        key={filter} 
-                        label={filter} 
-                        active={activeFilter === filter} 
-                        onClick={() => setActiveFilter(filter)}
-                    />
-                ))
-            ) : (
-                bots.map(bot => (
-                    <FilterChip 
-                        key={bot.id} 
-                        label={bot.name} 
-                        active={selectedBotId === bot.id} 
-                        onClick={() => setSelectedBotId(bot.id)}
-                    />
-                ))
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
+              {activeTab === 'manual' ? (
+                  ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
+                      <FilterChip 
+                          key={filter} 
+                          label={filter} 
+                          active={activeFilter === filter} 
+                          onClick={() => setActiveFilter(filter)}
+                      />
+                  ))
+              ) : activeTab === 'learned' ? (
+                  bots.map(bot => (
+                      <FilterChip 
+                          key={bot.id} 
+                          label={bot.name} 
+                          active={selectedBotId === bot.id} 
+                          onClick={() => setSelectedBotId(bot.id)}
+                      />
+                  ))
+              ) : (
+                <>
+                  <FilterChip 
+                    label="Long-term Shards" 
+                    active={vectorSubTab === 'memory'} 
+                    onClick={() => setVectorSubTab('memory')}
+                  />
+                  <FilterChip 
+                    label="QA Semantic Cache" 
+                    active={vectorSubTab === 'qa'} 
+                    onClick={() => setVectorSubTab('qa')}
+                  />
+                </>
+              )}
+            </div>
+            {activeTab !== 'manual' && (
+              <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20 flex items-center gap-2">
+                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+                Live Vector Stream Shard Active
+              </div>
             )}
           </div>
-          {activeTab === 'learned' && (
-            <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20">
-              Live Vector Stream Active
-            </div>
-          )}
-        </div>
 
         <div className="flex gap-8 relative">
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -233,14 +293,32 @@ export default function KnowledgeBase() {
                       "size-10 rounded-xl flex items-center justify-center shrink-0",
                       entry.priority >= 5 ? "bg-primary/20 text-primary" : "bg-surface-highest text-outline"
                     )}>
-                      {/* Original priority indicator was here, replaced by the new div structure */}
+                      {activeTab === 'vector' ? <Cpu className="size-5" /> : 
+                       activeTab === 'learned' ? <History className="size-5" /> :
+                       <Database className="size-5" />}
                     </div>
                     <span className="text-xs font-bold text-primary tracking-widest uppercase">{entry.topic}</span>
                   </div>
-                  <div className="bg-surface-highest px-2 py-1 rounded text-[10px] font-bold text-outline">PRIORITY {entry.priority}</div>
+                  <div className="bg-surface-highest px-2 py-1 rounded text-[10px] font-bold text-outline drop-shadow-sm uppercase">
+                    {activeTab === 'vector' ? (vectorSubTab === 'memory' ? 'Vector Shard' : 'QA Store') : `Priority ${entry.priority}`}
+                  </div>
                 </div>
-                <h4 className="text-lg font-bold text-on-surface mb-2 leading-tight">{entry.question}</h4>
-                <p className="text-outline text-sm line-clamp-2 mb-4 leading-relaxed">{entry.answer}</p>
+                <h4 className="text-lg font-bold text-on-surface mb-2 leading-tight flex items-center gap-2 font-mono">
+                  {activeTab === 'vector' && <Terminal className="size-4 text-primary/60" />}
+                  {entry.question}
+                </h4>
+                <p className="text-outline text-sm line-clamp-2 mb-4 leading-relaxed font-medium">
+                  {entry.answer}
+                </p>
+                {activeTab === 'vector' && entry.rawMetadata && (
+                   <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-white/5">
+                      {Object.entries(entry.rawMetadata).map(([k, v]: [string, any]) => (
+                        <span key={k} className="text-[9px] bg-surface-highest px-1.5 py-0.5 rounded text-outline/80 border border-white/5">
+                          {k}: {String(v)}
+                        </span>
+                      ))}
+                   </div>
+                )}
               </div>
             ))}
             {!loading && filteredEntries.length === 0 && (
@@ -271,11 +349,22 @@ export default function KnowledgeBase() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-[0.2em] mb-4">Metadata</p>
+                  <p className="text-[10px] font-bold text-outline uppercase tracking-[0.2em] mb-4">Metadata Explorer</p>
                   <div className="space-y-4">
-                    <MetaItem label="Entry ID" value={`#KB-${selectedEntry.id}`} mono />
+                    <MetaItem label="Entry ID" value={selectedEntry.id} mono />
                     <MetaItem label="Created" value={new Date(selectedEntry.created_at * 1000).toLocaleDateString()} />
-                    <MetaItem label="Topic" value={selectedEntry.topic} />
+                    <MetaItem label="Topic/Collection" value={selectedEntry.topic} />
+                    {selectedEntry.bot_id && (
+                       <MetaItem label="Linked Bot" value={selectedEntry.bot_id} mono />
+                    )}
+                    {activeTab === 'vector' && (
+                      <div className="pt-4 space-y-2 border-t border-white/5">
+                        <p className="text-[10px] font-bold text-primary/60 uppercase tracking-[0.2em]">Raw Attributes</p>
+                        <pre className="text-[10px] font-mono text-outline/80 bg-black/20 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                          {JSON.stringify(selectedEntry.rawMetadata || { bot_id: selectedEntry.bot_id }, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="pt-6">

@@ -100,6 +100,10 @@ class AudioFrameNormalizer:
         self._buf = bytearray()
         await emit_fn(padded)
 
+    def clear(self) -> None:
+        """Discard any buffered audio bytes immediately."""
+        self._buf = bytearray()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -469,6 +473,16 @@ async def voice_websocket(
         except Exception:
             pass
 
+    async def on_audio_interrupt():
+        """Tell the frontend to flush its pre-scheduled audio queue immediately."""
+        try:
+            # Clear backend-side normalizer buffer to prevent stale audio leak
+            normalizer.clear()
+            # Send interruption signal to frontend
+            await vt.send_json({"type": "audio_interrupt"})
+        except Exception:
+            pass
+
     # Initialize Brain
     session = SessionState(session_id=session_id, detected_language=language, user_id=user_id)
     vector_memory = locals().get("vector_memory")
@@ -491,6 +505,7 @@ async def voice_websocket(
         db_handler=db,
         bot_config=bot_config,
         on_voice_session_end=on_voice_session_end,
+        on_audio_interrupt=on_audio_interrupt,
     )
     # Attach optional vector memory for RAG
     if vector_memory and getattr(vector_memory, "_available", False):
@@ -660,6 +675,10 @@ async def voice_websocket(
                         query = msg.get("text", "")
                         if query:
                             logger.info("Simulator query received: %s", query)
+                            # If the bot is mid-speech, interrupt it first so the
+                            # frontend flushes its audio queue before the new turn starts.
+                            if brain.state in (BotState.SPEAKING, BotState.PROCESSING):
+                                await brain.handle_interruption()
                             # Echo back as transcript so UI shows it
                             await vt.send_json({"type": "transcript", "text": query, "is_final": True})
                             await brain._process_user_turn(query)

@@ -14,13 +14,14 @@ import {
   BrainCircuit,
   Loader2,
   CheckCircle2,
-  Cloud,
-  PhoneOff,
-  ClipboardList,
-  Webhook,
-  ShieldCheck,
-  Wallet,
+  Cloud, 
+  PhoneOff, 
+  ClipboardList, 
+  Webhook, 
+  ShieldCheck, 
+  Wallet, 
   Receipt,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, Bot } from '../lib/api';
@@ -52,6 +53,7 @@ const AGENT_TASK_INBOUND_EXAMPLE = `{
 export default function BotConfig() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const isCreateMode = !id;
   
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -93,28 +95,37 @@ export default function BotConfig() {
 
   React.useEffect(() => {
     async function loadData() {
-      if (!id) return;
       try {
-        const [botData, modelsData, voicesData, workflowData] = await Promise.all([
-          api.getBot(id),
+        const [modelsData, voicesData, workflowData] = await Promise.all([
           api.getModels(),
           api.getVoices(),
           api.getWorkflows()
         ]);
-        
-        setFormData({
-          ...botData,
-          pipeline_mode: botData.pipeline_mode || 'classic',
-        });
-        setPolicyDraft({
-          guardrail: JSON.stringify(botData.guardrail_policy || {}, null, 2),
-          data_access: JSON.stringify(botData.data_access_policy || {}, null, 2),
-          conversation: JSON.stringify(botData.conversation_policy || {}, null, 2),
-          agent_task_spec: JSON.stringify(botData.agent_task_spec || {}, null, 2),
-        });
         setModels(modelsData);
         setVoices(voicesData);
         setWorkflows(workflowData);
+
+        if (!isCreateMode && id) {
+          const botData = await api.getBot(id);
+          setFormData({
+            ...botData,
+            pipeline_mode: botData.pipeline_mode || 'classic',
+          });
+          setPolicyDraft({
+            guardrail: JSON.stringify(botData.guardrail_policy || {}, null, 2),
+            data_access: JSON.stringify(botData.data_access_policy || {}, null, 2),
+            conversation: JSON.stringify(botData.conversation_policy || {}, null, 2),
+            agent_task_spec: JSON.stringify(botData.agent_task_spec || {}, null, 2),
+          });
+        } else {
+          // Set sensible defaults for Create Mode 
+          if (modelsData.length > 0) {
+            setFormData(prev => ({ ...prev, llm_model: modelsData[0].id }));
+          }
+          if (voicesData.length > 0) {
+            setFormData(prev => ({ ...prev, voice_id: voicesData[0].id }));
+          }
+        }
       } catch (err) {
         console.error('Failed to load bot config:', err);
       } finally {
@@ -122,58 +133,49 @@ export default function BotConfig() {
       }
     }
     loadData();
-  }, [id]);
+  }, [id, isCreateMode]);
 
   const handleSave = async () => {
-    if (!id) return;
+    if (isCreateMode && (!formData.name || !formData.system_prompt)) {
+      alert('Name and System Instructions are required');
+      return;
+    }
+
     setSaving(true);
     setSaveSuccess(false);
     try {
-      let guardrail_policy: Record<string, unknown>;
-      let data_access_policy: Record<string, unknown>;
-      let conversation_policy: Record<string, unknown>;
-      try {
-        guardrail_policy = JSON.parse(policyDraft.guardrail);
-      } catch {
-        alert('Invalid JSON in Guardrail policy');
-        setSaving(false);
-        return;
-      }
-      try {
-        data_access_policy = JSON.parse(policyDraft.data_access);
-      } catch {
-        alert('Invalid JSON in Data access policy');
-        setSaving(false);
-        return;
-      }
-      try {
-        conversation_policy = JSON.parse(policyDraft.conversation);
-      } catch {
-        alert('Invalid JSON in Conversation policy');
-        setSaving(false);
-        return;
-      }
-      let agent_task_spec: Record<string, unknown>;
-      try {
-        agent_task_spec = JSON.parse(policyDraft.agent_task_spec);
-      } catch {
-        alert('Invalid JSON in agent_task_spec');
-        setSaving(false);
-        return;
-      }
+      let guardrail_policy: Record<string, unknown> = {};
+      let data_access_policy: Record<string, unknown> = {};
+      let conversation_policy: Record<string, unknown> = {};
+      let agent_task_spec: Record<string, unknown> = {};
+
+      try { guardrail_policy = JSON.parse(policyDraft.guardrail); } catch { alert('Invalid JSON in Guardrail policy'); setSaving(false); return; }
+      try { data_access_policy = JSON.parse(policyDraft.data_access); } catch { alert('Invalid JSON in Data access policy'); setSaving(false); return; }
+      try { conversation_policy = JSON.parse(policyDraft.conversation); } catch { alert('Invalid JSON in Conversation policy'); setSaving(false); return; }
+      try { agent_task_spec = JSON.parse(policyDraft.agent_task_spec); } catch { alert('Invalid JSON in agent_task_spec'); setSaving(false); return; }
+
       const wf = formData.workflow_id?.trim();
-      await api.updateBot(id, {
+      const finalData = {
         ...formData,
         workflow_id: wf ? wf : null,
         guardrail_policy,
         data_access_policy,
         conversation_policy,
         agent_task_spec,
-      });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+        persona: formData.persona || formData.role || 'helpful AI assistant',
+        description: formData.description || `AI agent specializing in ${formData.role || 'general tasks'}`,
+      };
+
+      if (isCreateMode) {
+        await api.createBot(finalData);
+        navigate('/personas');
+      } else if (id) {
+        await api.updateBot(id, finalData);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err) {
-      alert('Failed to save changes');
+      alert(err instanceof Error ? err.message : 'Failed to save changes');
     } finally {
       setSaving(false);
     }
@@ -212,9 +214,15 @@ export default function BotConfig() {
           </button>
           <div>
             <h1 className="font-headline font-extrabold text-2xl tracking-tight text-on-surface">
-              Bot Config: <span className="text-primary">{formData.name}</span>
+              {isCreateMode ? (
+                <>Create <span className="text-primary">New Agent</span></>
+              ) : (
+                <>Bot Config: <span className="text-primary">{formData.name}</span></>
+              )}
             </h1>
-            <p className="text-xs text-on-surface-variant font-medium uppercase tracking-widest">{formData.role || 'Enterprise Support Tier'}</p>
+            <p className="text-xs text-on-surface-variant font-medium uppercase tracking-widest">
+              {isCreateMode ? 'Bot Factory • Neural Synthesis' : formData.role || 'Enterprise Support Tier'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -222,7 +230,7 @@ export default function BotConfig() {
             onClick={() => navigate('/personas')}
             className="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:text-on-surface ghost-border transition-all"
           >
-            Back
+            {isCreateMode ? 'Cancel' : 'Back'}
           </button>
           <button 
             onClick={handleSave}
@@ -235,8 +243,17 @@ export default function BotConfig() {
               saving && "opacity-50 cursor-not-allowed"
             )}
           >
-            {saving ? <Loader2 className="size-4 animate-spin" /> : saveSuccess ? <CheckCircle2 className="size-4" /> : null}
-            {saving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Changes'}
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : saveSuccess ? (
+              <CheckCircle2 className="size-4" />
+            ) : isCreateMode ? (
+              <Sparkles className="size-4" />
+            ) : null}
+            {saving 
+              ? (isCreateMode ? 'Synthesizing...' : 'Saving...') 
+              : saveSuccess ? 'Saved!' 
+              : isCreateMode ? 'Initialize Agent' : 'Save Changes'}
           </button>
         </div>
       </header>
@@ -255,7 +272,7 @@ export default function BotConfig() {
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Identity Name</label>
                 <input 
-                  className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30" 
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
                   type="text" 
                   value={formData.name}
                   onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
@@ -264,7 +281,7 @@ export default function BotConfig() {
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Core Role</label>
                 <input 
-                  className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30" 
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
                   type="text" 
                   value={formData.role}
                   onChange={e => setFormData(prev => ({ ...prev, role: e.target.value }))}
@@ -275,7 +292,7 @@ export default function BotConfig() {
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">System Prompt</label>
               <div className="relative">
                 <textarea 
-                  className="w-full h-80 bg-surface-container-low font-mono text-sm leading-relaxed p-6 rounded-2xl border-none resize-none text-primary/90 focus:ring-1 focus:ring-primary/30" 
+                  className="w-full h-80 bg-surface-container-highest border border-outline-variant/10 font-mono text-sm leading-relaxed p-6 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
                   spellCheck="false"
                   value={formData.system_prompt}
                   onChange={e => setFormData(prev => ({ ...prev, system_prompt: e.target.value }))}
@@ -294,7 +311,7 @@ export default function BotConfig() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">First Contact String</label>
               <textarea 
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface w-full focus:ring-1 focus:ring-primary/30 min-h-14" 
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-14 transition-all hover:bg-surface-container-high" 
                 rows={1}
                 value={formData.greeting}
                 onChange={e => setFormData(prev => ({ ...prev, greeting: e.target.value }))}
@@ -307,7 +324,7 @@ export default function BotConfig() {
                 <span className="text-[10px] text-on-surface-variant/60 font-medium italic">One per line</span>
               </div>
               <textarea 
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface w-full focus:ring-1 focus:ring-primary/30 min-h-32" 
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-32 transition-all hover:bg-surface-container-high" 
                 placeholder="Are you still there?&#10;I'm here whenever you're ready."
                 value={(formData.proactive_prompts || []).join('\n')}
                 onChange={e => {
@@ -332,7 +349,7 @@ export default function BotConfig() {
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">LLM Engine</label>
                 <div className="relative">
                   <select 
-                    className="appearance-none w-full bg-surface-container-highest border-none rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    className="appearance-none w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.llm_model}
                     onChange={e => setFormData(prev => ({ ...prev, llm_model: e.target.value }))}
                   >
@@ -347,7 +364,7 @@ export default function BotConfig() {
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Engine Profile</label>
                 <div className="relative">
                   <select 
-                    className="appearance-none w-full bg-surface-container-highest border-none rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    className="appearance-none w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 pr-10 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.voice_id}
                     onChange={e => setFormData(prev => ({ ...prev, voice_id: e.target.value }))}
                   >
@@ -363,7 +380,7 @@ export default function BotConfig() {
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Provider</label>
                   <select 
-                    className="w-full bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.tts_provider || 'deepgram_ws'}
                     onChange={e => setFormData(prev => ({ ...prev, tts_provider: e.target.value }))}
                   >
@@ -375,7 +392,7 @@ export default function BotConfig() {
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
                   <select 
-                    className="w-full bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30"
+                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.default_language || 'hi'}
                     onChange={e => setFormData(prev => ({ ...prev, default_language: e.target.value }))}
                   >
@@ -392,7 +409,7 @@ export default function BotConfig() {
                 </label>
                 <div className="relative">
                   <select 
-                    className="appearance-none w-full bg-surface-container-highest border border-outline-variant/20 rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/40"
+                    className="appearance-none w-full bg-surface-container-highest border border-outline-variant/20 rounded-2xl p-4 pr-10 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/40 transition-all hover:bg-surface-container-high"
                     value={formData.workflow_id || ''}
                     onChange={e => setFormData(prev => ({ ...prev, workflow_id: e.target.value || undefined }))}
                   >
@@ -411,7 +428,7 @@ export default function BotConfig() {
               <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
                 <label className="text-xs font-bold uppercase tracking-widest text-primary px-1">Voice pipeline</label>
                 <select
-                  className="w-full bg-surface-container-highest border border-primary/20 rounded-2xl p-4 font-bold text-on-surface h-14 cursor-pointer"
+                  className="w-full bg-surface-container-highest border border-primary/20 rounded-2xl p-4 font-bold text-primary h-14 cursor-pointer transition-all hover:bg-surface-container-high"
                   value={formData.pipeline_mode || 'classic'}
                   onChange={(e) => setFormData((prev) => ({ ...prev, pipeline_mode: e.target.value }))}
                 >
@@ -440,13 +457,13 @@ export default function BotConfig() {
             <div className="space-y-4">
               <label className="text-[10px] font-bold uppercase text-on-surface-variant">guardrail_policy</label>
               <textarea
-                className="w-full min-h-[120px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-on-surface"
+                className="w-full min-h-[120px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
                 value={policyDraft.guardrail}
                 onChange={(e) => setPolicyDraft((p) => ({ ...p, guardrail: e.target.value }))}
               />
               <label className="text-[10px] font-bold uppercase text-on-surface-variant">data_access_policy</label>
               <textarea
-                className="w-full min-h-[120px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-on-surface"
+                className="w-full min-h-[120px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
                 value={policyDraft.data_access}
                 onChange={(e) => setPolicyDraft((p) => ({ ...p, data_access: e.target.value }))}
               />
@@ -462,7 +479,7 @@ export default function BotConfig() {
                 <code>true</code> (chunked: LLM runs ahead of TTS, less dead air).
               </p>
               <textarea
-                className="w-full min-h-[100px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-on-surface"
+                className="w-full min-h-[100px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
                 value={policyDraft.conversation}
                 onChange={(e) => setPolicyDraft((p) => ({ ...p, conversation: e.target.value }))}
               />
@@ -481,7 +498,7 @@ export default function BotConfig() {
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Domain Focus Topic</label>
                 <input 
-                  className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30" 
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
                   type="text" 
                   placeholder="e.g. Indian Personal Banking"
                   value={formData.topic_restriction || ''}
@@ -490,7 +507,7 @@ export default function BotConfig() {
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Enforcement</label>
-                <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
+                <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10 cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
                   <span className="text-sm font-bold text-on-surface-variant group-hover:text-primary">Strict Topic Refusal</span>
                   <input 
                     checked={formData.refuse_off_topic || false} 
@@ -545,7 +562,7 @@ export default function BotConfig() {
               </button>
             </div>
             <textarea
-              className="w-full min-h-[200px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-on-surface"
+              className="w-full min-h-[200px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
               value={policyDraft.agent_task_spec}
               onChange={(e) => setPolicyDraft((p) => ({ ...p, agent_task_spec: e.target.value }))}
               spellCheck={false}
@@ -584,7 +601,7 @@ export default function BotConfig() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Escalation Webhook URL</label>
               <input
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30"
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                 type="url"
                 placeholder="https://your-crm.example.com/escalate"
                 value={formData.escalate_webhook_url || ''}
@@ -598,7 +615,7 @@ export default function BotConfig() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Actions Webhook URL</label>
               <input
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30"
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                 type="url"
                 placeholder="https://your-service.example.com/actions"
                 value={formData.actions_webhook_url || ''}
@@ -612,7 +629,7 @@ export default function BotConfig() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Post-Call Webhook URL</label>
               <input
-                className="bg-surface-container-highest border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30"
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                 type="url"
                 placeholder="https://your-service.example.com/post-call"
                 value={formData.post_call_webhook_url || ''}

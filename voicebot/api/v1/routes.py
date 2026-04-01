@@ -777,6 +777,20 @@ async def delete_memory_fact(fact_id: str):
         raise HTTPException(status_code=404, detail="Fact not found or delete failed")
     return {"status": "deleted", "id": fact_id}
 
+@router.get("/memory/all", tags=["data"])
+async def list_all_vector_memory(limit: int = 100):
+    """Retrieve all raw documents stored in the main ChromaDB collection."""
+    provider = await get_vector_db()
+    items = await provider.list_all_memory(limit=limit)
+    return {"items": items, "count": len(items)}
+
+@router.get("/memory/qa", tags=["data"])
+async def list_qa_cache_memory(limit: int = 100):
+    """Retrieve all semantically cached Q&A pairs from ChromaDB."""
+    provider = await get_vector_db()
+    items = await provider.list_qa_cache(limit=limit)
+    return {"items": items, "count": len(items)}
+
 @router.get("/health/vector", tags=["health"])
 async def vector_health():
     """Check ChromaDB vector memory status and document count."""

@@ -103,6 +103,7 @@ class AgenticBrain:
         on_metrics: Optional[Callable] = None,
         output_guard_handler: Any = None,
         on_voice_session_end: Optional[Callable[[str], Awaitable[None]]] = None,
+        on_audio_interrupt: Optional[Callable] = None,
     ):
         self.session = session
         self.state = BotState.LISTENING
@@ -150,6 +151,7 @@ class AgenticBrain:
         self._on_log = on_log
         self._on_metrics = on_metrics
         self._on_voice_session_end = on_voice_session_end
+        self._on_audio_interrupt = on_audio_interrupt
 
         # Interruption control
         self._interrupt_event = asyncio.Event()
@@ -169,11 +171,10 @@ class AgenticBrain:
             or 60
         )
 
-        # STT confidence tracking (for graceful recovery on noisy/unclear speech)
+        # STT confidence tracking and debounce state
         self._last_stt_confidence: float = 1.0
         self._last_utterance_end_time: float = 0.0
-
-        # Cross-session memory (populated by _load_cross_session_context on session start)
+        self._last_processed_text: str = ""  # Tracked to ignore repeating noise/partials
         self._cross_session_context: str = ""
 
         # Sentiment tracking (rolling per-session for escalation decisions)
@@ -193,10 +194,17 @@ class AgenticBrain:
         """Load timing, TTS chunking, and streaming options from conversation_policy."""
         pol = self._conversation_policy
         try:
-            st = float(pol.get("silence_threshold_ms", 400))
-            self._silence_threshold_ms = st if 50 <= st <= 5000 else 400.0
+            # Default to 1000ms (1.0s) for a robust "generic" experience, or 1.5s if requested.
+            st = float(pol.get("silence_threshold_ms", 1000))
+            self._silence_threshold_ms = st if 600 <= st <= 5000 else 1000.0
         except (TypeError, ValueError):
-            self._silence_threshold_ms = 400.0
+            self._silence_threshold_ms = 1000.0
+
+        try:
+            # Maximum silence before forced submission (safety watchdog)
+            self._max_silence_threshold_ms = float(pol.get("max_silence_threshold_ms", 2500))
+        except (TypeError, ValueError):
+            self._max_silence_threshold_ms = 2500.0
         try:
             # 100 chars (~20 words) flushes sooner → faster first audio to user.
             # Operators can raise this per-bot if they prefer fewer, longer TTS segments.
@@ -356,12 +364,14 @@ class AgenticBrain:
         # while the bot is speaking, causing false interrupts that cut off bot audio.
         # 350 ms filters echo reliably; genuine human barge-ins sustain well past this.
         # Override per bot via bot_config["barge_in_debounce_ms"].
-        if msg_type == "speech_started" and self.state == BotState.SPEAKING:
+        # Handle interruptions with a configurable debounce (default 250 ms).
+        # We now allow interruptions during SPEAKING and PROCESSING.
+        if msg_type == "speech_started" and self.state in (BotState.SPEAKING, BotState.PROCESSING):
             _debounce_ms = int(
-                (self._bot_config or {}).get("barge_in_debounce_ms", 350)
+                (self._bot_config or {}).get("barge_in_debounce_ms", 250)
             )
             await asyncio.sleep(_debounce_ms / 1000.0)
-            if self.state == BotState.SPEAKING:   # Still speaking → real interruption
+            if self.state in (BotState.SPEAKING, BotState.PROCESSING):   # Still active → real interruption
                 await self.handle_interruption()
             else:
                 # Debounce suppressed this event — it was likely acoustic echo
@@ -409,28 +419,43 @@ class AgenticBrain:
             self._last_utterance_end_time = time.time()
             await self._log_event("[STT]", f"Final transcript: \"{text}\"", "text-yellow-400")
 
-        # Turn Detection Logic
+        # Turn Detection Logic (Debounce)
         if text.strip() or is_final or msg_type == "utterance_end":
-            # Recalculate silence threshold dynamically using text heuristics only
-            # (silence duration is not yet known at this point; it will be passed in _wait_for_silence)
+            # --- Smart Reset Optimization ---
+            # If the current text is identical to what we just processed, it's likely a
+            # trailing Deepgram partial or background noise hallucination — ignore it.
+            clean_text = text.strip()
+            if clean_text == self._last_processed_text and not is_final and not (msg_type == "utterance_end"):
+                logger.debug("Suppressing debounce reset: text unchanged (noise filter)")
+                return
+
+            # Recalculate silence threshold dynamically based on linguistic confidence
+            # (silence duration is not yet known; it will be passed in _wait_for_silence)
+            combined_text = (self._utterance_buffer or self._partial_buffer).strip()
             confidence = self.turn_detector.compute_turn_complete_confidence(
-                self._utterance_buffer or self._partial_buffer,
+                combined_text,
                 0,
             )
 
-            # If we're very sure the user is done (short response), reduce wait time
-            dynamic_threshold = self._silence_threshold_ms
+            # Map confidence into a dynamic range (600ms to 2000ms)
+            # High confidence (Short response / Question) → Fast response (600ms - 800ms)
+            # Low confidence (Mid-sentence pause) → Patient response (1500ms - 2000ms)
+            base_threshold = self._silence_threshold_ms
             if confidence > 0.8:
-                dynamic_threshold = 250 # Snappy response for very clear completions
+                dynamic_threshold = 600.0
             elif confidence > 0.5:
-                dynamic_threshold = 400
+                dynamic_threshold = 800.0
+            else:
+                # User is likely paused mid-thought or STT is trailing — wait the full requested range
+                dynamic_threshold = max(base_threshold, 1500.0)
 
-            # After a Deepgram final, cap the threshold so we respond promptly.
-            # This applies whether or not a timer was already running.
+            # Endpoint-specific optimizations (slightly faster but still forgiving)
             if is_final:
-                dynamic_threshold = min(dynamic_threshold, 150)
+                # Deepgram already waited its internal silence (e.g. 200ms)
+                dynamic_threshold = min(dynamic_threshold, 600.0)
             elif msg_type == "utterance_end":
-                dynamic_threshold = 50  # UtteranceEnd = definitive end of full utterance
+                # Definitive VAD signal — snap respond
+                dynamic_threshold = 300.0
 
             if self._silence_timer:
                 self._silence_timer.cancel()
@@ -464,14 +489,23 @@ class AgenticBrain:
             if self._last_utterance_end_time > 0:
                 actual_silence_ms = (time.time() - self._last_utterance_end_time) * 1000
 
-            # Re-evaluate turn confidence with the actual silence duration now known
-            _final_confidence = self.turn_detector.compute_turn_complete_confidence(
-                transcript, actual_silence_ms
-            )
-            logger.debug(
-                "Turn confidence at fire time: %.2f (silence=%.0fms)",
-                _final_confidence, actual_silence_ms,
-            )
+            # --- Hard WATCHDOG for "Always Submit" ---
+            # If silence exceeds our global limit (e.g. 2.5s), we force-submit even if confidence is low.
+            if actual_silence_ms >= self._max_silence_threshold_ms:
+                logger.info("Watchdog Triggered: Force-submitting turn after %.1fs silence", actual_silence_ms/1000)
+            else:
+                # Re-evaluate turn confidence with the actual silence duration now known
+                _final_confidence = self.turn_detector.compute_turn_complete_confidence(
+                    transcript, actual_silence_ms
+                )
+                logger.debug(
+                    "Turn confidence at fire time: %.2f (silence=%.0fms)",
+                    _final_confidence, actual_silence_ms,
+                )
+                
+                # If confidence is still very low (linguistically incomplete), and we haven't hit the watchdog,
+                # we could choose to wait longer, but with the 2s max threshold above, it should naturally
+                # have fired by now.
 
             # Silence threshold reached — user has finished speaking
             logger.info(
@@ -485,6 +519,9 @@ class AgenticBrain:
             if self._proactive_timer:
                 self._proactive_timer.cancel()
                 self._proactive_timer = None
+
+            # Track this text to prevent repeated debounce resets on the same content
+            self._last_processed_text = transcript
 
             await self._process_user_turn(transcript)
 
@@ -798,6 +835,9 @@ class AgenticBrain:
                     finally:
                         if use_pipeline and segment_q is not None and consumer_task is not None:
                             await segment_q.put(None)
+                            if self._interrupt_event.is_set():
+                                # Cancel immediately so mid-TTS consumer stops without sending more audio.
+                                consumer_task.cancel()
                             try:
                                 await consumer_task
                             except asyncio.CancelledError:
@@ -1417,7 +1457,7 @@ class AgenticBrain:
           3. Transition back to LISTENING
           4. Record the partial response in history
         """
-        if self.state != BotState.SPEAKING:
+        if self.state not in (BotState.SPEAKING, BotState.PROCESSING):
             return
 
         logger.info(
@@ -1426,7 +1466,19 @@ class AgenticBrain:
 
         # Signal all streaming loops to stop immediately
         self._interrupt_event.set()
+
+        # Notify the frontend to flush its audio queue right away.
+        # Awaited directly (not create_task) so the normalizer is cleared and the
+        # browser receives audio_interrupt *before* we send any further audio chunks
+        # via tts.reset() teardown.
+        if self._on_audio_interrupt:
+            await self._on_audio_interrupt()
+
         self._utterance_buffer = ""  # Discard any accumulated utterance on interrupt
+        # Cancel a pending silence timer so a ghost turn doesn't fire after the interrupt.
+        if self._silence_timer:
+            self._silence_timer.cancel()
+            self._silence_timer = None
         self.session.mark_interrupted()
         if self._conversation_policy.get("interrupt_aware_reply", True):
             self._interrupt_prompt_suffix = (

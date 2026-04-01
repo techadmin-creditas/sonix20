@@ -233,10 +233,35 @@ class VectorMemoryProvider:
                     "source": meta.get("source", ""),
                     "category": meta.get("category", ""),
                     "timestamp": meta.get("timestamp", ""),
+                    "bot_id": meta.get("bot_id", ""),
                 })
             return output
         except Exception as e:
             logger.warning("List knowledge failed: %s", e)
+            return []
+
+    async def list_all_memory(self, limit: int = 100) -> list[dict]:
+        """List all entries in the main vector memory collection (summaries + facts)."""
+        if not self._available or not self._collection:
+            return []
+        try:
+            results = self._collection.get(
+                limit=limit,
+                include=["documents", "metadatas"],
+            )
+            output = []
+            ids = results.get("ids") or []
+            docs = results.get("documents") or []
+            metas = results.get("metadatas") or []
+            for i, doc, meta in zip(ids, docs, metas):
+                output.append({
+                    "id": i,
+                    "content": doc,
+                    "metadata": meta,
+                })
+            return output
+        except Exception as e:
+            logger.warning("List all memory failed: %s", e)
             return []
 
     async def delete_fact(self, fact_id: str) -> bool:
@@ -355,6 +380,33 @@ class VectorMemoryProvider:
         except Exception as e:
             logger.warning("QA cache lookup failed: %s", e)
             return None
+
+    async def list_qa_cache(self, limit: int = 100) -> list[dict]:
+        """Fetch all entries from the semantic QA cache collection."""
+        coll = self._qa_collection
+        if not coll:
+            return []
+        try:
+            results = coll.get(
+                limit=limit,
+                include=["documents", "metadatas"],
+            )
+            output = []
+            ids = results.get("ids") or []
+            docs = results.get("documents") or []
+            metas = results.get("metadatas") or []
+            for i, doc, meta in zip(ids, docs, metas):
+                output.append({
+                    "id": i,
+                    "question": doc,
+                    "answer": meta.get("answer", ""),
+                    "bot_id": meta.get("bot_id", ""),
+                    "cached_at": meta.get("cached_at", ""),
+                })
+            return output
+        except Exception as e:
+            logger.warning("List QA cache failed: %s", e)
+            return []
 
     async def disconnect(self) -> None:
         """ChromaDB persistent client does not need explicit close."""

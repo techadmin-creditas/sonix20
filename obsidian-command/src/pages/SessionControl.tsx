@@ -444,6 +444,9 @@ export default function SessionControl() {
         setIsLive(false);
         stopAudio();
         setWs(null);
+      } else if (msg.type === 'audio_interrupt') {
+        // Backend confirmed interruption — flush any pre-scheduled audio immediately.
+        resetBotPlaybackCoalesce();
       } else if (msg.type === 'error') {
         setStatus('Neural Error');
         setLogs(prev => [...prev, {

@@ -29,8 +29,8 @@ class TurnDetector:
 
     def __init__(
         self,
-        min_silence_ms: float = 500,
-        max_silence_ms: float = 1500,
+        min_silence_ms: float = 600,
+        max_silence_ms: float = 2000,
         confidence_threshold: float = 0.7,
     ):
         self.min_silence_ms = min_silence_ms
@@ -72,22 +72,23 @@ class TurnDetector:
         elif text[-1] in ",;:":
             score += 0.1  # Partial completion
 
-        # ── Signal 3: Question detection ──
-        # Questions often signal turn completion
-        question_words = {"what", "where", "when", "how", "why", "who", "can", "could", "would", "is", "are", "do", "does"}
+        # questions often signal turn completion
+        question_words = {
+            "what", "where", "when", "how", "why", "who", "can", "could", "would",
+            "is", "are", "do", "does", "kya", "kab", "kahan", "kaise", "kyon",
+            "kaun", "kabtak", "kitna",
+        }
         first_word = text.split()[0].lower() if text.split() else ""
         if first_word in question_words or text.endswith("?"):
             score += 0.15
 
-        # ── Signal 4: Short utterance ──
-        # Very short utterances (e.g., "yes", "no", "okay") are usually complete
-        word_count = len(text.split())
-        if word_count <= 3:
-            score += 0.2
-
         # ── Signal 5: Trailing conjunction/preposition (incomplete) ──
-        # Ends with "and", "but", "or", etc. → user probably not done
-        trailing_incomplete = {"and", "but", "or", "so", "because", "when", "if", "the", "a", "an", "to", "for", "with"}
+        # Ends with "and", "but", "or", etc. or Hindi equivalents → likely incomplete
+        trailing_incomplete = {
+            "and", "but", "or", "so", "because", "when", "if", "the", "a", "an",
+            "to", "for", "with", "ki", "par", "lekin", "aur", "agar", "jab",
+            "kya", "toh", "hai",
+        }
         last_word = text.split()[-1].lower().rstrip(".,!?") if text.split() else ""
         if last_word in trailing_incomplete:
             score -= 0.25  # Penalize — likely incomplete
