@@ -38,6 +38,7 @@
   --surface-high: #f1edeb;
   --surface-highest: #ebe7e5;
   --surface-lowest: #ffffff;
+  --input-bg: #f2f2f2;
   
   --primary: #8f4e00;
   --primary-container: #ffcc99;
@@ -61,6 +62,7 @@
   --surface-high: #292a2d;
   --surface-highest: #343538;
   --surface-lowest: #0d0e11;
+  --input-bg: #262a31;
   
   --primary: #ffb77b;
   --primary-container: #fb8c00;
@@ -81,6 +83,13 @@
   body {
     @apply bg-background text-on-surface font-body;
     /* background-image: radial-gradient(circle at 0% 0%, #1C0D02 0%, transparent 40%),radial-gradient(circle at 100% 100%, #1C0D02 0%, transparent 40%); */
+  }
+
+  /* Keep form fields visually distinct in both themes. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    background-color: var(--input-bg);
   }
 }
 
