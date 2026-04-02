@@ -17,7 +17,7 @@ import time
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, BackgroundTasks
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, BackgroundTasks, Request
 from starlette.websockets import WebSocketState
 
 from voicebot.shared.config import get_settings
@@ -107,6 +107,7 @@ def _livekit_join_bundle(session_id: str, user_id: Optional[str]) -> tuple[Optio
 
 @router.post("/sessions", tags=["sessions"])
 async def create_session(
+    request: Request,
     background_tasks: BackgroundTasks,
     user_id: Optional[str] = None,
     bot_id: Optional[str] = None,
@@ -121,12 +122,27 @@ async def create_session(
     import uuid
     session_id = str(uuid.uuid4())
     db = await get_db()
-    await db.create_session(session_id, bot_id=bot_id, user_id=user_id)
+    language_explicit = "language" in request.query_params
+    session_language = (language or "hi").strip().lower() or "hi"
+    if bot_id and not language_explicit:
+        bot = await db.get_bot(bot_id)
+        bot_lang = str((bot or {}).get("default_language") or "").strip().lower()
+        if bot_lang:
+            session_language = bot_lang
+
+    await db.create_session(
+        session_id,
+        bot_id=bot_id,
+        user_id=user_id,
+        language=session_language,
+    )
     logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], user_id, bot_id, transport)
 
     ws_url = f"/ws/voice/{session_id}"
     if bot_id:
         ws_url += f"?bot_id={bot_id}"
+    if session_language:
+        ws_url += f"{'&' if '?' in ws_url else '?'}language={session_language}"
 
     out: dict = {
         "session_id": session_id,
@@ -266,6 +282,7 @@ async def create_bot(data: dict):
             description=data.get("description", ""),
             greeting=data.get("greeting"),
             tools_enabled=data.get("tools_enabled", ["search_knowledge", "book_appointment", "get_appointments", "remember_user_fact"]),
+            llm_provider=data.get("llm_provider", ""),
             llm_model=data.get("llm_model", "llama-3.3-70b-versatile"),
             voice_id=data.get("voice_id"),
             role=data.get("role", "AI Assistant"),
@@ -285,6 +302,7 @@ async def create_bot(data: dict):
                 "data_access_policy",
                 "conversation_policy",
                 "pipeline_mode",
+                "llm_provider",
                 "workflow_id",
                 "agent_task_spec",
             ):

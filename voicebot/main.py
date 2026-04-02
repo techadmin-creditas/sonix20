@@ -237,6 +237,13 @@ async def voice_websocket(
 
     p_mode = str(bot_config.get("pipeline_mode") or "classic").lower()
     if p_mode == "speech_speech":
+        # Prefer Gemini Live STS when available (per preference).
+        if settings.gemini_api_key:
+            await _handle_gemini_s2s_session(
+                websocket, vt, session_id, language, bot_config, db
+            )
+            return
+
         if not settings.openai_api_key:
             logger.warning(
                 "pipeline_mode=speech_speech but OPENAI_API_KEY is not set — "
@@ -249,6 +256,23 @@ async def voice_websocket(
                 websocket, vt, session_id, language, bot_config, db
             )
             return
+
+    if p_mode == "gemini_s2s":
+        # Delegate entirely to the Gemini Live STS handler; classic providers are NOT initialised.
+        if not settings.gemini_api_key:
+            if vt.connected:
+                await vt.send_json({
+                    "type": "error",
+                    "message": "Gemini STS requested but GEMINI_API_KEY is not set.",
+                    "code": "S2S_GEMINI_KEY_MISSING",
+                })
+                await websocket.close(code=4000)
+            return
+
+        await _handle_gemini_s2s_session(
+            websocket, vt, session_id, language, bot_config, db
+        )
+        return
 
     # Bot logic language override
     # If the bot has a default_language (e.g. 'hi') and the query is just the default 'hi',
@@ -788,6 +812,194 @@ async def voice_websocket(
             # Remove from singleton registry (always keyed by session_id)
             if _active_voice_sessions.get(session_id) == websocket:
                 _active_voice_sessions.pop(session_id, None)
+
+async def _handle_gemini_s2s_session(
+    websocket: WebSocket,
+    vt: WebSocketVoiceTransport,
+    session_id: str,
+    language: str,
+    bot_config: dict,
+    db,
+) -> None:
+    """
+    Full WebSocket session handler for pipeline_mode == "gemini_s2s".
+
+    Gemini Live replaces the classic STT→LLM→TTS stack with a single
+    bidirectional audio + transcription session.
+    """
+    from voicebot.services.voice.gemini_s2s_bridge import GeminiLiveS2SBridge
+
+    bridge = GeminiLiveS2SBridge(
+        api_key=settings.gemini_api_key,
+        session_id=session_id,
+        bot_config=bot_config,
+        send_json=vt.send_json,
+        send_bytes=vt.send_bytes,
+        db=db,
+        language=language,
+        gemini_model=(bot_config.get("s2s_model") or None),
+    )
+
+    connected = await bridge.connect()
+    if not connected:
+        if vt.connected:
+            await vt.send_json({
+                "type":    "error",
+                "message": "Speech-to-speech: failed to connect to Gemini Live API. "
+                           "Check GEMINI_API_KEY and model availability.",
+                "code":    "S2S_GEMINI_CONNECT_ERR",
+            })
+            await websocket.close(code=4000)
+        return
+
+    await vt.send_json({
+        "type":       "status",
+        "state":      "listening",
+        "session_id": session_id,
+        "message":    "Speech-to-speech ready (Gemini Live).",
+        "mode":       "gemini_s2s",
+    })
+
+    async def s2s_heartbeat():
+        while vt.connected:
+            await asyncio.sleep(30)
+            if vt.connected:
+                await vt.send_json({
+                    "type": "infra_status",
+                    "mode": "gemini_s2s",
+                    "stt":  "gemini-live",
+                    "llm":  "gemini-live",
+                    "tts":  "gemini-live",
+                })
+
+    heartbeat_task = asyncio.create_task(s2s_heartbeat())
+
+    try:
+        while True:
+            data = await websocket.receive()
+
+            if data.get("bytes") is not None:
+                await bridge.send_audio(data.get("bytes"))
+
+            elif data.get("text") is not None:
+                try:
+                    msg = json.loads(data.get("text"))
+                    msg_type = msg.get("type")
+
+                    if msg_type == "interrupt":
+                        await bridge.handle_interrupt()
+
+                    elif msg_type == "text_query":
+                        query = msg.get("text", "").strip()
+                        if query:
+                            logger.info("Gemini S2S text_query (session=%s): %s", session_id[:8], query)
+                            await bridge.send_text_query(query)
+
+                    elif msg_type in ("config", "switch_bot"):
+                        # Not supported in S2S mode — acknowledge without crashing
+                        await vt.send_json({
+                            "type":    "log",
+                            "tag":     "[S2S]",
+                            "message": f"'{msg_type}' is not supported in gemini_s2s mode.",
+                            "color":   "text-yellow-400",
+                        })
+                    # All other message types silently ignored
+                except json.JSONDecodeError:
+                    pass
+
+    except WebSocketDisconnect:
+        logger.info("S2S (gemini) session %s disconnected", session_id[:8])
+    except RuntimeError as exc:
+        msg_str = str(exc)
+        if "Cannot call \"receive\"" in msg_str or "WebSocket is not connected" in msg_str:
+            logger.info("S2S (gemini) session %s disconnected (runtime)", session_id[:8])
+        else:
+            logger.error("S2S (gemini) runtime error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    except Exception as exc:
+        logger.error("S2S (gemini) error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    finally:
+        heartbeat_task.cancel()
+        await bridge.disconnect()
+
+        # ── Post-call summarisation (same as classic mode) ─────────────────
+        try:
+            log_entries = await db.get_session_log(session_id)
+            transcript_text = "\n".join(
+                f"{e['role']}: {e['content']}"
+                for e in log_entries
+                if e["role"] in ("user", "assistant")
+            )
+
+            summary = "No meaningful conversation occurred."
+            intent = "Unknown"
+
+            if len(log_entries) > 1 and transcript_text.strip():
+                try:
+                    sum_llm = _make_summariser_llm(bot_config)
+                    logger.info(
+                        "S2S (gemini) post-call summarisation using: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
+
+                    sum_prompt = (
+                        "Summarize the following conversation in exactly 1 or 2 concise sentences. "
+                        "Focus solely on the user's primary intent and the resolution. "
+                        "Do not add conversational filler:\n\n" + transcript_text
+                    )
+                    parts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise summarizer.",
+                        messages=[{"role": "user", "content": sum_prompt}],
+                    ):
+                        if chunk.content:
+                            parts.append(chunk.content)
+                    if parts:
+                        summary = "".join(parts).strip()
+
+                    intent_prompt = (
+                        "Based on the following conversation, provide a strict 1-3 word noun phrase "
+                        "representing the core operational intent (e.g. 'Password Reset', "
+                        "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n"
+                        + transcript_text
+                    )
+                    iparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise intent classifier.",
+                        messages=[{"role": "user", "content": intent_prompt}],
+                    ):
+                        if chunk.content:
+                            iparts.append(chunk.content)
+                    if iparts:
+                        intent = "".join(iparts).strip()
+                except Exception as llm_err:
+                    logger.error("S2S (gemini) post-call LLM summarisation failed: %s", llm_err)
+
+            await db.close_session(
+                session_id=session_id,
+                turn_count=len(log_entries),
+                metadata={"summary": summary, "intent": intent, "mode": "gemini_s2s"},
+            )
+            logger.info("S2S (gemini) session %s archived.", session_id[:8])
+
+            # Post-call webhook for S2S mode
+            _post_call_url = bot_config.get("post_call_webhook_url", "")
+            if _post_call_url and summary != "No meaningful conversation occurred.":
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                        await _hc.post(_post_call_url, json={
+                            "session_id": session_id,
+                            "user_id": language,
+                            "summary": summary,
+                            "intent": intent,
+                            "mode": "gemini_s2s",
+                        })
+                except Exception as _wh_err:
+                    logger.warning("S2S (gemini) post-call webhook failed: %s", _wh_err)
+
+        except Exception as archive_err:
+            logger.error("Failed to archive S2S (gemini) session %s: %s", session_id[:8], archive_err)
 
 async def _handle_speech_speech_session(
     websocket: WebSocket,

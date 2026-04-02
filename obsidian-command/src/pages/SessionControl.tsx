@@ -203,6 +203,16 @@ export default function SessionControl() {
     if (!audioContextRef.current) {
       initAudio();
     }
+    // Some browsers can suspend AudioContext after tab focus changes or
+    // autoplay policy transitions. Ensure playback context is resumed before
+    // scheduling bot PCM, otherwise transcript updates continue but audio is silent.
+    if (audioContextRef.current?.state === 'suspended') {
+      try {
+        await audioContextRef.current.resume();
+      } catch (e) {
+        console.warn('AudioContext resume failed:', e);
+      }
+    }
     const u8 = new Uint8Array(arrayBuffer);
     const prev = botPcmAccumRef.current;
     if (!prev || prev.length === 0) {
