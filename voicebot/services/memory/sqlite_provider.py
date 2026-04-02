@@ -93,6 +93,7 @@ class SQLiteProvider:
 
         # 2. Add columns safely if they are missing (Migrations)
         for col_name, col_type in [
+            ("llm_provider", "TEXT DEFAULT ''"),
             ("temperature", "REAL DEFAULT 0.7"),
             ("max_tokens", "INTEGER DEFAULT 2048"),
             ("workflow_id", "TEXT REFERENCES workflows(id)"),
@@ -321,6 +322,7 @@ class SQLiteProvider:
     async def create_bot(self, name: str, persona: str, system_prompt: str,
                          description: str = "", greeting: Optional[str] = None,
                          tools_enabled: Optional[list] = None,
+                         llm_provider: str = "",
                          llm_model: str = "llama-3.3-70b-versatile",
                          voice_id: Optional[str] = None,
                          role: str = "AI Assistant",
@@ -335,9 +337,9 @@ class SQLiteProvider:
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -406,7 +408,7 @@ class SQLiteProvider:
             conn = self._get_conn()
             allowed = {
                 "name", "description", "persona", "system_prompt", "greeting", "tools_enabled",
-                "llm_model", "voice_id", "role", "icon", "color", "temperature", "max_tokens", "workflow_id",
+                "llm_provider", "llm_model", "voice_id", "role", "icon", "color", "temperature", "max_tokens", "workflow_id",
                 "guardrail_policy", "data_access_policy", "conversation_policy", "pipeline_mode",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",

@@ -87,12 +87,20 @@ class GeminiStreamingProvider:
         system_prompt: str,
         messages: List[Dict[str, str]],
         tools: Optional[List[ToolDefinition]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **_: Any,
     ) -> AsyncIterator[LLMResponse]:
         """
         Stream a completion from Gemini.
         Note: Maps standard OpenAI-style messages to Gemini format.
         """
         try:
+            # Allow per-turn overrides passed by orchestrator.
+            if temperature is not None:
+                self.temperature = float(temperature)
+            if max_tokens is not None:
+                self.max_output_tokens = int(max_tokens)
             model = await self._get_model(tools=tools)
             
             # Convert messages to Gemini format
