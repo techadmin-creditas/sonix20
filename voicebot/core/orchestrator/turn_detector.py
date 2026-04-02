@@ -13,9 +13,15 @@ from __future__ import annotations
 
 import re
 import logging
-from typing import Any, Set
+from typing import Any, Set, Optional
 
 logger = logging.getLogger(__name__)
+
+# Verbal nods that should not trigger a full interruption or state change
+_DEFAULT_BACKCHANNEL_WORDS: Set[str] = {
+    "yeah", "mhm", "okay", "right", "sure", "theek hai", "ji", "haan",
+    "theek", "understood", "got it", "hmm", "hm", "accha", "bilkul",
+}
 
 
 class TurnDetector:
@@ -32,13 +38,20 @@ class TurnDetector:
 
     def __init__(
         self,
-        min_silence_ms: float = 600,
-        max_silence_ms: float = 2000,
+        min_silence_ms: float = 400,
+        max_silence_ms: float = 1000,
         confidence_threshold: float = 0.7,
+        extra_backchannels: Optional[list[str]] = None,
     ):
         self.min_silence_ms = min_silence_ms
         self.max_silence_ms = max_silence_ms
         self.confidence_threshold = confidence_threshold
+        
+        # Initialize backchannel set with defaults + bot-specific extras
+        self._backchannel_words = _DEFAULT_BACKCHANNEL_WORDS.copy()
+        if extra_backchannels:
+            for word in extra_backchannels:
+                self._backchannel_words.add(word.lower().strip())
 
     def compute_turn_complete_confidence(
         self,
@@ -131,11 +144,11 @@ class TurnDetector:
         
         # Low confidence (Mid-sentence pause) → Patient response (1500ms+)
         if confidence > 0.8:
-            dynamic_threshold = 600.0
+            dynamic_threshold = 400.0
         elif confidence > 0.5:
-            dynamic_threshold = 800.0
+            dynamic_threshold = 600.0
         else:
-            dynamic_threshold = 1500.0
+            dynamic_threshold = 1000.0
 
         # Apply conjunction multiplier (Advanced Linguistic VAD)
         if last_word in self.TRAILING_INCOMPLETE:
@@ -147,3 +160,45 @@ class TurnDetector:
 
         # Safety: never wait longer than double the configured max threshold
         return min(dynamic_threshold, base_max_threshold_ms * 2.0)
+
+    def is_sentence_boundary(self, text: str, char_cap: int = 100, mode: str = "balanced") -> bool:
+        """
+        Decide whether to flush the TTS buffer at the current text length.
+        """
+        text = text.rstrip()
+        if not text:
+            return False
+
+        last = text[-1]
+        
+        # Rule 1: Never flush mid-word (prevents audio cuts on partial tokens).
+        if (last.isalpha() or last.isdigit()) and len(text) < char_cap:
+            return False
+
+        if mode == "sentence_only":
+            return last in ".!?" or len(text) >= char_cap
+
+        # Rule 2: hard sentence end
+        if last in ".!?":
+            return True
+
+        # Rule 3: clause boundary — only if past 1/3 of cap
+        if last in ";:" and len(text) > char_cap // 3:
+            return True
+
+        # Rule 4: comma — only if past half of cap
+        if last == "," and len(text) > char_cap // 2:
+            return True
+
+        # Rule 5: cap fallback
+        return len(text) >= char_cap
+
+    def is_backchannel(self, text: str) -> bool:
+        """
+        Heuristic to determine if a transcript is a 'Backchannel' (verbal nod)
+        intended to acknowledge, not interrupt.
+        """
+        words = text.lower().strip().split()
+        if not words or len(words) > 2:
+            return False
+        return any(w in self._backchannel_words for w in words)

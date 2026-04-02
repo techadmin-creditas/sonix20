@@ -21,6 +21,7 @@ from typing import AsyncIterator, Optional
 
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import AuthError, ServiceExhaustedError, VoiceBotError
 
 logger = setup_logger("tts-elevenlabs", level="INFO")
 settings = get_settings()
@@ -132,7 +133,6 @@ class ElevenLabsStreamingProvider:
                     "POST", url, json=payload, headers=headers
                 ) as response:
                     if response.status_code != 200:
-                        from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
                         error_text = (await response.aread()).decode()
                         logger.error("ElevenLabs error %d: %s", response.status_code, error_text)
                         
@@ -159,7 +159,6 @@ class ElevenLabsStreamingProvider:
             # Pass through our managed exceptions for terminal handling
             raise
         except Exception as e:
-            from voicebot.shared.exceptions import VoiceBotError
             logger.error("ElevenLabs streaming error: %s", e)
             raise VoiceBotError(f"ElevenLabs connection failure: {str(e)}")
 

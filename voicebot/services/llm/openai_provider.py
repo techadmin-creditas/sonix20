@@ -19,9 +19,12 @@ import time
 from typing import Any, AsyncIterator, Optional, List
 from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+
 from voicebot.shared.config import get_settings
 
-logger = logging.getLogger("llm-openai")
+logger = setup_logger("llm-openai", level="INFO")
 settings = get_settings()
 
 
@@ -170,9 +173,7 @@ class OpenAIStreamingProvider:
                     break
 
         except Exception as e:
-            from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
             err_str = str(e).lower()
-            
             logger.error("OpenAI streaming error: %s", e)
             
             if "401" in err_str or "unauthorized" in err_str:

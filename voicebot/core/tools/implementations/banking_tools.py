@@ -16,7 +16,8 @@ class VerifyCustomerTool(BaseTool):
         return (
             "Verify a bank customer's identity using their account number and date of birth. "
             "Always call this tool before sharing any account information such as balance or loans. "
-            "Ask the customer for their account number and date of birth in DD-MM-YYYY format."
+            "CRITICAL: Do NOT guess or hallucinate the account number or date of birth. "
+            "If the customer has not explicitly provided BOTH, you MUST ask them for the missing details before calling this tool."
         )
 
     @property
@@ -26,17 +27,29 @@ class VerifyCustomerTool(BaseTool):
             "properties": {
                 "account_number": {
                     "type": "string",
-                    "description": "The customer's bank account number (e.g. ACC1001)",
+                    "description": "The customer's bank account number",
                 },
                 "dob": {
                     "type": "string",
-                    "description": "Date of birth in DD-MM-YYYY format (e.g. 15-03-1990)",
+                    "description": "Date of birth in DD-MM-YYYY format",
                 },
             },
             "required": ["account_number", "dob"],
         }
 
     async def execute(self, account_number: str = "", dob: str = "", **kwargs) -> str:
+        import re
+        # Guard: reject non-date strings (e.g. LLM hallucinated Hindi text as dob).
+        # Accept DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD.
+        _dob_clean = dob.strip()
+        if not re.match(r'^\d{2}[-/]\d{2}[-/]\d{4}$|^\d{4}[-/]\d{2}[-/]\d{2}$', _dob_clean):
+            result = (
+                f"TOOL_ERROR: dob value '{_dob_clean}' is not a valid date. "
+                "You must ask the customer to provide their date of birth in DD-MM-YYYY format before calling this tool."
+            )
+            await self.log_call({"account_number": account_number, "dob": "***"}, result)
+            return result
+
         if not self.db:
             result = "Banking verification is not available right now. Please try again later."
             await self.log_call({"account_number": account_number, "dob": "***"}, result)
@@ -83,7 +96,8 @@ class GetAccountBalanceTool(BaseTool):
     def description(self) -> str:
         return (
             "Get the current account balance for a bank customer. "
-            "Only call this after the customer's identity has been verified with verify_customer."
+            "Only call this after the customer's identity has been verified with verify_customer. "
+            "CRITICAL: Do NOT guess or hallucinate the account number. If unknown, ask the user."
         )
 
     @property
@@ -136,7 +150,8 @@ class GetLoanStatusTool(BaseTool):
     def description(self) -> str:
         return (
             "Get active loan details for a bank customer including outstanding amount, "
-            "EMI amount, and next due date. Only call after identity has been verified."
+            "EMI amount, and next due date. Only call after identity has been verified. "
+            "CRITICAL: Do NOT guess or hallucinate the account number. If unknown, ask the user."
         )
 
     @property

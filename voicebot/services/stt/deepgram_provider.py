@@ -16,11 +16,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import ssl
+import websockets
 from typing import Any, AsyncIterator, Callable, Optional
 
+from voicebot.services.vad.silero_gate import SileroVADGate
 from voicebot.shared.config import get_settings
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
-logger = logging.getLogger("voicebot.stt.deepgram")
+logger = setup_logger("voicebot.stt.deepgram", level="INFO")
 settings = get_settings()
 
 
@@ -56,6 +61,17 @@ class DeepgramStreamingProvider:
         self._connected = False
         self._on_transcript: Optional[Callable] = None
         self._receive_task: Optional[asyncio.Task] = None
+        self._vad_gate = SileroVADGate(threshold=500.0) # RMS energy gate; normal speech = 1000–8000
+        self._is_user_talking = False
+        self._silence_padding_frames = 0
+        self.MAX_SILENCE_PADDING = 25          # 500 ms trailing silence buffer
+        self._silent_frames_since_keepalive = 0
+        # Send KeepAlive every ~5 s of silence (250 frames × 20 ms)
+        self.KEEPALIVE_INTERVAL_FRAMES = 250
+        # Grace period: always forward audio for first N frames of each turn
+        # so Deepgram/VAD warm up before the user's first word is judged
+        self._grace_frames_remaining = 0
+        self.GRACE_FRAMES = 10                 # 200ms warmup — avoids TTS echo window
 
     async def connect(
         self,
@@ -85,16 +101,17 @@ class DeepgramStreamingProvider:
         # vad_events=true: enable VAD events for better turn-taking.
         # Build language/detect_language params based on session language.
         #
-        # IMPORTANT: Deepgram treats `language` and `detect_language` as mutually
-        # exclusive. Sending both causes HTTP 400. Rules:
-        #   • "auto" / "detect" / "multilingual" → detect_language=true only
-        #   • any specific language code         → language=<code> only
-        #   • "en" / "en-*"                      → pin to en-US for best accuracy
-        _lang = (self.language or "en").lower().strip()
+        # • "auto" / "detect" / "multilingual" → detect_language=true only
+        # • any specific language code         → language=<code> only
+        _lang = (self.language or "hi").lower().strip() # Default to 'hi' (Hinglish) for this environment
         if _lang in ("auto", "detect", "multilingual"):
             _lang_params: dict = {"detect_language": "true"}
-        elif _lang.startswith("en"):
-            _lang_params = {"language": "en-US"}
+        elif _lang == "en":
+            _lang_params = {"language": "hi"}
+        elif _lang in ("hi", "hindi"):
+            _lang_params = {"language": "hi"}
+        elif _lang == "hi-in":
+            _lang_params = {"language": "hi"}
         else:
             # Pin to the requested language; do NOT add detect_language alongside it.
             _lang_params = {"language": _lang}
@@ -150,20 +167,93 @@ class DeepgramStreamingProvider:
             self._connected = False
             raise
 
+    def reset_vad(self) -> None:
+        """
+        Reset VAD state at the start of each listening turn.
+        Call this whenever the bot transitions from speaking → listening so
+        that Silero's internal model state (biased toward silence) is cleared.
+        """
+        self._vad_gate.reset_states()
+        self._is_user_talking = False
+        self._silence_padding_frames = 0
+        self._grace_frames_remaining = self.GRACE_FRAMES
+        self._silent_frames_since_keepalive = 0
+
+    async def tick_keepalive(self) -> None:
+        """
+        Maintain the Deepgram connection during non-listening states (SPEAKING, PROCESSING)
+        WITHOUT sending any audio bytes. Sends a KeepAlive JSON message every ~5s.
+        """
+        if not self._connected or not self._ws:
+            return
+        self._silent_frames_since_keepalive += 1
+        if self._silent_frames_since_keepalive >= self.KEEPALIVE_INTERVAL_FRAMES:
+            self._silent_frames_since_keepalive = 0
+            try:
+                await self._ws.send(json.dumps({"type": "KeepAlive"}))
+                logger.debug("Sent KeepAlive to Deepgram")
+            except Exception as e:
+                logger.error("KeepAlive error: %s", e)
+                self._connected = False
+
+    async def finalize(self) -> None:
+        """
+        Send Finalize to Deepgram before starting a new listening turn.
+        Flushes any buffered audio/transcripts from the previous period,
+        preventing stale TTS-echo results from appearing in the new turn.
+        """
+        if not self._connected or not self._ws:
+            return
+        try:
+            await self._ws.send(json.dumps({"type": "Finalize"}))
+            logger.debug("Sent Finalize to Deepgram")
+        except Exception as e:
+            logger.error("Finalize error: %s", e)
+
     async def send_audio(self, audio_bytes: bytes) -> None:
         """
         Send an audio chunk to Deepgram for transcription.
-        This should be called for every audio frame (~20ms of audio).
-        Must be non-blocking.
+        
+        COST OPTIMIZATION: Only sends real PCM bytes to Deepgram when local VAD 
+        detects speech (plus some trailing padding). This significantly reduces 
+        Deepgram costs as idle/bot-speech silence is not billed as PCM.
+        
+        LOW LATENCY: Uses manual finalize() on transition to silence to force 
+        immediate transcription results without waiting for Deepgram endpointing.
         """
         if not self._connected or not self._ws:
             return
 
-        try:
-            await self._ws.send(audio_bytes)
-        except Exception as e:
-            logger.error("Error sending audio to Deepgram: %s", e)
-            self._connected = False
+        # Track speech state via local Silero VAD
+        speech_detected = self._vad_gate.is_speech(audio_bytes)
+        _was_talking = self._is_user_talking
+
+        if speech_detected:
+            self._is_user_talking = True
+            self._silence_padding_frames = self.MAX_SILENCE_PADDING
+        else:
+            if self._silence_padding_frames > 0:
+                self._silence_padding_frames -= 1
+            else:
+                if self._is_user_talking:
+                    self._is_user_talking = False
+
+        # Force final transcript immediately (saves ~300ms) on speech stop
+        if _was_talking and not self._is_user_talking:
+            asyncio.create_task(self.finalize())
+
+        # GATED SEND: Only send audio bytes if there is speech or padding
+        if speech_detected or self._silence_padding_frames > 0:
+            self._silent_frames_since_keepalive = 0
+            try:
+                await self._ws.send(audio_bytes)
+            except Exception as e:
+                logger.error("Error sending audio to Deepgram: %s", e)
+                self._connected = False
+        else:
+            # Silent: Maintain connection with zero-billed KeepAlive JSON messages
+            await self.tick_keepalive()
+
 
     async def _receive_loop(self) -> None:
         """
@@ -247,7 +337,6 @@ class DeepgramStreamingProvider:
         elif msg_type == "Error":
              error_msg = data.get("message", "Unknown Deepgram Error")
              logger.error("Deepgram reported a terminal error: %s", error_msg)
-             from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
              
              _err_lower = error_msg.lower()
              if "401" in _err_lower or "unauthorized" in _err_lower:

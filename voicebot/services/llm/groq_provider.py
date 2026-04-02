@@ -15,6 +15,7 @@ from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
 logger = setup_logger("llm-groq", level="INFO")
 settings = get_settings()
@@ -156,7 +157,6 @@ class GroqStreamingProvider:
                     break
 
         except Exception as e:
-            from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
             err_str = str(e).lower()
             
             logger.error("Groq streaming error: %s", e)
