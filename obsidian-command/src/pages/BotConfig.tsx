@@ -434,6 +434,7 @@ export default function BotConfig() {
                 >
                   <option value="classic">Classic (STT → LLM → TTS)</option>
                   <option value="speech_speech">Speech-to-speech (falls back to classic until provider wired)</option>
+                  <option value="gemini_s2s">Gemini speech-to-speech (Gemini Live STS)</option>
                 </select>
               </div>
             </div>

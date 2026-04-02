@@ -23,6 +23,7 @@ import {
 
 export default function Personas() {
   const [personas, setPersonas] = React.useState<Bot[]>([]);
+  const [botStats, setBotStats] = React.useState<Record<string, { sessions: number; completion: number }>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
@@ -44,8 +45,30 @@ export default function Personas() {
   React.useEffect(() => {
     async function loadBots() {
       try {
-        const data = await api.getBots();
+        const [data, sessions] = await Promise.all([
+          api.getBots(),
+          // Higher limit so per-bot stats are meaningful on the listing page.
+          api.getSessions(1000),
+        ]);
         setPersonas(data);
+
+        const stats = sessions.reduce<Record<string, { sessions: number; completed: number }>>((acc, s) => {
+          const botId = s.bot_id;
+          if (!botId) return acc;
+          if (!acc[botId]) acc[botId] = { sessions: 0, completed: 0 };
+          acc[botId].sessions += 1;
+          if (s.ended_at !== null) acc[botId].completed += 1;
+          return acc;
+        }, {});
+
+        const normalized: Record<string, { sessions: number; completion: number }> = {};
+        for (const [botId, v] of Object.entries(stats)) {
+          normalized[botId] = {
+            sessions: v.sessions,
+            completion: v.sessions > 0 ? (v.completed / v.sessions) * 100 : 0,
+          };
+        }
+        setBotStats(normalized);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
@@ -144,11 +167,11 @@ export default function Personas() {
                 <div className="grid grid-cols-2 gap-4 py-6 border-y border-outline-variant/10">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
-                    <span className="text-lg font-bold">--</span>
+                    <span className="text-lg font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
-                    <span className="text-lg font-bold">--</span>
+                    <span className="text-lg font-bold">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
                   </div>
                 </div>
 

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Creditas Voicebot Demo</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Creditas Voicebot Demo</h1>
+        <div style="display: flex; gap: 10px; align-items: center">
+          <div id="status" class="status disconnected">Disconnected</div>
+        </div>
+      </header>
+
+      <main>
+        <div class="main-layout">
+          <!-- Left: Config Panel (always visible) -->
+          <div class="config-panel">
+            <h3>Configuration</h3>
+
+            <label for="voiceSelect">Voice</label>
+            <select id="voiceSelect">
+              <option value="Puck" selected>Puck</option>
+              <option value="Charon">Charon</option>
+              <option value="Kore">Kore</option>
+              <option value="Fenrir">Fenrir</option>
+              <option value="Aoede">Aoede</option>
+              <option value="Leda">Leda</option>
+              <option value="Orus">Orus</option>
+              <option value="Zephyr">Zephyr</option>
+            </select>
+
+            <label for="systemPrompt">System Prompt</label>
+            <textarea id="systemPrompt" rows="6">You are a helpful AI assistant. Keep your responses concise. You can see the user's camera or screen which is shared as realtime input images with you.</textarea>
+
+            <label for="openingSentence">Opening Sentence</label>
+            <textarea id="openingSentence" rows="3" placeholder="Optional: This text will be sent to Gemini when the session starts..."></textarea>
+
+            <!-- Saved Prompts -->
+            <div class="saved-prompts-section">
+              <label>Saved Prompts</label>
+              <div class="saved-prompts-controls">
+                <select id="savedPromptSelect">
+                  <option value="">-- Select a saved prompt --</option>
+                </select>
+                <button id="loadPromptBtn" class="btn btn-sm" title="Load selected prompt">Load</button>
+                <button id="deletePromptBtn" class="btn btn-sm danger" title="Delete selected prompt">Del</button>
+              </div>
+              <div class="save-prompt-row">
+                <input type="text" id="promptName" placeholder="Prompt name..." />
+                <button id="savePromptBtn" class="btn btn-sm">Save</button>
+              </div>
+            </div>
+
+            <div class="connect-controls">
+              <button id="connectBtn" class="btn btn-connect">Connect</button>
+              <button id="disconnectBtn" class="btn danger hidden">Disconnect</button>
+              <button id="showHistoryBtn" class="btn btn-history">Past Conversations</button>
+            </div>
+          </div>
+
+          <!-- Right: Live Session Area -->
+          <div class="session-panel">
+            <div class="auth-section" id="auth-section">
+              <div class="description-box">
+                <h3>Features Enabled:</h3>
+                <ul>
+                  <li><strong>Native Audio:</strong> Low latency voice interaction</li>
+                  <li><strong>Multilingual:</strong> Speak in different languages</li>
+                </ul>
+                <p>
+                  <em>Configure voice and system prompt on the left, then click Connect.</em>
+                </p>
+              </div>
+            </div>
+
+            <div class="session-end-section hidden" id="session-end-section">
+              <h2>Session Ended</h2>
+              <p>Your conversation and recording have been saved.</p>
+              <button id="restartBtn" class="btn">Start New Session</button>
+            </div>
+
+            <!-- Conversation History List -->
+            <div class="history-section hidden" id="history-section">
+              <div class="history-header">
+                <button id="historyBackBtn" class="btn btn-sm">Back</button>
+                <h2>Past Conversations</h2>
+              </div>
+              <div id="history-list" class="history-list"></div>
+            </div>
+
+            <!-- Conversation Detail View -->
+            <div class="history-view-section hidden" id="history-view-section">
+              <div class="history-header">
+                <button id="historyViewBack" class="btn btn-sm">Back</button>
+                <h3 id="historyViewTitle"></h3>
+              </div>
+              <div id="historyViewAudio" class="history-audio"></div>
+              <div id="historyViewMessages" class="chat-log history-chat-log"></div>
+            </div>
+
+            <div class="app-section hidden" id="app-section">
+              <div class="app-grid">
+                <div class="left-panel">
+                  <div class="video-container">
+                    <div id="video-placeholder">Start camera to send video</div>
+                    <video id="video-preview" autoplay playsinline muted></video>
+                    <canvas id="video-canvas" style="display: none"></canvas>
+                  </div>
+
+                  <div class="controls">
+                    <button id="micBtn" class="btn icon-btn">Start Mic</button>
+                    <button id="cameraBtn" class="btn icon-btn">Start Camera</button>
+                    <button id="screenBtn" class="btn icon-btn">Share Screen</button>
+                  </div>
+                </div>
+
+                <div class="right-panel">
+                  <div class="chat-log" id="chat-log"></div>
+                  <div class="input-area">
+                    <input type="text" id="textInput" placeholder="Type a message..." />
+                    <button id="sendBtn" class="btn">Send</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script src="/static/media-handler.js"></script>
+    <script src="/static/gemini-client.js"></script>
+    <script src="/static/main.js"></script>
+  </body>
+</html>

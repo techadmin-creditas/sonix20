@@ -31,6 +31,7 @@ redis==7.4.0               # Session cache + TTS audio cache
 openai==2.30.0             # OpenAI GPT models
 groq==1.1.2                # Groq ultra-fast inference (LLaMA, Mixtral)
 google-generativeai==0.8.6 # Google Gemini models
+google-genai              # Gemini Live API SDK (for realtime STS)
 
 # --- Async Utilities ---
 async-timeout==5.0.1
