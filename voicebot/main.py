@@ -129,10 +129,13 @@ app = FastAPI(
 # CORS Extension
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Browser UI runs at http://localhost:3000 during development.
+    # Avoid `allow_credentials=True` with wildcard origins, which can omit
+    # `Access-Control-Allow-Origin` headers and break fetch() in the browser.
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
 )
 
 # Mount REST API
