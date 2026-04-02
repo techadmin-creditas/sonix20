@@ -244,6 +244,19 @@ class DeepgramStreamingProvider:
                 # Type "speech_started" to notify the brain immediately
                 await self._on_transcript("", False, self.language, 1.0, msg_type="speech_started")
 
+        elif msg_type == "Error":
+             error_msg = data.get("message", "Unknown Deepgram Error")
+             logger.error("Deepgram reported a terminal error: %s", error_msg)
+             from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+             
+             _err_lower = error_msg.lower()
+             if "401" in _err_lower or "unauthorized" in _err_lower:
+                  raise AuthError(f"Deepgram STT auth failed: {error_msg}")
+             if "429" in _err_lower or "quota" in _err_lower or "credit" in _err_lower:
+                  raise ServiceExhaustedError(f"Deepgram STT quota reached: {error_msg}")
+             
+             raise VoiceBotError(f"Deepgram STT terminal error: {error_msg[:100]}")
+
         elif msg_type == "Metadata":
             logger.info(
                 "Deepgram metadata: request_id=%s",

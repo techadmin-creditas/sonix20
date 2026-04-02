@@ -99,6 +99,22 @@ export default function SessionControl() {
     api.getModels()
       .then(models => setModelLimits(models || []))
       .catch(err => console.error("Failed to load model specs:", err));
+
+    // Cleanup on page exit: Ensure all session handles are closed immediately
+    return () => {
+      console.log("Cleanup: User navigating away, terminating active voice sessions...");
+      if (wsRef.current) {
+         wsRef.current.close(1000, "User navigated away");
+         wsRef.current = null;
+      }
+      if (livekitRoomRef.current) {
+         livekitRoomRef.current.disconnect();
+         livekitRoomRef.current = null;
+      }
+      // Re-use existing audio stop logic (don't close context to avoid React strict mode issues, just disconnect)
+      if (processorRef.current) processorRef.current.disconnect();
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    };
   }, []);
 
   // Audio Processing Refs
@@ -110,6 +126,8 @@ export default function SessionControl() {
   /** Coalesce small PCM frames and add lookahead before first play to reduce underruns/gaps. */
   const botPcmAccumRef = React.useRef<Uint8Array | null>(null);
   const botPlaybackPrimedRef = React.useRef(false);
+  /** Track scheduled sources to allow immediate cancellation on interrupt. */
+  const scheduledSourcesRef = React.useRef<AudioBufferSourceNode[]>([]);
   /** Flush tail PCM after a short idle gap (binary stopped) so samples are not held until the next segment. */
   const botPcmIdleFlushRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const BOT_LOOKAHEAD_BYTES = 4800; // ~150ms @ 16kHz mono int16
@@ -119,6 +137,10 @@ export default function SessionControl() {
   const [micActivity, setMicActivity] = useState(0);
   const [sessionTransport, setSessionTransport] = useState<'websocket' | 'webrtc'>('websocket');
   const [livekitHint, setLivekitHint] = useState<string | null>(null);
+  const [isHandoffAnimating, setIsHandoffAnimating] = useState(false);
+  /** Stable reference to the active socket for cleanup on unmount/page exit. */
+  const wsRef = React.useRef<WebSocket | null>(null);
+  const activeGainsRef = React.useRef<GainNode[]>([]);
 
   // Audio Player Logic
   const initAudio = () => {
@@ -147,6 +169,17 @@ export default function SessionControl() {
     clearBotPcmIdleFlush();
     botPcmAccumRef.current = null;
     botPlaybackPrimedRef.current = false;
+    
+    // Stop and clear all currently scheduled audio sources
+    scheduledSourcesRef.current.forEach(source => {
+      try { source.stop(); source.disconnect(); } catch (e) { /* already stopped */ }
+    });
+    scheduledSourcesRef.current = [];
+    activeGainsRef.current.forEach(gain => {
+      try { gain.disconnect(); } catch (e) { /* already disconnected */ }
+    });
+    activeGainsRef.current = [];
+
     if (audioContextRef.current) {
       nextScheduledTimeRef.current = audioContextRef.current.currentTime;
     } else {
@@ -175,11 +208,23 @@ export default function SessionControl() {
 
       const source = audioContextRef.current!.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioContextRef.current!.destination);
+      
+      const gainNode = audioContextRef.current!.createGain();
+      gainNode.connect(audioContextRef.current!.destination);
+      source.connect(gainNode);
 
       if (analyzerRef.current) {
         source.connect(analyzerRef.current);
       }
+
+      // Track source and gain for potential cancellation or crossfade
+      scheduledSourcesRef.current.push(source);
+      activeGainsRef.current.push(gainNode);
+      
+      source.onended = () => {
+        scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
+        activeGainsRef.current = activeGainsRef.current.filter(g => g !== gainNode);
+      };
 
       const startTime = Math.max(nextScheduledTimeRef.current, audioContextRef.current!.currentTime);
       source.start(startTime);
@@ -447,6 +492,21 @@ export default function SessionControl() {
       } else if (msg.type === 'audio_interrupt') {
         // Backend confirmed interruption — flush any pre-scheduled audio immediately.
         resetBotPlaybackCoalesce();
+      } else if (msg.type === 'audio_handoff') {
+        // Trigger smooth volume ramp-down of any currently playing "filler" audio
+        if (audioContextRef.current) {
+          const now = audioContextRef.current.currentTime;
+          setIsHandoffAnimating(true);
+          setTimeout(() => setIsHandoffAnimating(false), 800);
+          
+          activeGainsRef.current.forEach(gain => {
+            // Quick 250ms fade-out to hand over to the real response
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+          });
+          // Note: we don't clear the array, onended will handle it.
+          // Adjust next scheduled time to minimize gap during handoff
+          nextScheduledTimeRef.current = now + 0.15; 
+        }
       } else if (msg.type === 'error') {
         setStatus('Neural Error');
         setLogs(prev => [...prev, {
@@ -572,6 +632,7 @@ export default function SessionControl() {
       };
       
       setWs(socket);
+      wsRef.current = socket;
     } catch (err) {
       console.error('Failed to start session:', err);
       setIsConnecting(false);
@@ -608,6 +669,10 @@ export default function SessionControl() {
     if (livekitRoomRef.current) {
       livekitRoomRef.current.disconnect();
       livekitRoomRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
     if (ws) {
       ws.close();
@@ -922,6 +987,17 @@ export default function SessionControl() {
                 <h3 className="font-headline text-2xl font-bold text-on-surface uppercase tracking-widest">
                   {status}
                 </h3>
+                {isHandoffAnimating && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-2"
+                  >
+                    <span className="bg-primary/20 text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border border-primary/30">
+                      Neural Shift
+                    </span>
+                  </motion.div>
+                )}
                 <p className={cn(
                   "font-label text-xs uppercase tracking-[0.2em] mt-2",
                   isLive ? "text-primary animate-pulse" : "text-outline"

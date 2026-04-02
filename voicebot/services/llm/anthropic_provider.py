@@ -171,11 +171,17 @@ class AnthropicStreamingProvider:
                     yield LLMResponse(content="", tool_calls=pending_tool_calls)
 
         except Exception as e:
-            logger.error("Anthropic streaming error: %s", e)
-            yield LLMResponse(
-                content="I'm sorry, I encountered an error. Please try again.",
-                tool_calls=[],
-            )
+            from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+            err_str = str(e).lower()
+            
+            logger.debug("Anthropic streaming error: %s", e)
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"Anthropic API key invalid: {e}")
+            if "429" in err_str or "rate limit" in err_str or "overloaded" in err_str:
+                raise ServiceExhaustedError("Anthropic rate limit or quota exceeded.")
+                
+            raise VoiceBotError(f"Anthropic error: {str(e)[:100]}")
 
     async def complete(
         self,

@@ -151,5 +151,14 @@ class GeminiStreamingProvider:
                 logger.warning("Failed to extract Gemini usage: %s", e)
 
         except Exception as e:
-            logger.error("Gemini streaming error: %s", e, exc_info=True)
-            yield LLMResponse(content=f"[Gemini Error: {str(e)}]")
+            from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+            err_str = str(e).lower()
+            
+            logger.error("Gemini streaming error: %s", e)
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"Gemini API key invalid: {e}")
+            if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                raise ServiceExhaustedError("Gemini quota or rate limit exceeded.")
+                
+            raise VoiceBotError(f"Gemini error: {str(e)[:100]}")

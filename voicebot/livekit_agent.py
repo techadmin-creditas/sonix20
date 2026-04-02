@@ -137,6 +137,11 @@ class LiveKitVoiceAgent:
         async def on_log(tag: str, message: str, color: str):
             await broadcast_data("log", {"tag": tag, "message": message, "color": color})
 
+        async def on_metrics(metrics: dict):
+            if metrics.get("type") == "audio_handoff":
+                await broadcast_data("audio_handoff", {})
+            await broadcast_data("metrics", metrics)
+
         self.brain = AgenticBrain(
             session=session,
             stt_handler=DeepgramStreamingProvider(),
@@ -147,7 +152,8 @@ class LiveKitVoiceAgent:
             on_audio_output=on_audio_output,
             on_bot_transcript=on_bot_transcript,
             on_transcript=on_transcript,
-            on_log=on_log
+            on_log=on_log,
+            on_metrics=on_metrics
         )
 
         # 2. Connect STT eagerly before participants join (avoids race condition and first-frame loss)
@@ -232,7 +238,7 @@ class LiveKitVoiceAgent:
                     logger.info("Ingesting: %d frames from user", frame_count)
 
                 if resampler is None:
-                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, frame.num_channels)
+                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, num_channels=frame.num_channels)
                     logger.info(
                         "AudioResampler initialized: %dHz %dch → 16000Hz 1ch",
                         frame.sample_rate, frame.num_channels,

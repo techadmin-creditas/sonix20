@@ -20,8 +20,9 @@ import logging
 from typing import AsyncIterator, Optional
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.logging.logger import setup_logger
 
-logger = logging.getLogger("tts-elevenlabs")
+logger = setup_logger("tts-elevenlabs", level="INFO")
 settings = get_settings()
 
 
@@ -61,6 +62,7 @@ class ElevenLabsStreamingProvider:
         stability: float = 0.5,
         similarity_boost: float = 0.75,
         style: float = 0.0,
+        **kwargs,
     ) -> AsyncIterator[bytes]:
         """
         Stream audio chunks for the given text.
@@ -130,9 +132,15 @@ class ElevenLabsStreamingProvider:
                     "POST", url, json=payload, headers=headers
                 ) as response:
                     if response.status_code != 200:
-                        error_text = await response.aread()
+                        from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+                        error_text = (await response.aread()).decode()
                         logger.error("ElevenLabs error %d: %s", response.status_code, error_text)
-                        return
+                        
+                        if response.status_code == 401:
+                            raise AuthError(f"ElevenLabs API Key invalid or expired: {error_text}")
+                        if response.status_code in (402, 429):
+                            raise ServiceExhaustedError(f"ElevenLabs quota or usage limit reached: {error_text}")
+                        raise VoiceBotError(f"ElevenLabs error ({response.status_code}): {error_text[:100]}")
 
                     logger.info("ElevenLabs: HTTP %d response, model=%s, content-type=%s", response.status_code, self.model_id, response.headers.get("content-type"))
                     _chunk_count = 0
@@ -147,9 +155,13 @@ class ElevenLabsStreamingProvider:
                         yield chunk
                     logger.info("ElevenLabs: Streaming complete. Total chunks: %d", _chunk_count)
 
+        except (AuthError, ServiceExhaustedError, VoiceBotError):
+            # Pass through our managed exceptions for terminal handling
+            raise
         except Exception as e:
+            from voicebot.shared.exceptions import VoiceBotError
             logger.error("ElevenLabs streaming error: %s", e)
-            return
+            raise VoiceBotError(f"ElevenLabs connection failure: {str(e)}")
 
         # ── Cache the rendered audio for future calls ────────────────────────
         if self._cache is not None and accumulated:
