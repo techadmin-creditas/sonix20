@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { SESSIONS } from '../constants';
 import { cn } from '../lib/utils';
-import { 
-  Search, Filter, Download, MoreVertical, 
+import {
+  Search, Filter, Download, MoreVertical,
   Play, MessageSquare, Clock, Calendar,
   ChevronRight, Smile, BarChart2, Trash2,
   Loader2, Zap, Terminal,
@@ -47,7 +47,7 @@ export default function Sessions() {
     loadSessions();
   }, []);
 
-  const filteredSessions = sessions.filter(s => 
+  const filteredSessions = sessions.filter(s =>
     s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.bot_name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -63,20 +63,20 @@ export default function Sessions() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Sessions" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Sessions"
         subtitle="Conversation History & Analytics"
         actions={
           <div className="flex gap-3">
-            <button 
+            <button
               onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all"
             >
               <Download className="size-4" />
               Export All
             </button>
-            <button 
+            <button
               onClick={() => navigate('/sessions/live')}
               className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all"
             >
@@ -92,7 +92,7 @@ export default function Sessions() {
         <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
           <div className="relative w-full md:w-96">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-            <input 
+            <input
               type="text"
               placeholder="Search by ID, Bot, or Intent..."
               value={searchQuery}
@@ -180,7 +180,7 @@ export default function Sessions() {
                     {session.metadata?.sentiment_score != null ? (
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-surface-highest rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className="h-full bg-emerald-500"
                             style={{ width: `${Math.round((session.metadata.sentiment_score as number) * 100)}%` }}
                           />
@@ -205,7 +205,7 @@ export default function Sessions() {
                         <span className="text-[10px] font-bold uppercase">Precision</span>
                       </div>
                       <p className={cn(
-                        "text-xs font-bold", 
+                        "text-xs font-bold",
                         session.metadata.tool_performance.success_rate < 90 ? "text-amber-500" : "text-emerald-500"
                       )}>
                         {session.metadata.tool_performance.success_rate}%

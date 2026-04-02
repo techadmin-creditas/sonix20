@@ -16,9 +16,9 @@ import WorkflowEditor from './pages/WorkflowEditor';
 function App() {
   return (
     <Router>
-      <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
+      <div className="flex h-screen overflow-hidden bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
         <Sidebar />
-        <main className="flex-1 flex flex-col overflow-x-hidden">
+        <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/sessions" element={<Sessions />} />

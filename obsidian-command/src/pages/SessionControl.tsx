@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from '../components/Header';
-import { 
-  Activity, 
-  Settings2, 
-  Download, 
-  Terminal, 
-  StopCircle, 
+import {
+  Activity,
+  Settings2,
+  Download,
+  Terminal,
+  StopCircle,
   XCircle,
   Search,
   ChevronDown,
@@ -43,7 +43,7 @@ export default function SessionControl() {
   const [isBotSelectorOpen, setIsBotSelectorOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // Real-time state
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -56,9 +56,9 @@ export default function SessionControl() {
   const [metrics, setMetrics] = useState({ stt: 0, llm: 0, tts: 0, total: 0 });
   const [infra, setInfra] = useState({
     redis: 'unavailable',
-    stt:   'unavailable',
-    llm:   'unavailable',
-    tts:   'unavailable',
+    stt: 'unavailable',
+    llm: 'unavailable',
+    tts: 'unavailable',
     uptime: '--',
     stt_provider: 'STT',
     llm_provider: 'LLM',
@@ -68,7 +68,7 @@ export default function SessionControl() {
   const [sessionTokens, setSessionTokens] = useState({ input: 0, output: 0, total: 0 });
   const [modelLimits, setModelLimits] = useState<any[]>([]);
   const [toolSuccessRate, setToolSuccessRate] = useState(100.0);
-  
+
   // Caller identity & cross-session memory
   const [userId, setUserId] = useState('');
   // Live sentiment
@@ -76,11 +76,11 @@ export default function SessionControl() {
   const [negativeSentimentCount, setNegativeSentimentCount] = useState(0);
   // Entity extraction
   const [entities, setEntities] = useState<Entity[]>([]);
-  
+
   const transcriptRef = React.useRef<HTMLDivElement>(null);
   const logRef = React.useRef<HTMLDivElement>(null);
   const livekitRoomRef = React.useRef<LiveKitRoom | null>(null);
-  
+
   // Session Config State
   const [config, setConfig] = useState({
     autoRecording: true,
@@ -125,7 +125,7 @@ export default function SessionControl() {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       nextScheduledTimeRef.current = audioContextRef.current.currentTime;
-      
+
       // Create analyzer for visualization
       const analyzer = audioContextRef.current.createAnalyser();
       analyzer.fftSize = 256;
@@ -233,19 +233,19 @@ export default function SessionControl() {
       initAudio();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
+
       const source = audioContextRef.current!.createMediaStreamSource(stream);
       const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
-      
+
       // Connect to analyzer for mic visualization
       source.connect(analyzerRef.current!);
-      
+
       processor.onaudioprocess = (e) => {
         if (socket.readyState !== WebSocket.OPEN) return;
-        
+
         const inputData = e.inputBuffer.getChannelData(0);
-        
+
         // Calculate visualization activity
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) {
@@ -260,7 +260,7 @@ export default function SessionControl() {
         }
         socket.send(pcmData.buffer);
       };
-      
+
       source.connect(processor);
       processor.connect(audioContextRef.current!.destination);
     } catch (err) {
@@ -298,19 +298,19 @@ export default function SessionControl() {
     setCurrentSentiment('neutral');
     setNegativeSentimentCount(0);
     setEntities([]);
-    
+
     const handleIncomingMessage = async (msg: any) => {
       if (msg.type === 'status') {
         setStatus(msg.state || msg.message);
       } else if (msg.type === 'transcript' || msg.type === 'bot_transcript') {
         if (!msg.text || msg.text.trim() === '') return;
-        
+
         const role = msg.type === 'transcript' ? 'User' : 'Bot';
-        
+
         setTranscripts(prev => {
           const last = prev[prev.length - 1];
           const isUpdate = last && last.role === role && !last.isFinal;
-          
+
           if (isUpdate) {
             const updated = [...prev];
             updated[updated.length - 1] = {
@@ -401,20 +401,20 @@ export default function SessionControl() {
           tts: msg.tts || 0,
           total: msg.total || 0
         });
-        
+
         if (msg.tool_success_rate !== undefined) {
           setToolSuccessRate(msg.tool_success_rate);
         }
-        
+
         // Handle Token Consumption (Cognitive Load)
         if (msg.tokens_output > 0 || msg.tokens_input > 0) {
-           setTokenPulse(true);
-           setTimeout(() => setTokenPulse(false), 2000); // 2s glow duration
-           setSessionTokens(prev => ({
-             input: msg.session_tokens_input || (prev.input + msg.tokens_input),
-             output: msg.session_tokens_output || (prev.output + msg.tokens_output),
-             total: msg.session_tokens_total || (prev.total + msg.tokens_total)
-           }));
+          setTokenPulse(true);
+          setTimeout(() => setTokenPulse(false), 2000); // 2s glow duration
+          setSessionTokens(prev => ({
+            input: msg.session_tokens_input || (prev.input + msg.tokens_input),
+            output: msg.session_tokens_output || (prev.output + msg.tokens_output),
+            total: msg.session_tokens_total || (prev.total + msg.tokens_total)
+          }));
         }
       } else if (msg.type === 'session_ended') {
         setStatus(`Call ended${msg.reason ? ` · ${msg.reason}` : ''}`);
@@ -427,7 +427,7 @@ export default function SessionControl() {
             color: 'text-primary',
           },
         ]);
-        
+
         // Special alert for inactivity timeout
         if (msg.reason === 'inactivity_timeout') {
           setLogs((prev) => [
@@ -440,7 +440,7 @@ export default function SessionControl() {
             },
           ]);
         }
-        
+
         setIsLive(false);
         stopAudio();
         setWs(null);
@@ -481,7 +481,7 @@ export default function SessionControl() {
         livekitRoomRef.current = room;
         try {
           await room.connect(res.livekit.url, res.livekit.token);
-          
+
           // Use high-quality constraints for the microphone
           const micTrack = await createLocalAudioTrack({
             echoCancellation: true,
@@ -523,7 +523,7 @@ export default function SessionControl() {
         : websocket_url;
       const socket = new WebSocket(getVoiceWebSocketUrl(wsUrl));
       socket.binaryType = 'arraybuffer';
-      
+
       socket.onopen = () => {
         resetBotPlaybackCoalesce();
         setIsLive(true);
@@ -531,7 +531,7 @@ export default function SessionControl() {
         setStatus('Connecting...');
         startMic(socket);
       };
-      
+
       socket.onmessage = async (event) => {
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
@@ -540,7 +540,7 @@ export default function SessionControl() {
           playAudioChunk(event.data);
         }
       };
-      
+
       socket.onclose = (event) => {
         setIsLive(false);
         setIsConnecting(false);
@@ -548,9 +548,9 @@ export default function SessionControl() {
         setWs(null);
         stopAudio();
       };
-      
+
       setWs(socket);
-      
+
       socket.onclose = (event) => {
         setIsLive(false);
         setIsConnecting(false);
@@ -570,7 +570,7 @@ export default function SessionControl() {
         setWs(null);
         stopAudio();
       };
-      
+
       setWs(socket);
     } catch (err) {
       console.error('Failed to start session:', err);
@@ -647,9 +647,9 @@ export default function SessionControl() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen relative">
-      <Header 
-        title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'} 
+    <div className="flex-1 flex flex-col  relative">
+      <Header
+        title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'}
         subtitle={isLive ? 'Live Operations • Session Active' : 'Standby Mode'}
         actions={
           <>
@@ -790,14 +790,14 @@ export default function SessionControl() {
       <AnimatePresence>
         {isConfigOpen && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsConfigOpen(false)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-200"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -809,7 +809,7 @@ export default function SessionControl() {
                   <h2 className="font-headline text-2xl font-extrabold text-on-surface">Session <span className="text-primary">Config</span></h2>
                   <p className="text-xs text-outline uppercase tracking-widest mt-1">Runtime Parameters</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setIsConfigOpen(false)}
                   className="size-10 rounded-full hover:bg-surface-highest flex items-center justify-center transition-all"
                 >
@@ -818,17 +818,17 @@ export default function SessionControl() {
               </div>
 
               <div className="flex-1 space-y-8 overflow-y-auto pr-2 custom-scrollbar">
-                <ConfigToggle 
+                <ConfigToggle
                   icon={ShieldCheck}
-                  label="Auto-Recording" 
+                  label="Auto-Recording"
                   description="Save audio stream to cloud storage"
                   active={config.autoRecording}
                   onToggle={() => setConfig(prev => ({ ...prev, autoRecording: !prev.autoRecording }))}
                 />
-                
-                <ConfigToggle 
+
+                <ConfigToggle
                   icon={Volume2}
-                  label="Noise Suppression" 
+                  label="Noise Suppression"
                   description="Filter background noise in real-time"
                   active={config.noiseSuppression}
                   onToggle={() => setConfig(prev => ({ ...prev, noiseSuppression: !prev.noiseSuppression }))}
@@ -846,8 +846,8 @@ export default function SessionControl() {
                         onClick={() => setConfig(prev => ({ ...prev, latencyMode: mode }))}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold uppercase tracking-widest border transition-all",
-                          config.latencyMode === mode 
-                            ? "bg-primary/10 border-primary text-primary" 
+                          config.latencyMode === mode
+                            ? "bg-primary/10 border-primary text-primary"
                             : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/30"
                         )}
                       >
@@ -865,11 +865,11 @@ export default function SessionControl() {
                     </div>
                     <span className="text-primary font-mono font-bold">{config.temperature}</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.1" 
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
                     value={config.temperature}
                     onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
                     className="w-full h-1.5 bg-surface-highest rounded-lg appearance-none cursor-pointer accent-primary"
@@ -882,7 +882,7 @@ export default function SessionControl() {
               </div>
 
               <div className="mt-auto pt-10">
-                <button 
+                <button
                   onClick={() => setIsConfigOpen(false)}
                   className="w-full py-4 rounded-2xl ember-gradient text-on-primary-fixed font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all"
                 >
@@ -901,14 +901,14 @@ export default function SessionControl() {
             <div className="glass-panel rounded-3xl p-6 sm:p-10 lg:p-12 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] lg:min-h-[460px] relative overflow-hidden">
               {/* Voice Orb Animation */}
               <div className="absolute inset-0 bg-primary/5 blur-[100px]"></div>
-              
+
               <div className="relative size-48 sm:size-56 lg:size-64 flex items-center justify-center">
-                <motion.div 
+                <motion.div
                   animate={{ scale: [1, 1.2, 1] }}
                   transition={{ duration: 3, repeat: Infinity }}
                   className="absolute inset-0 border border-primary/20 rounded-full"
                 />
-                <motion.div 
+                <motion.div
                   animate={{ scale: [1, 1.1, 1] }}
                   transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
                   className="absolute inset-10 border border-primary/40 rounded-full"
@@ -932,14 +932,14 @@ export default function SessionControl() {
 
               {isLive && (
                 <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-3 z-10 animate-in fade-in slide-in-from-bottom-4">
-                  <button 
+                  <button
                     onClick={sendInterrupt}
                     className="bg-red-900/40 hover:bg-red-800/60 text-red-100 border border-red-500/30 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
                     <StopCircle className="size-4 sm:size-5" />
                     Interrupt
                   </button>
-                  <button 
+                  <button
                     onClick={endSession}
                     className="bg-surface-highest/60 hover:bg-surface-highest text-on-surface border border-outline-variant/20 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
@@ -972,7 +972,7 @@ export default function SessionControl() {
                 <StatusBadge label={infra.tts_provider || "TTS"} status={infra.tts} />
               </div>
             </div>
-            
+
             {/* Cognitive Load Widget */}
             {/* <div className={cn(
               "glass-panel rounded-3xl p-4 sm:p-6 transition-all duration-700 shrink-0",
@@ -1016,8 +1016,8 @@ export default function SessionControl() {
                   </p>
                 </div>
               </div> */}
-              
-              {/* <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+
+            {/* <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
                  <div className="flex items-center justify-between">
                     <div className="flex flex-col">
                         <span className="text-[9px] font-black text-outline uppercase tracking-widest">Efficiency</span>
@@ -1037,8 +1037,8 @@ export default function SessionControl() {
                     </div>
                  </div> */}
 
-                 {/* Token Headroom / Context Window Progress */}
-                 {/* {(() => {
+            {/* Token Headroom / Context Window Progress */}
+            {/* {(() => {
                     const model = modelLimits.find(m => m.id === (selectedBot?.llm_model || 'llama-3.3-70b-versatile'));
                     if (!model) return null;
                     const percent = Math.min(100, (sessionTokens.total / (model.context_window || 128000)) * 100);
@@ -1075,12 +1075,12 @@ export default function SessionControl() {
                       <div className={cn(
                         "size-2 rounded-full",
                         currentSentiment === 'positive' ? "bg-emerald-400" :
-                        currentSentiment === 'negative' ? "bg-red-400 animate-pulse" : "bg-yellow-400"
+                          currentSentiment === 'negative' ? "bg-red-400 animate-pulse" : "bg-yellow-400"
                       )} />
                       <span className={cn(
                         "text-[10px] font-bold uppercase",
                         currentSentiment === 'positive' ? "text-emerald-400" :
-                        currentSentiment === 'negative' ? "text-red-400" : "text-yellow-400"
+                          currentSentiment === 'negative' ? "text-red-400" : "text-yellow-400"
                       )}>{currentSentiment}</span>
                     </div>
                   )}
@@ -1103,7 +1103,7 @@ export default function SessionControl() {
               )}
 
               {/* Scrollable transcript body — min-h-0 is required for overflow-y to engage in a flex column */}
-              <div 
+              <div
                 ref={transcriptRef}
                 className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 sm:pr-2 custom-scrollbar scroll-smooth"
               >
@@ -1135,7 +1135,7 @@ export default function SessionControl() {
                             className={cn(
                               "size-1.5 rounded-full",
                               t.sentiment === 'positive' ? "bg-emerald-400" :
-                              t.sentiment === 'negative' ? "bg-red-400" : "bg-yellow-400"
+                                t.sentiment === 'negative' ? "bg-red-400" : "bg-yellow-400"
                             )}
                             title={`Sentiment: ${t.sentiment}`}
                           />
@@ -1144,8 +1144,8 @@ export default function SessionControl() {
 
                       <div className={cn(
                         "px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl text-sm shadow-sm transition-all relative",
-                        t.role === 'User' 
-                          ? "bg-surface-highest text-on-surface rounded-tr-none border border-white/5" 
+                        t.role === 'User'
+                          ? "bg-surface-highest text-on-surface rounded-tr-none border border-white/5"
                           : "bg-primary/10 border border-primary/20 text-on-surface rounded-tl-none"
                       )}>
                         {t.text}
@@ -1159,7 +1159,7 @@ export default function SessionControl() {
               {/* Simulator text input */}
               {isLive && (
                 <div className="mt-3 pt-3 border-t border-white/5 shrink-0">
-                  <form 
+                  <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       const input = e.currentTarget.elements.namedItem('query') as HTMLInputElement;
@@ -1170,9 +1170,9 @@ export default function SessionControl() {
                     }}
                     className="relative"
                   >
-                    <input 
+                    <input
                       name="query"
-                      type="text" 
+                      type="text"
                       placeholder="Type a message (Simulator Mode)..."
                       className="w-full bg-surface-highest border border-white/5 rounded-xl py-2.5 pl-4 pr-11 text-sm focus:outline-none focus:border-primary/40 transition-all text-on-surface"
                     />
@@ -1199,8 +1199,8 @@ export default function SessionControl() {
                   </TabButton>
                 </div>
               </div>
-              
-              <div 
+
+              <div
                 ref={logRef}
                 className="flex-1 overflow-y-auto space-y-1 custom-scrollbar"
               >
@@ -1237,7 +1237,7 @@ export default function SessionControl() {
                     }
 
                     return filtered.map((log, i) => (
-                      <LogLine 
+                      <LogLine
                         key={i}
                         time={log.time}
                         tag={log.tag}
@@ -1270,11 +1270,11 @@ function MetricCard({ label, value, unit, color, highlight }: any) {
 
 function StatusBadge({ label, status = 'online' }: any) {
   const cfg: Record<string, { dot: string; border: string; pill: string; hint: string }> = {
-    online:      { dot: 'bg-green-500',  border: 'border-green-500/20',  pill: '',                          hint: 'Online'     },
-    offline:     { dot: 'bg-red-500',    border: 'border-red-500/30',    pill: 'bg-red-500/10 text-red-400', hint: 'Offline'    },
-    simulator:   { dot: 'bg-yellow-400', border: 'border-yellow-400/30', pill: 'bg-yellow-400/10 text-yellow-400', hint: 'Simulator' },
-    degraded:    { dot: 'bg-orange-400', border: 'border-orange-400/30', pill: 'bg-orange-400/10 text-orange-400', hint: 'Degraded' },
-    unavailable: { dot: 'bg-zinc-500',   border: 'border-zinc-500/20',   pill: 'bg-zinc-500/10 text-zinc-400', hint: 'N/A'      },
+    online: { dot: 'bg-green-500', border: 'border-green-500/20', pill: '', hint: 'Online' },
+    offline: { dot: 'bg-red-500', border: 'border-red-500/30', pill: 'bg-red-500/10 text-red-400', hint: 'Offline' },
+    simulator: { dot: 'bg-yellow-400', border: 'border-yellow-400/30', pill: 'bg-yellow-400/10 text-yellow-400', hint: 'Simulator' },
+    degraded: { dot: 'bg-orange-400', border: 'border-orange-400/30', pill: 'bg-orange-400/10 text-orange-400', hint: 'Degraded' },
+    unavailable: { dot: 'bg-zinc-500', border: 'border-zinc-500/20', pill: 'bg-zinc-500/10 text-zinc-400', hint: 'N/A' },
   };
   const s = cfg[status] ?? cfg.offline;
   return (
@@ -1311,7 +1311,7 @@ function LogLine({ time, tag, content, color }: any) {
 
 function TabButton({ active, children, onClick }: any) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
         "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-tighter transition-all",
@@ -1338,14 +1338,14 @@ function ConfigToggle({ icon: Icon, label, description, active, onToggle }: any)
           <p className="text-[10px] text-outline uppercase tracking-wider">{description}</p>
         </div>
       </div>
-      <button 
+      <button
         onClick={onToggle}
         className={cn(
           "w-12 h-6 rounded-full relative transition-all",
           active ? "bg-primary" : "bg-surface-highest"
         )}
       >
-        <motion.div 
+        <motion.div
           animate={{ x: active ? 24 : 4 }}
           className="absolute top-1 size-4 rounded-full bg-white shadow-sm"
         />

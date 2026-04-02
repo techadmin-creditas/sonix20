@@ -4,12 +4,12 @@ import { Header } from '../components/Header';
 import { PERSONAS } from '../constants';
 import { cn } from '../lib/utils';
 import { api, Bot } from '../lib/api';
-import { 
-  PlusCircle, 
-  Star, 
-  MessageSquare, 
-  CheckCircle2, 
-  Settings2, 
+import {
+  PlusCircle,
+  Star,
+  MessageSquare,
+  CheckCircle2,
+  Settings2,
   Search,
   LayoutGrid,
   List,
@@ -56,17 +56,17 @@ export default function Personas() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Bot Factory" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Bot Factory"
         subtitle="Agent Personas"
         actions={
-          <Link 
+          <Link
             to="/personas/create"
             className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
           >
             <PlusCircle className="size-5" />
-            Create Agent
+            Create Bot
           </Link>
         }
       />
@@ -80,9 +80,9 @@ export default function Personas() {
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input 
-                type="text" 
-                placeholder="Search agents..." 
+              <input
+                type="text"
+                placeholder="Search agents..."
                 className="bg-surface-low border-none rounded-xl pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary/50"
               />
             </div>
@@ -101,7 +101,7 @@ export default function Personas() {
             <AlertTriangle className="size-12 text-red-500" />
             <p className="text-red-200 mt-4 font-bold">Failed to connect to Bot Factory</p>
             <p className="text-red-500/60 text-sm mt-1">{error}</p>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="mt-6 px-6 py-2 bg-red-500/10 text-red-500 rounded-xl font-bold hover:bg-red-500/20 transition-all"
             >
@@ -183,7 +183,7 @@ export default function Personas() {
                     </div>
                   ) : (
                     <>
-                      <Link 
+                      <Link
                         to={`/personas/${persona.id}/config`}
                         className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
                       >
@@ -205,7 +205,7 @@ export default function Personas() {
               </div>
             ))}
 
-            <Link 
+            <Link
               to="/personas/create"
               className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
             >

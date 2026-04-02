@@ -1,11 +1,11 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Mic2, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Mic2,
+  BarChart3,
+  Settings,
   Database,
   Bot,
   Layers,
@@ -37,13 +37,13 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0">
-      <div className="p-8 flex flex-col gap-8 flex-1">
-        <div className="flex justify-between items-start">
+      <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">Voice Bot Enterprise</h1>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p>
+            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.0</h1>
+            {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
-          <button 
+          <button
             onClick={toggleTheme}
             className="p-2 rounded-lg bg-surface-low hover:bg-surface-high transition-all border border-outline-variant/10 text-outline hover:text-primary"
           >
@@ -58,8 +58,8 @@ export function Sidebar() {
               to={item.path}
               className={({ isActive }) => cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
-                isActive 
-                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg" 
+                isActive
+                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
                   : "text-on-surface-variant hover:bg-surface-high/50"
               )}
             >

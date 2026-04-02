@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { api, Workflow } from '../lib/api';
-import { 
-  PlusCircle, 
-  GitBranch, 
-  Zap, 
-  Settings2, 
+import {
+  PlusCircle,
+  GitBranch,
+  Zap,
+  Settings2,
   Search,
   LayoutGrid,
   List,
@@ -89,12 +89,12 @@ export default function Workflows() {
   );
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Workflows" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Workflows"
         subtitle="Conversational Logic"
         actions={
-          <Link 
+          <Link
             to="/workflows/create"
             className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
           >
@@ -108,13 +108,13 @@ export default function Workflows() {
         {/* Toolbar */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
-            <button 
+            <button
               onClick={() => setView('grid')}
               className={cn("p-2 rounded-lg transition-all", view === 'grid' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
             >
               <LayoutGrid className="size-5" />
             </button>
-            <button 
+            <button
               onClick={() => setView('list')}
               className={cn("p-2 rounded-lg transition-all", view === 'list' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
             >
@@ -124,9 +124,9 @@ export default function Workflows() {
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input 
-                type="text" 
-                placeholder="Search workflows..." 
+              <input
+                type="text"
+                placeholder="Search workflows..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="bg-surface-low border-none rounded-xl pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary/50"
@@ -179,7 +179,7 @@ export default function Workflows() {
         {/* Workflow Cards */}
         {!loading && !error && filtered.length > 0 && (
           <div className={cn(
-            view === 'grid' 
+            view === 'grid'
               ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
               : "flex flex-col gap-4"
           )}>
@@ -198,7 +198,7 @@ export default function Workflows() {
 
             {/* Create New Card — only show in grid view */}
             {view === 'grid' && (
-              <Link 
+              <Link
                 to="/workflows/create"
                 className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
               >
@@ -236,10 +236,10 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
 
   // Derive a status label from the workflow data
   const isActive = flow.is_active;
-  const updatedAt = flow.updated_at 
-    ? new Date(flow.updated_at * 1000).toLocaleDateString() 
-    : flow.created_at 
-      ? new Date(flow.created_at * 1000).toLocaleDateString() 
+  const updatedAt = flow.updated_at
+    ? new Date(flow.updated_at * 1000).toLocaleDateString()
+    : flow.created_at
+      ? new Date(flow.created_at * 1000).toLocaleDateString()
       : '—';
 
   if (view === 'list') {
@@ -279,7 +279,7 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
             </div>
           ) : (
             <div className="flex gap-2">
-              <Link 
+              <Link
                 to={`/workflows/${flow.id}/edit`}
                 className="px-4 py-2 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10"
               >
@@ -331,9 +331,9 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
         </div>
         <div className="flex -space-x-2">
           {visibleNodes.map((node: any) => (
-            <div 
-              key={node.id} 
-              className="size-8 rounded-full bg-surface-highest border-2 border-surface-low flex items-center justify-center text-primary shadow-sm" 
+            <div
+              key={node.id}
+              className="size-8 rounded-full bg-surface-highest border-2 border-surface-low flex items-center justify-center text-primary shadow-sm"
               title={node.data?.label || node.type}
             >
               <NodeTypeIcon type={node.type} className="size-4" />
@@ -363,7 +363,7 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
           </div>
         ) : (
           <>
-            <Link 
+            <Link
               to={`/workflows/${flow.id}/edit`}
               className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
             >
@@ -407,7 +407,7 @@ function TestButton({ flow }: { flow: Workflow }) {
 
   return (
     <div className="relative">
-      <button 
+      <button
         onClick={runTest}
         disabled={testing || (flow.nodes?.length === 0)}
         title={flow.nodes?.length === 0 ? 'No nodes to test' : 'Run test simulation'}
@@ -416,7 +416,7 @@ function TestButton({ flow }: { flow: Workflow }) {
           testing && "opacity-60 cursor-not-allowed"
         )}
       >
-        {testing 
+        {testing
           ? <Loader2 className="size-5 animate-spin text-primary" />
           : <Play className="size-5" />
         }
@@ -424,8 +424,8 @@ function TestButton({ flow }: { flow: Workflow }) {
       {result && (
         <div className={cn(
           "absolute bottom-full right-0 mb-2 px-3 py-2 rounded-xl text-[11px] font-medium whitespace-nowrap shadow-xl z-50 border",
-          result.startsWith('✓') 
-            ? "bg-emerald-950 text-emerald-300 border-emerald-800/50" 
+          result.startsWith('✓')
+            ? "bg-emerald-950 text-emerald-300 border-emerald-800/50"
             : "bg-red-950 text-red-300 border-red-800/50"
         )}>
           {result}

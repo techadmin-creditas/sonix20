@@ -40,7 +40,9 @@ class SQLiteProvider:
 
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = Path(db_path or DEFAULT_DB_PATH)
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sqlite")
+        # Fix: SQLite connections are NOT thread-safe for concurrent operations. 
+        # Using max_workers=1 ensures all DB tasks are serialized, preventing segmentation faults.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sqlite")
         self._conn: Optional[sqlite3.Connection] = None
 
     def _get_conn(self) -> sqlite3.Connection:

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Header } from '../components/Header';
-import { 
-  Database, 
-  Search, 
-  PlusCircle, 
-  ChevronRight, 
-  Edit2, 
-  Trash2, 
+import {
+  Database,
+  Search,
+  PlusCircle,
+  ChevronRight,
+  Edit2,
+  Trash2,
   CheckCircle2,
   ExternalLink,
   X,
@@ -108,8 +108,8 @@ export default function KnowledgeBase() {
   }, [activeTab, selectedBotId, vectorSubTab]);
 
   const filteredEntries = entries.filter(entry => {
-    const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = activeFilter === 'Global' || (entry.topic === activeFilter);
     return matchesSearch && matchesFilter;
   });
@@ -147,16 +147,16 @@ export default function KnowledgeBase() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen relative overflow-hidden">
+    <div className="flex-1 flex flex-col  relative overflow-hidden">
       {/* Background Glows */}
       <div className="absolute -top-20 -right-20 w-96 h-96 bg-primary/5 blur-[120px] rounded-full"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/2 blur-[150px] rounded-full"></div>
 
-      <Header 
-        title="Overview" 
+      <Header
+        title="Overview"
         subtitle="Knowledge Base"
         actions={
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
             className="h-10 px-6 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
           >
@@ -177,8 +177,8 @@ export default function KnowledgeBase() {
         <div className="mb-10 flex flex-col md:flex-row gap-6 items-center">
           <div className="relative flex-1 group">
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 size-6 text-outline group-focus-within:text-primary transition-colors" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Find any topic, question, or answer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -186,73 +186,73 @@ export default function KnowledgeBase() {
             />
           </div>
           <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0 overflow-x-auto no-scrollbar">
-             <button 
-                onClick={() => setActiveTab('manual')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'manual' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Manual Core
-             </button>
-             <button 
-                onClick={() => setActiveTab('learned')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'learned' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Autonomous Memory
-             </button>
-             <button 
-                onClick={() => setActiveTab('vector')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'vector' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Vector Explorer
-             </button>
+            <button
+              onClick={() => setActiveTab('manual')}
+              className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap",
+                activeTab === 'manual' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+            >
+              Manual Core
+            </button>
+            <button
+              onClick={() => setActiveTab('learned')}
+              className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap",
+                activeTab === 'learned' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+            >
+              Autonomous Memory
+            </button>
+            <button
+              onClick={() => setActiveTab('vector')}
+              className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap",
+                activeTab === 'vector' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+            >
+              Vector Explorer
+            </button>
           </div>
         </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
-              {activeTab === 'manual' ? (
-                  ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
-                      <FilterChip 
-                          key={filter} 
-                          label={filter} 
-                          active={activeFilter === filter} 
-                          onClick={() => setActiveFilter(filter)}
-                      />
-                  ))
-              ) : activeTab === 'learned' ? (
-                  bots.map(bot => (
-                      <FilterChip 
-                          key={bot.id} 
-                          label={bot.name} 
-                          active={selectedBotId === bot.id} 
-                          onClick={() => setSelectedBotId(bot.id)}
-                      />
-                  ))
-              ) : (
-                <>
-                  <FilterChip 
-                    label="Long-term Shards" 
-                    active={vectorSubTab === 'memory'} 
-                    onClick={() => setVectorSubTab('memory')}
-                  />
-                  <FilterChip 
-                    label="QA Semantic Cache" 
-                    active={vectorSubTab === 'qa'} 
-                    onClick={() => setVectorSubTab('qa')}
-                  />
-                </>
-              )}
-            </div>
-            {activeTab !== 'manual' && (
-              <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20 flex items-center gap-2">
-                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                Live Vector Stream Shard Active
-              </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
+            {activeTab === 'manual' ? (
+              ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
+                <FilterChip
+                  key={filter}
+                  label={filter}
+                  active={activeFilter === filter}
+                  onClick={() => setActiveFilter(filter)}
+                />
+              ))
+            ) : activeTab === 'learned' ? (
+              bots.map(bot => (
+                <FilterChip
+                  key={bot.id}
+                  label={bot.name}
+                  active={selectedBotId === bot.id}
+                  onClick={() => setSelectedBotId(bot.id)}
+                />
+              ))
+            ) : (
+              <>
+                <FilterChip
+                  label="Long-term Shards"
+                  active={vectorSubTab === 'memory'}
+                  onClick={() => setVectorSubTab('memory')}
+                />
+                <FilterChip
+                  label="QA Semantic Cache"
+                  active={vectorSubTab === 'qa'}
+                  onClick={() => setVectorSubTab('qa')}
+                />
+              </>
             )}
           </div>
+          {activeTab !== 'manual' && (
+            <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20 flex items-center gap-2">
+              <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+              Live Vector Stream Shard Active
+            </div>
+          )}
+        </div>
 
         <div className="flex gap-8 relative">
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -262,7 +262,7 @@ export default function KnowledgeBase() {
                 <p className="text-outline font-bold uppercase tracking-widest text-sm">Accessing Knowledge Core...</p>
               </div>
             ) : filteredEntries.map((entry) => (
-              <div 
+              <div
                 key={entry.id}
                 onClick={() => {
                   setSelectedEntry(entry);
@@ -274,13 +274,13 @@ export default function KnowledgeBase() {
                 )}
               >
                 <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
+                  <button
                     onClick={(e) => { e.stopPropagation(); console.log('Edit', entry.id); }}
                     className="p-2 rounded-lg bg-surface-highest text-on-surface-variant hover:text-on-surface transition-colors"
                   >
                     <Edit2 className="size-3.5" />
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => handleDelete(entry.id, e)}
                     className="p-2 rounded-lg bg-surface-highest text-error/60 hover:text-error transition-colors"
                   >
@@ -293,9 +293,9 @@ export default function KnowledgeBase() {
                       "size-10 rounded-xl flex items-center justify-center shrink-0",
                       entry.priority >= 5 ? "bg-primary/20 text-primary" : "bg-surface-highest text-outline"
                     )}>
-                      {activeTab === 'vector' ? <Cpu className="size-5" /> : 
-                       activeTab === 'learned' ? <History className="size-5" /> :
-                       <Database className="size-5" />}
+                      {activeTab === 'vector' ? <Cpu className="size-5" /> :
+                        activeTab === 'learned' ? <History className="size-5" /> :
+                          <Database className="size-5" />}
                     </div>
                     <span className="text-xs font-bold text-primary tracking-widest uppercase">{entry.topic}</span>
                   </div>
@@ -311,13 +311,13 @@ export default function KnowledgeBase() {
                   {entry.answer}
                 </p>
                 {activeTab === 'vector' && entry.rawMetadata && (
-                   <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-white/5">
-                      {Object.entries(entry.rawMetadata).map(([k, v]: [string, any]) => (
-                        <span key={k} className="text-[9px] bg-surface-highest px-1.5 py-0.5 rounded text-outline/80 border border-white/5">
-                          {k}: {String(v)}
-                        </span>
-                      ))}
-                   </div>
+                  <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-white/5">
+                    {Object.entries(entry.rawMetadata).map(([k, v]: [string, any]) => (
+                      <span key={k} className="text-[9px] bg-surface-highest px-1.5 py-0.5 rounded text-outline/80 border border-white/5">
+                        {k}: {String(v)}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -334,7 +334,7 @@ export default function KnowledgeBase() {
             <div className="w-96 shrink-0 glass-panel p-8 rounded-xl ghost-border border-white/5 sticky top-24 h-[calc(100vh-14rem)] overflow-y-auto custom-scrollbar">
               <div className="flex items-center justify-between mb-8">
                 <h3 className="text-xl font-bold text-on-surface tracking-tight">Entry Details</h3>
-                <button 
+                <button
                   onClick={() => setShowPreview(false)}
                   className="text-outline hover:text-on-surface"
                 >
@@ -355,7 +355,7 @@ export default function KnowledgeBase() {
                     <MetaItem label="Created" value={new Date(selectedEntry.created_at * 1000).toLocaleDateString()} />
                     <MetaItem label="Topic/Collection" value={selectedEntry.topic} />
                     {selectedEntry.bot_id && (
-                       <MetaItem label="Linked Bot" value={selectedEntry.bot_id} mono />
+                      <MetaItem label="Linked Bot" value={selectedEntry.bot_id} mono />
                     )}
                     {activeTab === 'vector' && (
                       <div className="pt-4 space-y-2 border-t border-white/5">
@@ -368,7 +368,7 @@ export default function KnowledgeBase() {
                   </div>
                 </div>
                 <div className="pt-6">
-                  <button 
+                  <button
                     className="w-full mt-4 py-3 rounded-xl bg-white/5 border border-white/10 text-on-surface text-sm font-bold hover:bg-white/8 transition-all flex items-center justify-center gap-2"
                   >
                     <ExternalLink className="size-4" />
@@ -395,18 +395,18 @@ export default function KnowledgeBase() {
             <form className="space-y-6" onSubmit={handleAdd}>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-outline uppercase tracking-widest">Question / Trigger</label>
-                <input 
-                  type="text" 
-                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 text-on-surface" 
-                  placeholder="e.g. What is your refund policy?" 
+                <input
+                  type="text"
+                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 text-on-surface"
+                  placeholder="e.g. What is your refund policy?"
                   value={formData.question}
                   onChange={e => setFormData(prev => ({ ...prev, question: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-outline uppercase tracking-widest">Answer / Response</label>
-                <textarea 
-                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 h-32 text-on-surface" 
+                <textarea
+                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 h-32 text-on-surface"
                   placeholder="Provide the detailed answer here..."
                   value={formData.answer}
                   onChange={e => setFormData(prev => ({ ...prev, answer: e.target.value }))}
@@ -415,7 +415,7 @@ export default function KnowledgeBase() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-outline uppercase tracking-widest">Topic</label>
-                  <select 
+                  <select
                     className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none text-on-surface"
                     value={formData.topic}
                     onChange={e => setFormData(prev => ({ ...prev, topic: e.target.value }))}
@@ -428,7 +428,7 @@ export default function KnowledgeBase() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-outline uppercase tracking-widest">Priority</label>
-                  <select 
+                  <select
                     className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none text-on-surface"
                     value={formData.priority}
                     onChange={e => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
@@ -452,12 +452,12 @@ export default function KnowledgeBase() {
 
 function FilterChip({ label, active, onClick }: any) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
         "px-5 py-2 rounded-full text-xs font-bold transition-all",
-        active 
-          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]" 
+        active
+          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]"
           : "bg-surface text-outline hover:bg-surface-high ghost-border"
       )}
     >
