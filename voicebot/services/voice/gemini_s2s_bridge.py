@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from array import array
 from typing import Any, Callable, Coroutine, Optional
 
@@ -105,6 +106,14 @@ _VOICE_MAP: dict[str, str] = {
     "aura-luna-en": "Charon",
     "aura-stella-en": "Kore",
     "aura-athena-en": "Fenrir",
+
+    # ElevenLabs voice ids (returned by GET /api/v1/metadata/voices).
+    # We deterministically map them onto Gemini's prebuilt voices so the UI
+    # "TTS Engine Profile" dropdown still affects Gemini STS output.
+    "21m00tcm4tlvdq8ikwam": "Puck",     # Rachel
+    "tht5kcbe7vkqw6e5kyph": "Charon",   # Dorothy
+    "aznzlk1xhkuvsst7v3s6": "Kore",  # Nicole
+    "exavitqu4vr4xnsdxmal": "Fenrir",  # Sarah
 }
 
 
@@ -157,16 +166,32 @@ class GeminiLiveS2SBridge:
 
         # Interrupt state: when true, suppress forwarding audio output until next turn completes.
         self._interrupt_suppression = False
+        self._turn_interrupted = False
 
         # Transcript accumulation
         self._user_transcript_buf = ""
         self._bot_transcript_buf = ""
+
+        # ── Per-turn latency tracking (for live metrics cards) ────────────
+        # We measure approximate timings for the UI:
+        # - STT Latency: turn_start -> first user transcription
+        # - LLM TTFT: turn_start -> first bot transcription
+        # - TTS Latency: first bot transcription -> first bot audio chunk
+        # - Total RTT: turn_start -> turn_complete
+        self._turn_start_ts: Optional[float] = None
+        self._first_user_transcript_ts: Optional[float] = None
+        self._first_bot_transcript_ts: Optional[float] = None
+        self._first_audio_output_ts: Optional[float] = None
 
     def _resolve_voice_name(self) -> str:
         vid = str(self._bot_config.get("voice_id") or "").strip().lower()
         mapped = _VOICE_MAP.get(vid)
         if mapped:
             return mapped
+        # Allow passing Gemini prebuilt voice names directly.
+        if vid in {"puck", "charon", "kore", "fenrir", "aoede", "leda", "orus", "zephyr"}:
+            return vid.capitalize() if vid != "aoede" else "Aoede"
+
         # Default to the Gemini demo voice.
         return "Puck"
 
@@ -188,6 +213,12 @@ class GeminiLiveS2SBridge:
         self._interrupt_suppression = False
         self._user_transcript_buf = ""
         self._bot_transcript_buf = ""
+
+        logger.info(
+            "Gemini STS voice selected (voice_id=%s -> voice_name=%s)",
+            self._bot_config.get("voice_id"),
+            self._voice_name,
+        )
 
         # Gemini Live config (audio + transcriptions)
         config = types.LiveConnectConfig(
@@ -261,6 +292,14 @@ class GeminiLiveS2SBridge:
         """Queue a PCM16 mono @16kHz audio chunk coming from the frontend."""
         if not audio_bytes:
             return
+        # Treat first received audio for a new turn as the timestamp anchor.
+        # (We reset these values on `turn_complete`.)
+        if self._turn_start_ts is None:
+            self._turn_start_ts = time.time()
+            self._turn_interrupted = False
+            self._first_user_transcript_ts = None
+            self._first_bot_transcript_ts = None
+            self._first_audio_output_ts = None
         await self._audio_queue.put(audio_bytes)
 
     async def send_text_query(self, text: str) -> None:
@@ -270,6 +309,12 @@ class GeminiLiveS2SBridge:
         """
         if not text or not text.strip():
             return
+        # Simulated "text turn": start a fresh latency measurement window.
+        self._turn_start_ts = time.time()
+        self._turn_interrupted = False
+        self._first_user_transcript_ts = None
+        self._first_bot_transcript_ts = None
+        self._first_audio_output_ts = None
         await self._text_queue.put(json.dumps({"text": text.strip()}))
 
     async def handle_interrupt(self) -> None:
@@ -279,10 +324,63 @@ class GeminiLiveS2SBridge:
         an `interrupted` or the next `turn_complete`.
         """
         self._interrupt_suppression = True
+        self._turn_interrupted = True
         self._user_transcript_buf = ""
         self._bot_transcript_buf = ""
+        # Drop latency measurement window for the interrupted turn.
+        self._turn_start_ts = None
+        self._first_user_transcript_ts = None
+        self._first_bot_transcript_ts = None
+        self._first_audio_output_ts = None
         await self._send_json({"type": "status", "state": "listening"})
         await self._send_json({"type": "audio_interrupt"})
+
+    async def _emit_metrics_if_ready(self) -> None:
+        """Emit `type: metrics` for the live UI, once per turn."""
+        if self._turn_start_ts is None:
+            return
+        if self._turn_interrupted:
+            # Interrupted turns shouldn't contribute to RTT metrics.
+            self._turn_start_ts = None
+            self._first_user_transcript_ts = None
+            self._first_bot_transcript_ts = None
+            self._first_audio_output_ts = None
+            return
+
+        now = time.time()
+        stt_ms = max(
+            0.0,
+            (self._first_user_transcript_ts - self._turn_start_ts) * 1000
+            if self._first_user_transcript_ts is not None
+            else 0.0
+        )
+        llm_ms = max(
+            0.0,
+            (self._first_bot_transcript_ts - self._turn_start_ts) * 1000
+            if self._first_bot_transcript_ts is not None
+            else 0.0
+        )
+        tts_ms = max(
+            0.0,
+            (self._first_audio_output_ts - self._first_bot_transcript_ts) * 1000
+            if (self._first_audio_output_ts is not None and self._first_bot_transcript_ts is not None)
+            else 0
+        )
+        total_ms = max(0.0, (now - self._turn_start_ts) * 1000)
+
+        await self._send_json({
+            "type": "metrics",
+            "stt": round(stt_ms, 0),
+            "llm": round(llm_ms, 0),
+            "tts": round(tts_ms, 0),
+            "total": round(total_ms, 0),
+        })
+
+        # Reset timestamps after metrics are emitted.
+        self._turn_start_ts = None
+        self._first_user_transcript_ts = None
+        self._first_bot_transcript_ts = None
+        self._first_audio_output_ts = None
 
     # ──────────────────────────────────────────────────────────────
     # Internal loops
@@ -338,7 +436,9 @@ class GeminiLiveS2SBridge:
                         continue
 
                     # Audio output parts (PCM16 at 24kHz per Gemini demo)
-                    if getattr(server_content, "model_turn", None) and getattr(server_content.model_turn, "parts", None):
+                    if getattr(server_content, "model_turn", None) and getattr(
+                        server_content.model_turn, "parts", None
+                    ):
                         for part in server_content.model_turn.parts:
                             inline_data = getattr(part, "inline_data", None)
                             if not inline_data:
@@ -346,6 +446,11 @@ class GeminiLiveS2SBridge:
 
                             audio_bytes = inline_data.data
                             if audio_bytes and not self._interrupt_suppression:
+                                if (
+                                    self._first_audio_output_ts is None
+                                    and self._turn_start_ts is not None
+                                ):
+                                    self._first_audio_output_ts = time.time()
                                 try:
                                     pcm16_out = _resample_pcm16(
                                         audio_bytes,
@@ -362,52 +467,85 @@ class GeminiLiveS2SBridge:
                     if input_trans and getattr(input_trans, "text", None):
                         self._user_transcript_buf = (input_trans.text or "").strip()
                         if self._user_transcript_buf:
-                            await self._send_json({
-                                "type": "transcript",
-                                "text": self._user_transcript_buf,
-                                "is_final": False,
-                            })
+                            if (
+                                self._first_user_transcript_ts is None
+                                and self._turn_start_ts is not None
+                            ):
+                                self._first_user_transcript_ts = time.time()
+                            await self._send_json(
+                                {
+                                    "type": "transcript",
+                                    "text": self._user_transcript_buf,
+                                    "is_final": False,
+                                }
+                            )
 
                     # Bot transcript updates
                     output_trans = getattr(server_content, "output_transcription", None)
                     if output_trans and getattr(output_trans, "text", None):
                         self._bot_transcript_buf = (output_trans.text or "").strip()
                         if self._bot_transcript_buf:
-                            await self._send_json({
-                                "type": "bot_transcript",
-                                "text": self._bot_transcript_buf,
-                                "is_final": False,
-                            })
+                            if (
+                                self._first_bot_transcript_ts is None
+                                and self._turn_start_ts is not None
+                            ):
+                                self._first_bot_transcript_ts = time.time()
+                            await self._send_json(
+                                {
+                                    "type": "bot_transcript",
+                                    "text": self._bot_transcript_buf,
+                                    "is_final": False,
+                                }
+                            )
 
                     # Interruption event (Gemini detected barge-in)
                     if getattr(server_content, "interrupted", False):
                         self._interrupt_suppression = True
+                        self._turn_interrupted = True
+                        # Drop timing window for interrupted turn.
+                        self._turn_start_ts = None
+                        self._first_user_transcript_ts = None
+                        self._first_bot_transcript_ts = None
+                        self._first_audio_output_ts = None
+
                         await self._send_json({"type": "audio_interrupt"})
                         await self._send_json({"type": "status", "state": "listening"})
+                        continue
 
                     # Turn complete event: send final transcripts and resume audio forwarding.
                     if getattr(server_content, "turn_complete", False):
                         self._interrupt_suppression = False
 
                         if self._user_transcript_buf:
-                            await self._send_json({
-                                "type": "transcript",
-                                "text": self._user_transcript_buf,
-                                "is_final": True,
-                            })
-                            await self._log_turn_safe("user", self._user_transcript_buf)
+                            await self._send_json(
+                                {
+                                    "type": "transcript",
+                                    "text": self._user_transcript_buf,
+                                    "is_final": True,
+                                }
+                            )
+                            await self._log_turn_safe(
+                                "user", self._user_transcript_buf
+                            )
 
                         if self._bot_transcript_buf:
-                            await self._send_json({
-                                "type": "bot_transcript",
-                                "text": self._bot_transcript_buf,
-                                "is_final": True,
-                            })
-                            await self._log_turn_safe("assistant", self._bot_transcript_buf)
+                            await self._send_json(
+                                {
+                                    "type": "bot_transcript",
+                                    "text": self._bot_transcript_buf,
+                                    "is_final": True,
+                                }
+                            )
+                            await self._log_turn_safe(
+                                "assistant", self._bot_transcript_buf
+                            )
 
                         # Reset buffers for the next turn.
                         self._user_transcript_buf = ""
                         self._bot_transcript_buf = ""
+
+                        # Emit latency metrics for the live UI.
+                        await self._emit_metrics_if_ready()
 
                         await self._send_json({"type": "status", "state": "listening"})
 
@@ -416,11 +554,13 @@ class GeminiLiveS2SBridge:
         except Exception as exc:
             logger.error("Gemini receive_loop error (session=%s): %s", self.session_id[:8], exc)
             try:
-                await self._send_json({
-                    "type": "error",
-                    "message": f"Gemini Live error: {exc}",
-                    "code": "S2S_GEMINI_ERR",
-                })
+                await self._send_json(
+                    {
+                        "type": "error",
+                        "message": f"Gemini Live error: {exc}",
+                        "code": "S2S_GEMINI_ERR",
+                    }
+                )
             except Exception:
                 pass
 

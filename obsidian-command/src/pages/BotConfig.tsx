@@ -56,6 +56,7 @@ export default function BotConfig() {
   const isCreateMode = !id;
   
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [saveSuccess, setSaveSuccess] = React.useState(false);
   
@@ -96,6 +97,7 @@ export default function BotConfig() {
   React.useEffect(() => {
     async function loadData() {
       try {
+        setLoadError(null);
         const [modelsData, voicesData, workflowData] = await Promise.all([
           api.getModels(),
           api.getVoices(),
@@ -128,6 +130,7 @@ export default function BotConfig() {
         }
       } catch (err) {
         console.error('Failed to load bot config:', err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to load bot configuration');
       } finally {
         setLoading(false);
       }
@@ -258,6 +261,16 @@ export default function BotConfig() {
         </div>
       </header>
 
+      {loadError ? (
+        <div className="mx-10 mt-6 p-4 rounded-2xl border border-red-500/20 bg-red-500/5 text-red-300">
+          <div className="font-bold text-sm text-red-200">Failed to load options</div>
+          <div className="text-xs mt-1 text-red-400/90">{loadError}</div>
+          <div className="text-[10px] mt-2 text-red-400/70">
+            Check backend endpoints like <code className="text-red-300">/api/v1/metadata/voices</code>.
+          </div>
+        </div>
+      ) : null}
+
       {/* Editor Grid */}
       <div className="p-10 grid grid-cols-12 gap-10 max-w-[1600px] mx-auto w-full">
         {/* Left Column (Persona & Instructions) */}
@@ -368,9 +381,15 @@ export default function BotConfig() {
                     value={formData.voice_id}
                     onChange={e => setFormData(prev => ({ ...prev, voice_id: e.target.value }))}
                   >
-                    {voices.map(v => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
+                    {voices.length === 0 ? (
+                      <option value="">No voices loaded</option>
+                    ) : (
+                      voices.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant size-5" />
                 </div>
