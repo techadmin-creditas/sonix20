@@ -752,7 +752,7 @@ export default function SessionControl() {
                   ) : (
                     <>
                       <Zap className="size-4" />
-                      <span className="hidden sm:inline">Initialize Bridge</span>
+                      <span className="hidden sm:inline">Initialize Session</span>
                       <span className="sm:hidden">Init</span>
                     </>
                   )}

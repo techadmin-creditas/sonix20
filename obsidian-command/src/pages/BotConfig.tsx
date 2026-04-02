@@ -107,8 +107,19 @@ export default function BotConfig() {
 
         if (!isCreateMode && id) {
           const botData = await api.getBot(id);
+
+          // Auto-sync provider with voice engine if they mismatch in DB
+          let tts_provider = botData.tts_provider;
+          const voice = voicesData.find(v => v.id === botData.voice_id);
+          if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
+            tts_provider = 'elevenlabs';
+          } else if (voice?.provider === 'deepgram' && tts_provider === 'elevenlabs') {
+            tts_provider = 'deepgram_ws';
+          }
+
           setFormData({
             ...botData,
+            tts_provider,
             pipeline_mode: botData.pipeline_mode || 'classic',
           });
           setPolicyDraft({
@@ -259,9 +270,9 @@ export default function BotConfig() {
       </header>
 
       {/* Editor Grid */}
-      <div className="p-10 grid grid-cols-12 gap-10 max-w-[1600px] mx-auto w-full">
+      <div className="p-10 grid grid-cols-12 gap-10 mx-auto w-full">
         {/* Left Column (Persona & Instructions) */}
-        <div className="col-span-12 lg:col-span-8 flex flex-col gap-8">
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-8  lg:h-[calc(100vh-0px)] lg:overflow-y-auto">
           {/* Persona Section */}
           <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
             <div className="flex items-center gap-3">
@@ -335,9 +346,8 @@ export default function BotConfig() {
             </div>
           </section>
         </div>
-
         {/* Right Column (Config & Advanced) */}
-        <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
+        <div className="col-span-12 lg:col-span-4 flex flex-col gap-8  lg:h-[calc(100vh-0px)] lg:overflow-y-auto">
           {/* Model & Voice */}
           <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
             <div className="flex items-center gap-3">
@@ -393,19 +403,19 @@ export default function BotConfig() {
                 >
                   <option
                     value="deepgram_ws"
-                    disabled={voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
                   >
                     Deepgram (Websocket)
                   </option>
                   <option
                     value="deepgram_http"
-                    disabled={voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
                   >
                     Deepgram (HTTP)
                   </option>
                   <option
                     value="elevenlabs"
-                    disabled={voices.find(v => v.id === formData.voice_id)?.provider === 'deepgram'}
+                    disabled={voices.length > 0 && (voices.find(v => v.id === formData.voice_id)?.provider === 'deepgram' || !voices.find(v => v.id === formData.voice_id))}
                   >
                     ElevenLabs (Multilingual)
                   </option>
@@ -722,7 +732,7 @@ export default function BotConfig() {
       </div>
 
       {/* Footer Visual Relief Spacing */}
-      <div className="h-16"></div>
+      {/* <div className="h-16"></div> */}
     </div>
   );
 }

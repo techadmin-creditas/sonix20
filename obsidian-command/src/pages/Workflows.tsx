@@ -93,21 +93,15 @@ export default function Workflows() {
       <Header
         title="Workflows"
         subtitle="Conversational Logic"
-        actions={
-          <Link
-            to="/workflows/create"
-            className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-          >
-            <PlusCircle className="size-5" />
-            Create Flow
-          </Link>
-        }
+      // actions={
+
+      // }
       />
 
       <div className="p-10 flex flex-col gap-10">
         {/* Toolbar */}
         <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
+          {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
             <button
               onClick={() => setView('grid')}
               className={cn("p-2 rounded-lg transition-all", view === 'grid' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
@@ -120,7 +114,8 @@ export default function Workflows() {
             >
               <List className="size-5" />
             </button>
-          </div>
+          </div> */}
+
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline" />
@@ -133,6 +128,15 @@ export default function Workflows() {
               />
             </div>
           </div>
+          {filtered?.length > 0 && (
+            <Link
+              to="/workflows/create"
+              className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+            >
+              <PlusCircle className="size-5" />
+              Create Workflow
+            </Link>
+          )}
         </div>
 
         {/* Loading State */}
@@ -197,7 +201,7 @@ export default function Workflows() {
             ))}
 
             {/* Create New Card — only show in grid view */}
-            {view === 'grid' && (
+            {filtered?.length === 0 && view === 'grid' && (
               <Link
                 to="/workflows/create"
                 className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"

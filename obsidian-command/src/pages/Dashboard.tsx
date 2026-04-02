@@ -104,19 +104,19 @@ export default function Dashboard() {
 
   return (
     <div className="flex-1 flex flex-col ">
-      {/* <Header
+      <Header
         title="Overview"
         subtitle="Mission Control"
-        actions={
-          <Link
-            to="/personas/create"
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-lg active:scale-95 transition-all"
-          >
-            <PlusCircle className="size-5" />
-            <span>New Bot</span>
-          </Link>
-        }
-      /> */}
+      // actions={
+      //   <Link
+      //     to="/personas/create"
+      //     className="flex items-center gap-2 px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-lg active:scale-95 transition-all"
+      //   >
+      //     <PlusCircle className="size-5" />
+      //     <span>New Bot</span>
+      //   </Link>
+      // }
+      />
 
       <div className="p-10 flex flex-col gap-10">
         {/* KPI Row */}

@@ -690,7 +690,7 @@ async def get_supported_voices():
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
             {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
-            {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "pNInz6obpg8nEByWQX7X", "name": "Rachel (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
             {"id": "ThT5KcBe7VKqW6E5kyPh", "name": "Dorothy (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
             {"id": "AZnzlk1XhkUvSST7V3S6", "name": "Nicole (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
             {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},

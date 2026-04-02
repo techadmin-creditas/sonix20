@@ -73,7 +73,7 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <div className="mt-4">
+        {/* <div className="mt-4">
           <NavLink
             to="/personas/create"
             className="flex items-center gap-3 px-4 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-lg shadow-primary/10 hover:shadow-primary/20 transition-all active:scale-95"
@@ -81,7 +81,7 @@ export function Sidebar() {
             <PlusCircle className="size-5" />
             <span className="text-sm">New Bot</span>
           </NavLink>
-        </div>
+        </div> */}
 
         <div className="mt-auto pt-8 border-t border-outline-variant/5">
           <div className="p-4 rounded-2xl bg-surface-low border border-outline-variant/10">

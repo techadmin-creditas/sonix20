@@ -28,6 +28,11 @@ export default function Personas() {
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = React.useState('');
+
+  const filteredPersonas = searchQuery.trim()
+    ? personas.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : personas;
 
   const handleDelete = async (id: string) => {
     setDeleteLoadingId(id);
@@ -83,33 +88,45 @@ export default function Personas() {
       <Header
         title="Bot Factory"
         subtitle="Agent Personas"
-        actions={
-          <Link
-            to="/personas/create"
-            className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-          >
-            <PlusCircle className="size-5" />
-            Create Bot
-          </Link>
-        }
+      // actions={
+      //   <Link
+      //     to="/personas/create"
+      //     className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+      //   >
+      //     <PlusCircle className="size-5" />
+      //     Create Bot
+      //   </Link>
+      // }
       />
 
       <div className="p-10 flex flex-col gap-10">
         <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
+          {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
             <button className="p-2 rounded-lg bg-surface-highest text-primary"><LayoutGrid className="size-5" /></button>
             <button className="p-2 rounded-lg text-outline hover:text-on-surface"><List className="size-5" /></button>
-          </div>
+          </div> */}
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline" />
               <input
                 type="text"
                 placeholder="Search agents..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
                 className="bg-surface-low border-none rounded-xl pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary/50"
               />
             </div>
           </div>
+
+          {personas?.length > 0 && (
+            <Link
+              to="/personas/create"
+              className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+            >
+              <PlusCircle className="size-5" />
+              Create Bot
+            </Link>
+          )}
         </div>
 
         {loading && (
@@ -133,117 +150,129 @@ export default function Personas() {
           </div>
         )}
 
+
         {!loading && !error && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {personas.map((persona) => (
-              <div key={persona.id} className="glass-panel rounded-3xl p-8 flex flex-col gap-6 group hover:border-primary/30 transition-all">
-                <div className="flex justify-between items-start">
-                  <div className={cn(
-                    "size-16 rounded-2xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
-                    persona.color === 'secondary' ? "bg-secondary/10 text-secondary" : "bg-primary/10 text-primary"
-                  )}>
-                    <BotIcon type={persona.icon} />
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
-                      persona.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-surface-highest text-outline"
+          <>
+            <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {filteredPersonas.length === 0 && !loading && (
+                <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
+                  <Search className="size-10 mb-3 opacity-30" />
+                  <p className="font-bold text-sm">No agents match &ldquo;{searchQuery}&rdquo;</p>
+                </div>
+              )}
+              {filteredPersonas.map((persona) => (
+                <div key={persona.id} className="glass-panel rounded-3xl p-8 flex flex-col gap-6 group hover:border-primary/30 transition-all">
+                  <div className="flex justify-between items-start">
+                    <div className={cn(
+                      "size-16 rounded-2xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
+                      persona.color === 'secondary' ? "bg-secondary/10 text-secondary" : "bg-primary/10 text-primary"
                     )}>
-                      {persona.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                    <div className="flex items-center gap-1 mt-2 text-primary">
-                      <Star className="size-3 fill-current" />
-                      <span className="text-xs font-bold">4.8</span>
+                      <BotIcon type={persona.icon} />
                     </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-2xl font-headline font-extrabold text-on-surface">{persona.name}</h3>
-                  <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
-                  <p className="text-sm text-outline mt-4 leading-relaxed line-clamp-2">{persona.description}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 py-6 border-y border-outline-variant/10">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
-                    <span className="text-lg font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
-                    <span className="text-lg font-bold">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {(persona.tools_enabled || []).map(tool => (
-                    <span key={tool} className="px-2 py-1 rounded bg-surface-highest text-[10px] font-bold text-outline uppercase tracking-tighter">
-                      {tool}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="mt-auto flex gap-3 pt-4">
-                  {deletingId === persona.id ? (
-                    <div className="flex-1 flex items-center justify-between gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-                      <span className="text-xs font-bold text-red-400">Delete {persona.name}?</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setDeletingId(null)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-highest transition-all"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleDelete(persona.id)}
-                          disabled={deleteLoadingId === persona.id}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all flex items-center gap-1 disabled:opacity-50"
-                        >
-                          {deleteLoadingId === persona.id ? <Loader2 className="size-3 animate-spin" /> : null}
-                          Delete
-                        </button>
+                    <div className="flex flex-col items-end">
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
+                        persona.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-surface-highest text-outline"
+                      )}>
+                        {persona.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                      <div className="flex items-center gap-1 mt-2 text-primary">
+                        <Star className="size-3 fill-current" />
+                        <span className="text-xs font-bold">4.8</span>
                       </div>
                     </div>
-                  ) : (
-                    <>
-                      <Link
-                        to={`/personas/${persona.id}/config`}
-                        className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
-                      >
-                        Configure
-                      </Link>
-                      <button className="px-4 py-3 rounded-xl bg-surface-high text-on-surface hover:bg-surface-highest transition-all border border-outline-variant/10">
-                        <Settings2 className="size-5" />
-                      </button>
-                      <button
-                        onClick={() => setDeletingId(persona.id)}
-                        className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                        title="Delete bot"
-                      >
-                        <Trash2 className="size-5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
+                  </div>
 
-            <Link
-              to="/personas/create"
-              className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
-            >
-              <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
-                <PlusCircle className="size-8" />
+                  <div>
+                    <h3 className="text-2xl font-headline font-extrabold text-on-surface">{persona.name}</h3>
+                    <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
+                    <p className="text-sm text-outline mt-4 leading-relaxed line-clamp-2">{persona.description}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 py-3 border-y border-outline-variant/10">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
+                      <span className="text-lg font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
+                      <span className="text-lg font-bold">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(persona.tools_enabled || []).map(tool => (
+                      <span key={tool} className="px-2 py-1 rounded bg-surface-highest text-[10px] font-bold text-outline uppercase tracking-tighter">
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto flex gap-3 pt-4">
+                    {deletingId === persona.id ? (
+                      <div className="flex-1 flex items-center justify-between gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                        <span className="text-xs font-bold text-red-400">Delete {persona.name}?</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setDeletingId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-highest transition-all"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleDelete(persona.id)}
+                            disabled={deleteLoadingId === persona.id}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all flex items-center gap-1 disabled:opacity-50"
+                          >
+                            {deleteLoadingId === persona.id ? <Loader2 className="size-3 animate-spin" /> : null}
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Link
+                          to={`/personas/${persona.id}/config`}
+                          className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
+                        >
+                          Configure
+                        </Link>
+                        {/* <button className="px-4 py-3 rounded-xl bg-surface-high text-on-surface hover:bg-surface-highest transition-all border border-outline-variant/10">
+                          <Settings2 className="size-5" />
+                        </button> */}
+                        <button
+                          onClick={() => setDeletingId(persona.id)}
+                          className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                          title="Delete bot"
+                        >
+                          <Trash2 className="size-5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {personas?.length === 0 && (
+              <div className="flex justify-center">
+                <Link
+                  to="/personas/create"
+                  className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
+                >
+                  <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
+                    <PlusCircle className="size-8" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-on-surface">Add New Persona</p>
+                    <p className="text-xs text-outline mt-1">Define capabilities and tone</p>
+                  </div>
+                </Link>
               </div>
-              <div className="text-center">
-                <p className="font-bold text-on-surface">Add New Persona</p>
-                <p className="text-xs text-outline mt-1">Define capabilities and tone</p>
-              </div>
-            </Link>
-          </div>
+            )}
+          </>
         )}
       </div>
-    </div>
+    </div >
   );
 }
 
