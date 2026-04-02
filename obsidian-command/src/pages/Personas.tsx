@@ -88,46 +88,48 @@ export default function Personas() {
       <Header
         title="Bot Factory"
         subtitle="Agent Personas"
-      // actions={
-      //   <Link
-      //     to="/personas/create"
-      //     className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-      //   >
-      //     <PlusCircle className="size-5" />
-      //     Create Bot
-      //   </Link>
-      // }
-      />
+        actions={
+          // <Link
+          //   to="/personas/create"
+          //   className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+          // >
+          //   <PlusCircle className="size-5" />
+          //   Create Bot
+          // </Link>
 
-      <div className="p-10 flex flex-col gap-10">
-        <div className="flex justify-between items-center">
-          {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
+          <div className="w-full flex justify-between items-center">
+            {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
             <button className="p-2 rounded-lg bg-surface-highest text-primary"><LayoutGrid className="size-5" /></button>
             <button className="p-2 rounded-lg text-outline hover:text-on-surface"><List className="size-5" /></button>
           </div> */}
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline" />
+
+
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
               <input
                 type="text"
-                placeholder="Search agents..."
+                placeholder="Search by agents..."
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-surface-low border-none rounded-xl pl-10 pr-4 py-2 text-sm w-64 focus:ring-1 focus:ring-primary/50"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
               />
             </div>
-          </div>
 
-          {personas?.length > 0 && (
-            <Link
-              to="/personas/create"
-              className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-            >
-              <PlusCircle className="size-5" />
-              Create Bot
-            </Link>
-          )}
-        </div>
+            {personas?.length > 0 && (
+              <Link
+                to="/personas/create"
+                className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+              >
+                <PlusCircle className="size-5" />
+                Create Bot
+              </Link>
+            )}
+          </div>
+        }
+      />
+
+      <div className="p-10 flex flex-col gap-10">
+
 
         {loading && (
           <div className="flex-1 flex flex-col items-center justify-center py-20">

@@ -564,7 +564,7 @@ export default function SessionDetail() {
             </div>
           </div>
 
-          <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
+          {/* <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
             <div className="size-12 rounded-2xl bg-white/20 flex items-center justify-center">
               <Zap className="size-6" />
             </div>
@@ -576,7 +576,7 @@ export default function SessionDetail() {
             >
               Escalate to Human
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>

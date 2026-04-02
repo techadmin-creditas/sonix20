@@ -68,89 +68,67 @@ export default function Sessions() {
       <Header
         title="Sessions"
         subtitle="Conversation History & Analytics"
-      // actions={
-      //   <div className="flex gap-3">
-      //     {filteredSessions?.length > 0 && (
-      //       <>
-      //         <button
-      //           onClick={handleExport}
-      //           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
-      //           <Download className="size-4" />
-      //           Export All
-      //         </button>
+        actions={
+          <div className="w-full flex flex-col md:flex-row gap-4 justify-between items-center">
 
-      //       </>
-      //     )}
-      //     {sessions?.length > 0 && (
-      //       <>
-      //         <button
-      //           onClick={() => navigate('/sessions/live')}
-      //           className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all">
-      //           <Play className="size-4" />
-      //           Live Session
-      //         </button>
-      //       </>
-      //     )}
-      //   </div>
-      // }
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+              <input
+                type="text"
+                placeholder="Search by ID, Bot"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+              />
+            </div>
+
+
+            <div className="flex gap-3">
+
+              {filteredSessions?.length > 0 && (
+                <div className="flex gap-2 w-full md:w-auto">
+                  {/* <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
+              <Filter className="size-4" />
+              Filters
+            </button> */}
+                  <select className="flex-1 md:flex-none px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold focus:outline-none">
+                    <option>Last 7 Days</option>
+                    <option>Last 30 Days</option>
+                    <option>All Time</option>
+                  </select>
+                </div>
+              )}
+
+              {filteredSessions?.length > 0 && (
+                <>
+                  <button
+                    onClick={handleExport}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
+                    <Download className="size-4" />
+                    Export All
+                  </button>
+
+                </>
+              )}
+              {sessions?.length > 0 && (
+                <>
+                  <button
+                    onClick={() => navigate('/sessions/live')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all">
+                    <Play className="size-4" />
+                    Create Session
+                  </button>
+                </>
+              )}
+            </div>
+
+          </div>
+        }
       />
 
       <div className="p-8 flex flex-col gap-6">
         {/* Filters & Search */}
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
 
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-            <input
-              type="text"
-              placeholder="Search by ID, Bot"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-            />
-          </div>
-
-
-          <div className="flex gap-3">
-
-            {filteredSessions?.length > 0 && (
-              <div className="flex gap-2 w-full md:w-auto">
-                {/* <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
-              <Filter className="size-4" />
-              Filters
-            </button> */}
-                <select className="flex-1 md:flex-none px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold focus:outline-none">
-                  <option>Last 7 Days</option>
-                  <option>Last 30 Days</option>
-                  <option>All Time</option>
-                </select>
-              </div>
-            )}
-
-            {filteredSessions?.length > 0 && (
-              <>
-                <button
-                  onClick={handleExport}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
-                  <Download className="size-4" />
-                  Export All
-                </button>
-
-              </>
-            )}
-            {sessions?.length > 0 && (
-              <>
-                <button
-                  onClick={() => navigate('/sessions/live')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all">
-                  <Play className="size-4" />
-                  Create Session
-                </button>
-              </>
-            )}
-          </div>
-
-        </div>
 
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 gap-4">
