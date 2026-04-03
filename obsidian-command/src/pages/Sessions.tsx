@@ -48,10 +48,12 @@ export default function Sessions() {
     loadSessions();
   }, []);
 
-  const filteredSessions = sessions.filter(s =>
-    s.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.bot_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSessions = sessions.filter((s) => {
+    const q = searchQuery.toLowerCase();
+    const id = (s?.id || '').toLowerCase();
+    const botName = (s?.bot_name || '').toLowerCase();
+    return id.includes(q) || botName.includes(q);
+  });
 
   const handleExport = () => {
     const data = JSON.stringify(filteredSessions, null, 2);
@@ -136,7 +138,7 @@ export default function Sessions() {
             <p className="text-outline text-xs font-bold uppercase tracking-widest">Accessing Neural Logs...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-4" style={{ maxHeight: 'calc(100vh - 210px)', overflowY: 'auto' }}>
             {filteredSessions.map((session, index) => (
               <motion.div
                 key={session.id}

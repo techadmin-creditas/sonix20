@@ -83,7 +83,7 @@ export function Sidebar() {
           </NavLink>
         </div> */}
 
-        <div className="mt-auto pt-8 border-t border-outline-variant/5">
+        {/* <div className="mt-auto pt-8 border-t border-outline-variant/5">
           <div className="p-4 rounded-2xl bg-surface-low border border-outline-variant/10">
             <p className="text-[10px] font-bold text-outline tracking-wider uppercase mb-2">Plan Usage</p>
             <div className="w-full h-1.5 bg-surface-highest rounded-full overflow-hidden mb-2">
@@ -91,7 +91,7 @@ export function Sidebar() {
             </div>
             <p className="text-xs text-on-surface-variant">8.2k / 10k mins</p>
           </div>
-        </div>
+        </div> */}
       </div>
 
       <div className="p-6 border-t border-outline-variant/10">

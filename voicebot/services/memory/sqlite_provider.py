@@ -295,9 +295,10 @@ class SQLiteProvider:
             """
             INSERT INTO bots (
                 id, name, description, persona, system_prompt, greeting, tools_enabled,
-                llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id
+                llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id,
+                default_language
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
             """,
             (
                 bot_id,
@@ -314,6 +315,7 @@ class SQLiteProvider:
                 "primary",
                 0.6,
                 1024,
+                "hi",
             ),
         )
         conn.commit()

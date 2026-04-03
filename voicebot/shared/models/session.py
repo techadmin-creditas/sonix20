@@ -81,6 +81,9 @@ class SessionState(BaseModel):
     voice_session_end_requested: bool = False
     voice_session_end_reason: Optional[str] = None
 
+    # Barge-in flow control
+    interrupt_prompt_pending: bool = False
+
     def add_turn(self, role: TurnRole, content: str, **kwargs: Any) -> None:
         """Add a conversation turn and update the timestamp."""
         self.conversation_history.append(

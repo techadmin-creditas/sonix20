@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { api, SessionRecord, Bot } from '../lib/api';
+import { api, SessionRecord, Bot, Workflow } from '../lib/api';
 
-export type NotifType = 'session_completed' | 'bot_created';
+export type NotifType = 'session_completed' | 'bot_created' | 'workflow_created';
 
 export interface AppNotification {
     id: string;
@@ -35,10 +35,18 @@ const POLL_MS = 20_000; // 20 seconds
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
+    // Request browser notification permission once on mount
+    useEffect(() => {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+    }, []);
+
     // Track known sessions: id → ended_at
     const knownSessions = useRef<Map<string, number | null>>(new Map());
     // Track known bots: Set of ids
     const knownBots = useRef<Set<string>>(new Set());
+    const knownWorkflows = useRef<Set<string>>(new Set());
     const initialised = useRef(false);
 
     const addNotif = useCallback((n: Omit<AppNotification, 'id' | 'read'>) => {
@@ -47,19 +55,29 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             if (prev.some(p => p.id === notif.id)) return prev;
             return [notif, ...prev].slice(0, 60);
         });
+
+        // Browser push notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(n.title, {
+                body: n.body,
+                icon: '/favicon.ico',
+            });
+        }
     }, []);
 
     const poll = useCallback(async () => {
         try {
-            const [sessions, bots]: [SessionRecord[], Bot[]] = await Promise.all([
+            const [sessions, bots, workflows]: [SessionRecord[], Bot[], Workflow[]] = await Promise.all([
                 api.getSessions(100),
                 api.getBots(),
+                api.getWorkflows(),
             ]);
 
             if (!initialised.current) {
                 // First load: seed silently — no notifications for historical data
                 sessions.forEach(s => knownSessions.current.set(s.id, s.ended_at));
                 bots.forEach(b => knownBots.current.add(b.id));
+                workflows.forEach(w => knownWorkflows.current.add(w.id));
                 initialised.current = true;
                 return;
             }
@@ -88,13 +106,28 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                 if (!knownBots.current.has(b.id)) {
                     addNotif({
                         type: 'bot_created',
-                        title: 'New Agent Deployed',
-                        body: `${b.name} has been created and is ready to go live.`,
+                        title: 'New BOT Deployed',
+                        body: `${b.name} has been created.`,
                         timestamp: Date.now(),
                         refId: b.id,
                         refName: b.name,
                     });
                     knownBots.current.add(b.id);
+                }
+            });
+
+            // ── Workflow creation events ───────────────────────────────────
+            workflows.forEach(w => {
+                if (!knownWorkflows.current.has(w.id)) {
+                    addNotif({
+                        type: 'workflow_created',
+                        title: 'Workflow Created',
+                        body: `"${w.name}" is ready to be deployed.`,
+                        timestamp: Date.now(),
+                        refId: w.id,
+                        refName: w.name,
+                    });
+                    knownWorkflows.current.add(w.id);
                 }
             });
 

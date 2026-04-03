@@ -15,6 +15,7 @@ from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
 logger = setup_logger("llm-groq", level="INFO")
 settings = get_settings()
@@ -156,10 +157,16 @@ class GroqStreamingProvider:
                     break
 
         except Exception as e:
-            logger.error("Groq streaming error: %s", e, exc_info=True)
-            # Explicit print to catch in uvicorn logs regardless of logger config
-            print(f"\033[91m[GROQ ERROR]\033[0m {e}")
-            yield LLMResponse(content="Error reaching Groq. Check your API key and limits.")
+            err_str = str(e).lower()
+            
+            logger.error("Groq streaming error: %s", e)
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"Groq API Key invalid: {e}")
+            if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+                raise ServiceExhaustedError("Groq rate limit reached or quota exhausted.")
+                
+            raise VoiceBotError(f"Groq error: {str(e)[:100]}")
 
     async def disconnect(self) -> None:
         """Clean up the client strictly."""

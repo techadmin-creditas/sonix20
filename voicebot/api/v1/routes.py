@@ -690,9 +690,9 @@ async def get_supported_voices():
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
             {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
-            {"id": "pNInz6obpg8nEByWQX7X", "name": "Rachel (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
-            {"id": "ThT5KcBe7VKqW6E5kyPh", "name": "Dorothy (Hindi Multilingual / ElevenLabs)", "provider": "elevenlabs"},
-            {"id": "AZnzlk1XhkUvSST7V3S6", "name": "Nicole (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
+            {"id": "RnauXKDOkyVg9FjwISwR", "name": "Raghav - clear, confident", "provider": "elevenlabs"},
+            {"id": "BKAA4PPBFfn6s91XfihW", "name": "Roopa - Electric", "provider": "elevenlabs"},
+            {"id": "zEvjs17jNQ2fH5FxAat2", "name": "Anika - Gentel & warn", "provider": "elevenlabs"},
             {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
         ]
     }

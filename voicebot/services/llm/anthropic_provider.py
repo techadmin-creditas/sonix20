@@ -13,9 +13,11 @@ import logging
 from typing import Any, AsyncIterator, List, Optional
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 from voicebot.shared.models.tools import LLMResponse, ToolCall, ToolDefinition
 
-logger = logging.getLogger("llm-anthropic")
+logger = setup_logger("llm-anthropic", level="INFO")
 settings = get_settings()
 
 
@@ -171,11 +173,15 @@ class AnthropicStreamingProvider:
                     yield LLMResponse(content="", tool_calls=pending_tool_calls)
 
         except Exception as e:
+            err_str = str(e).lower()
             logger.error("Anthropic streaming error: %s", e)
-            yield LLMResponse(
-                content="I'm sorry, I encountered an error. Please try again.",
-                tool_calls=[],
-            )
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"Anthropic API key invalid: {e}")
+            if "429" in err_str or "rate limit" in err_str or "overloaded" in err_str:
+                raise ServiceExhaustedError("Anthropic rate limit or quota exceeded.")
+                
+            raise VoiceBotError(f"Anthropic error: {str(e)[:100]}")
 
     async def complete(
         self,

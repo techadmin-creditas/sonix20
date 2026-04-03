@@ -81,6 +81,15 @@ export default function SessionControl() {
   const logRef = React.useRef<HTMLDivElement>(null);
   const livekitRoomRef = React.useRef<LiveKitRoom | null>(null);
 
+  // [PERFORMANCE] Memoized transcription list (capped at last 50 for DOM stability)
+  const optimizedTranscripts = React.useMemo(() => {
+    return transcripts.slice(-50);
+  }, [transcripts]);
+
+  const optimizedLogs = React.useMemo(() => {
+    return logs.slice(-100);
+  }, [logs]);
+
   // Session Config State
   const [config, setConfig] = useState({
     autoRecording: true,
@@ -99,6 +108,22 @@ export default function SessionControl() {
     api.getModels()
       .then(models => setModelLimits(models || []))
       .catch(err => console.error("Failed to load model specs:", err));
+
+    // Cleanup on page exit: Ensure all session handles are closed immediately
+    return () => {
+      console.log("Cleanup: User navigating away, terminating active voice sessions...");
+      if (wsRef.current) {
+        wsRef.current.close(1000, "User navigated away");
+        wsRef.current = null;
+      }
+      if (livekitRoomRef.current) {
+        livekitRoomRef.current.disconnect();
+        livekitRoomRef.current = null;
+      }
+      // Re-use existing audio stop logic (don't close context to avoid React strict mode issues, just disconnect)
+      if (processorRef.current) processorRef.current.disconnect();
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    };
   }, []);
 
   // Audio Processing Refs
@@ -110,15 +135,23 @@ export default function SessionControl() {
   /** Coalesce small PCM frames and add lookahead before first play to reduce underruns/gaps. */
   const botPcmAccumRef = React.useRef<Uint8Array | null>(null);
   const botPlaybackPrimedRef = React.useRef(false);
+  /** Track scheduled sources to allow immediate cancellation on interrupt. */
+  const scheduledSourcesRef = React.useRef<AudioBufferSourceNode[]>([]);
   /** Flush tail PCM after a short idle gap (binary stopped) so samples are not held until the next segment. */
   const botPcmIdleFlushRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const BOT_LOOKAHEAD_BYTES = 4800; // ~150ms @ 16kHz mono int16
+  const BOT_LOOKAHEAD_BYTES_MIN = 3200; // ~100ms
+  const BOT_LOOKAHEAD_BYTES_MAX = 9600; // ~300ms
+  const dynamicLookaheadRef = React.useRef(4800); // Start at 150ms
   /** Larger post-prime chunks → fewer scheduled AudioBufferSource nodes → less scheduling jitter. */
   const BOT_FLUSH_MIN_BYTES = 4096; // ~128ms @ 16kHz mono int16
   const BOT_IDLE_FLUSH_MS = 72;
   const [micActivity, setMicActivity] = useState(0);
   const [sessionTransport, setSessionTransport] = useState<'websocket' | 'webrtc'>('websocket');
   const [livekitHint, setLivekitHint] = useState<string | null>(null);
+  const [isHandoffAnimating, setIsHandoffAnimating] = useState(false);
+  /** Stable reference to the active socket for cleanup on unmount/page exit. */
+  const wsRef = React.useRef<WebSocket | null>(null);
+  const activeGainsRef = React.useRef<GainNode[]>([]);
 
   // Audio Player Logic
   const initAudio = () => {
@@ -147,6 +180,35 @@ export default function SessionControl() {
     clearBotPcmIdleFlush();
     botPcmAccumRef.current = null;
     botPlaybackPrimedRef.current = false;
+
+    // Stop and clear all currently scheduled audio sources with micro-fades to prevent pops
+    const now = audioContextRef.current ? audioContextRef.current.currentTime : 0;
+
+    activeGainsRef.current.forEach(gain => {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        // [MICRO-FADE] 10ms ramp to 0 to eliminate DC offset pops
+        gain.gain.linearRampToValueAtTime(0, now + 0.01);
+      } catch (e) { /* already disconnected */ }
+    });
+
+    // Short delay before stopping/disconnecting to allow the ramp to execute
+    const sourcesToStop = [...scheduledSourcesRef.current];
+    const gainsToClear = [...activeGainsRef.current];
+
+    setTimeout(() => {
+      sourcesToStop.forEach(source => {
+        try { source.stop(); source.disconnect(); } catch (e) { }
+      });
+      gainsToClear.forEach(g => {
+        try { g.disconnect(); } catch (e) { }
+      });
+    }, 15);
+
+    scheduledSourcesRef.current = [];
+    activeGainsRef.current = [];
+
     if (audioContextRef.current) {
       nextScheduledTimeRef.current = audioContextRef.current.currentTime;
     } else {
@@ -154,7 +216,7 @@ export default function SessionControl() {
     }
   };
 
-  const schedulePcmBuffer = (arrayBuffer: ArrayBuffer) => {
+  const schedulePcmBuffer = (arrayBuffer: ArrayBuffer, options: { fadeInMs?: number } = {}) => {
     if (!audioContextRef.current) {
       initAudio();
     }
@@ -175,13 +237,44 @@ export default function SessionControl() {
 
       const source = audioContextRef.current!.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioContextRef.current!.destination);
+
+      const gainNode = audioContextRef.current!.createGain();
+
+      const startTime = Math.max(nextScheduledTimeRef.current, audioContextRef.current!.currentTime);
+
+      // [NEURAL SHIFT] Crossfade optimization: Linear fadeIn for incoming real response
+      if (options.fadeInMs) {
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(1, startTime + (options.fadeInMs / 1000));
+      }
+
+      gainNode.connect(audioContextRef.current!.destination);
+      source.connect(gainNode);
 
       if (analyzerRef.current) {
         source.connect(analyzerRef.current);
       }
 
-      const startTime = Math.max(nextScheduledTimeRef.current, audioContextRef.current!.currentTime);
+      // Track source and gain for potential cancellation or crossfade
+      scheduledSourcesRef.current.push(source);
+      activeGainsRef.current.push(gainNode);
+
+      source.onended = () => {
+        // [DYNAMIC JITTER BUFFER] Detect underrun
+        const now = audioContextRef.current?.currentTime || 0;
+        if (nextScheduledTimeRef.current <= now + 0.02) {
+          // If we finished playing and the next chunk isn't ready or just barely ready,
+          // increase lookahead to prevent the next gap.
+          dynamicLookaheadRef.current = Math.min(BOT_LOOKAHEAD_BYTES_MAX, dynamicLookaheadRef.current + 800);
+        } else {
+          // Gradually decay back to minimum for best latency
+          dynamicLookaheadRef.current = Math.max(BOT_LOOKAHEAD_BYTES_MIN, dynamicLookaheadRef.current - 160);
+        }
+
+        scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
+        activeGainsRef.current = activeGainsRef.current.filter(g => g !== gainNode);
+      };
+
       source.start(startTime);
       nextScheduledTimeRef.current = startTime + audioBuffer.duration;
     } catch (e) {
@@ -225,7 +318,10 @@ export default function SessionControl() {
     }
     const acc = botPcmAccumRef.current!;
     const primed = botPlaybackPrimedRef.current;
-    const threshold = primed ? BOT_FLUSH_MIN_BYTES : BOT_LOOKAHEAD_BYTES;
+
+    // Use the dynamic lookahead for the first chunk to ensure stable start
+    const threshold = primed ? BOT_FLUSH_MIN_BYTES : dynamicLookaheadRef.current;
+
     if (acc.byteLength >= threshold) {
       const copy = acc.slice().buffer;
       botPcmAccumRef.current = new Uint8Array(0);
@@ -244,35 +340,25 @@ export default function SessionControl() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
+      // [GEMINI-GRADE] AudioWorklet Migration
+      // Offloads mic processing to a separate high-priority thread to avoid UI main-thread jank.
+      await audioContextRef.current!.audioWorklet.addModule('/audio-processors/vocal-processor.js');
+      const micWorkletNode = new AudioWorkletNode(audioContextRef.current!, 'vocal-processor');
+
       const source = audioContextRef.current!.createMediaStreamSource(stream);
-      const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
+      source.connect(micWorkletNode);
 
       // Connect to analyzer for mic visualization
-      source.connect(analyzerRef.current!);
+      micWorkletNode.connect(analyzerRef.current!);
 
-      processor.onaudioprocess = (e) => {
+      micWorkletNode.port.onmessage = (e) => {
         if (socket.readyState !== WebSocket.OPEN) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-
-        // Calculate visualization activity
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
-        }
-        setMicActivity(Math.sqrt(sum / inputData.length) * 100);
-
-        // Convert to linear16 PCM
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-        }
-        socket.send(pcmData.buffer);
+        const { audio, rms } = e.data;
+        socket.send(audio);
+        setMicActivity(rms * 100);
       };
 
-      source.connect(processor);
-      processor.connect(audioContextRef.current!.destination);
+      processorRef.current = micWorkletNode; // Store it for cleanup
     } catch (err) {
       console.error('Mic access failed:', err);
     }
@@ -457,6 +543,21 @@ export default function SessionControl() {
       } else if (msg.type === 'audio_interrupt') {
         // Backend confirmed interruption — flush any pre-scheduled audio immediately.
         resetBotPlaybackCoalesce();
+      } else if (msg.type === 'audio_handoff') {
+        // Trigger smooth volume ramp-down of any currently playing "filler" audio
+        if (audioContextRef.current) {
+          const now = audioContextRef.current.currentTime;
+          setIsHandoffAnimating(true);
+          setTimeout(() => setIsHandoffAnimating(false), 800);
+
+          activeGainsRef.current.forEach(gain => {
+            // Quick 250ms fade-out to hand over to the real response
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+          });
+          // Note: we don't clear the array, onended will handle it.
+          // Adjust next scheduled time to minimize gap during handoff
+          nextScheduledTimeRef.current = now + 0.15;
+        }
       } else if (msg.type === 'error') {
         setStatus('Neural Error');
         setLogs(prev => [...prev, {
@@ -582,6 +683,7 @@ export default function SessionControl() {
       };
 
       setWs(socket);
+      wsRef.current = socket;
     } catch (err) {
       console.error('Failed to start session:', err);
       setIsConnecting(false);
@@ -618,6 +720,10 @@ export default function SessionControl() {
     if (livekitRoomRef.current) {
       livekitRoomRef.current.disconnect();
       livekitRoomRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
     if (ws) {
       ws.close();
@@ -913,25 +1019,69 @@ export default function SessionControl() {
               <div className="absolute inset-0 bg-primary/5 blur-[100px]"></div>
 
               <div className="relative size-48 sm:size-56 lg:size-64 flex items-center justify-center">
+                {/* [SENTIMENT-AWARE] Glow logic: Cyan (positive), Red (negative), Amber (neutral) */}
+
+                {isLive && (
+                  <>
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.2, 1],
+                        borderColor: currentSentiment === 'positive' ? 'rgba(52, 211, 153, 0.4)' :
+                          currentSentiment === 'negative' ? 'rgba(248, 113, 113, 0.4)' : 'rgba(251, 191, 36, 0.4)'
+                      }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                      className="absolute inset-0 border rounded-full blur-xs"
+                    />
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.1, 1],
+                        borderColor: currentSentiment === 'positive' ? 'rgba(52, 211, 153, 0.6)' :
+                          currentSentiment === 'negative' ? 'rgba(248, 113, 113, 0.6)' : 'rgba(251, 191, 36, 0.6)'
+                      }}
+                      transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+                      className="absolute inset-10 border rounded-full"
+                    />
+                  </>
+                )}
+
                 <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                  className="absolute inset-0 border border-primary/20 rounded-full"
-                />
-                <motion.div
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
-                  className="absolute inset-10 border border-primary/40 rounded-full"
-                />
-                <div className="size-32 sm:size-36 lg:size-40 rounded-full bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600 shadow-[0_0_60px_rgba(6,182,212,0.4)] flex items-center justify-center border border-white/10">
-                  <Activity className="size-10 sm:size-12 lg:size-16 text-white" />
-                </div>
+                  animate={{
+                    boxShadow: currentSentiment === 'positive' ? '0 0 60px rgba(52, 211, 153, 0.5)' :
+                      currentSentiment === 'negative' ? '0 0 60px rgba(248, 113, 113, 0.5)' : '0 0 40px rgba(251, 191, 36, 0.3)',
+                    scale: isLive ? 1 : 0.9,
+                    rotate: isLive ? 360 : 0
+                  }}
+                  transition={{
+                    boxShadow: { duration: 1 },
+                    rotate: isLive ? { duration: 20, repeat: Infinity, ease: "linear" } : 0
+                  }}
+                  className={cn(
+                    "size-32 sm:size-36 lg:size-40 rounded-full flex items-center justify-center border border-white/10 relative overflow-hidden",
+                    currentSentiment === 'positive' ? "bg-linear-to-tr from-emerald-900 via-teal-800 to-emerald-600" :
+                      currentSentiment === 'negative' ? "bg-linear-to-tr from-red-900 via-rose-800 to-red-600 shadow-red-500/20" :
+                        "bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600"
+                  )}
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]" />
+                  <Activity className="size-10 sm:size-12 lg:size-16 text-white relative z-10" />
+                </motion.div>
               </div>
 
               <div className="mt-8 text-center z-10">
                 <h3 className="font-headline text-2xl font-bold text-on-surface uppercase tracking-widest">
                   {status}
                 </h3>
+                {isHandoffAnimating && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-2"
+                  >
+                    <span className="bg-primary/20 text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border border-primary/30">
+                      Neural Shift
+                    </span>
+                  </motion.div>
+                )}
                 <p className={cn(
                   "font-label text-xs uppercase tracking-[0.2em] mt-2",
                   isLive ? "text-primary animate-pulse" : "text-outline"
@@ -1125,7 +1275,7 @@ export default function SessionControl() {
                     <p className="text-sm font-medium">Waiting for communication...</p>
                   </div>
                 ) : (
-                  transcripts.map((t, i) => (
+                  optimizedTranscripts.map((t, i) => (
                     <div key={i} className={cn(
                       "flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300",
                       t.role === 'User' ? "items-end pl-6 sm:pl-10" : "items-start pr-6 sm:pr-10"
@@ -1231,8 +1381,8 @@ export default function SessionControl() {
                   )
                 ) : (
                   (() => {
-                    const filtered = logs.filter(log => {
-                      if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]'].includes(log.tag);
+                    const filtered = optimizedLogs.filter(log => {
+                      if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]', '[THINKING]'].includes(log.tag);
                       if (activeLogTab === 'tools') return ['[TOOL]', '[RESULT]', '[PLAN]'].includes(log.tag);
                       if (activeLogTab === 'vitals') return ['[STT]', '[STREAM]', '[METRIC]'].includes(log.tag);
                       return true;
@@ -1269,11 +1419,20 @@ export default function SessionControl() {
 
 function MetricCard({ label, value, unit, color, highlight }: any) {
   return (
-    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2", color)}>
-      <p className="text-[10px] uppercase tracking-wider text-outline mb-1">{label}</p>
-      <p className={cn("text-2xl font-headline font-extrabold", highlight && "text-primary")}>
-        {value}<span className="text-xs font-normal text-outline ml-1">{unit}</span>
-      </p>
+    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2 transition-all duration-300", color, "hover:bg-surface-high")}>
+      <p className="text-[10px] uppercase tracking-wider text-outline/60 mb-1.5 font-bold">{label}</p>
+      <div className="flex items-baseline gap-1.5">
+        <motion.span
+          key={value}
+          initial={{ scale: 1.15, opacity: 0.8 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
+          className={cn("text-2xl font-headline font-black", highlight ? "text-primary" : "text-on-surface")}
+        >
+          {value}
+        </motion.span>
+        <span className="text-xs font-bold text-outline uppercase tracking-tighter">{unit}</span>
+      </div>
     </div>
   );
 }

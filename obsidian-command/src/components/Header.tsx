@@ -1,7 +1,8 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bell, Search, ChevronUp, ChevronDown, X,
-  PhoneOff, CheckCircle, Trash2, Bot,
+  PhoneOff, CheckCircle, Trash2, Bot, GitBranch,
 } from 'lucide-react';
 import { useNotifications, AppNotification } from '../contexts/NotificationContext';
 
@@ -76,15 +77,37 @@ function timeAgo(ms: number) {
 }
 
 /* ─── Notification Item ─────────────────────────────────────────── */
-function NotifItem({ n, onDismiss }: { n: AppNotification; onDismiss: () => void }) {
+function NotifItem({
+  n,
+  onDismiss,
+  onNavigate,
+}: {
+  n: AppNotification;
+  onDismiss: () => void;
+  onNavigate: (path: string) => void;
+}) {
   const iconMap = {
     session_completed: { Icon: PhoneOff, accent: 'text-amber-400', bg: 'bg-amber-400/10' },
     bot_created: { Icon: Bot, accent: 'text-violet-400', bg: 'bg-violet-400/10' },
+    workflow_created: { Icon: GitBranch, accent: 'text-emerald-400', bg: 'bg-emerald-400/10' },
   };
   const { Icon, accent, bg } = iconMap[n.type];
 
+  const handleClick = () => {
+    if (n.type === 'session_completed') {
+      onNavigate(`/sessions/${n.refId}`);
+    } else if (n.type === 'bot_created') {
+      onNavigate('/personas');
+    } else if (n.type === 'workflow_created') {
+      onNavigate('/workflows');
+    }
+  };
+
   return (
-    <div className={`flex items-start gap-3 p-3 rounded-2xl transition-all hover:bg-surface-high/50 ${!n.read ? 'bg-primary/5' : ''}`}>
+    <div
+      onClick={handleClick}
+      className={`flex items-start gap-3 p-3 rounded-2xl transition-all cursor-pointer hover:bg-surface-high/50 ${!n.read ? 'bg-primary/5' : ''}`}
+    >
       <div className={`size-9 shrink-0 rounded-xl flex items-center justify-center ${bg}`}>
         <Icon className={`size-4 ${accent}`} />
       </div>
@@ -97,7 +120,7 @@ function NotifItem({ n, onDismiss }: { n: AppNotification; onDismiss: () => void
         <p className="text-[10px] text-outline/60 mt-1">{timeAgo(n.timestamp)}</p>
       </div>
       <button
-        onClick={onDismiss}
+        onClick={(e) => { e.stopPropagation(); onDismiss(); }}
         className="shrink-0 p-1 rounded-lg hover:bg-surface-highest text-outline hover:text-on-surface transition-all"
       >
         <X className="size-3" />
@@ -108,6 +131,7 @@ function NotifItem({ n, onDismiss }: { n: AppNotification; onDismiss: () => void
 
 /* ─── Header Component ──────────────────────────────────────────── */
 export function Header({ title, subtitle, actions }: HeaderProps) {
+  const navigate = useNavigate();
   const { notifications, unreadCount, markAllRead, dismiss, clearAll } = useNotifications();
   const [bellOpen, setBellOpen] = React.useState(false);
   const bellRef = React.useRef<HTMLDivElement>(null);
@@ -287,7 +311,11 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
                   ) : (
                     notifications.map(n => (
                       <React.Fragment key={n.id}>
-                        <NotifItem n={n} onDismiss={() => dismiss(n.id)} />
+                        <NotifItem
+                          n={n}
+                          onDismiss={() => dismiss(n.id)}
+                          onNavigate={(path) => { setBellOpen(false); navigate(path); }}
+                        />
                       </React.Fragment>
                     ))
                   )}

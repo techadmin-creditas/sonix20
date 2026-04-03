@@ -19,9 +19,12 @@ import time
 from typing import Any, AsyncIterator, Optional, List
 from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
+
 from voicebot.shared.config import get_settings
 
-logger = logging.getLogger("llm-openai")
+logger = setup_logger("llm-openai", level="INFO")
 settings = get_settings()
 
 
@@ -170,8 +173,15 @@ class OpenAIStreamingProvider:
                     break
 
         except Exception as e:
-            logger.error("OpenAI streaming error: %s", e, exc_info=True)
-            yield LLMResponse(content="I'm sorry, I encountered an error. Could you repeat that?")
+            err_str = str(e).lower()
+            logger.error("OpenAI streaming error: %s", e)
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"OpenAI API Key invalid or expired: {e}")
+            if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+                raise ServiceExhaustedError("OpenAI rate limit reached or quota exhausted.")
+                
+            raise VoiceBotError(f"OpenAI reported an error: {str(e)[:100]}")
 
     async def complete(
         self,

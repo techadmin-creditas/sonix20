@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 from voicebot.shared.config import get_settings
 
@@ -137,7 +137,7 @@ class DeepgramWSTTSProvider:
 
     # ─── Public API ───────────────────────────────────────────────────────────
 
-    async def stream_speech(self, text: str) -> AsyncIterator[bytes]:
+    async def stream_speech(self, text: str, **kwargs: Any) -> AsyncIterator[bytes]:
         """
         Send text for synthesis and yield audio chunks as they arrive.
 

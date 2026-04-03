@@ -137,17 +137,79 @@ class LiveKitVoiceAgent:
         async def on_log(tag: str, message: str, color: str):
             await broadcast_data("log", {"tag": tag, "message": message, "color": color})
 
+        async def on_metrics(metrics: dict):
+            if metrics.get("type") == "audio_handoff":
+                await broadcast_data("audio_handoff", {})
+            await broadcast_data("metrics", metrics)
+
+        # 🚀 DYNAMIC PROVIDER SELECTION (Based on bot_config)
+        # 1. STT Provider
+        _stt_lang = (bot_config.get("default_language") or "hi").lower()
+        stt_provider = DeepgramStreamingProvider(language=_stt_lang)
+
+        # 2. LLM Provider
+        _llm_prov = str(bot_config.get("llm_provider") or "").lower()
+        _llm_model = bot_config.get("llm_model") or "llama-3.3-70b-versatile"
+        
+        if _llm_prov == "openai":
+            from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
+            llm_provider = OpenAIStreamingProvider(model=_llm_model)
+        elif _llm_prov == "gemini":
+            from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+            llm_provider = GeminiStreamingProvider(model=_llm_model)
+        elif _llm_prov == "anthropic":
+            from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
+            llm_provider = AnthropicStreamingProvider(model=_llm_model)
+        else:
+            # High-perf default (Groq)
+            llm_provider = GroqStreamingProvider(model=_llm_model)
+
+        # 3. TTS Provider (Hindi-Aware)
+        _voice_id = bot_config.get("voice_id") or "aura-asteria-en"
+        _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
+        _is_hindi_bot = _stt_lang.startswith("hi")
+
+        if _is_hindi_bot or _tts_prov_name == "elevenlabs":
+            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+            tts_provider = ElevenLabsStreamingProvider(
+                voice_id=_voice_id,
+                model_id="eleven_multilingual_v2"
+            )
+            logger.info("Using ElevenLabs TTS (Multilingual v2) ✅")
+        elif _tts_prov_name == "deepgram_http":
+            tts_provider = DeepgramTTSProvider(model=_voice_id)
+            logger.info("Using Deepgram HTTP TTS ✅")
+        else:
+            # Default to WebSocket for lowest latency
+            from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
+            tts_provider = DeepgramWSTTSProvider(model=_voice_id)
+            try:
+                await asyncio.wait_for(tts_provider.connect(), timeout=5.0)
+                logger.info("Using Deepgram WS TTS (model=%s) ✅", _voice_id)
+            except Exception as _tts_err:
+                logger.warning("TTS WS failed, falling back to HTTP: %s", _tts_err)
+                tts_provider = DeepgramTTSProvider(model=_voice_id)
+
+        # 4. Optional: Guardrails & Caching (Parity with main.py)
+        from voicebot.services.memory.redis_provider import RedisSessionProvider
+        memory = RedisSessionProvider(redis_url=settings.redis_url)
+        await memory.connect()
+        if hasattr(tts_provider, "set_cache"):
+            tts_provider.set_cache(memory)
+
         self.brain = AgenticBrain(
             session=session,
-            stt_handler=DeepgramStreamingProvider(),
-            llm_handler=GroqStreamingProvider(model=bot_config.get("llm_model", "llama-3.3-70b-versatile")),
-            tts_handler=DeepgramTTSProvider(model=bot_config.get("voice_id", "aura-asteria-en")),
+            stt_handler=stt_provider,
+            llm_handler=llm_provider,
+            tts_handler=tts_provider,
+            memory_handler=memory,
             db_handler=db,
             bot_config=bot_config,
             on_audio_output=on_audio_output,
             on_bot_transcript=on_bot_transcript,
             on_transcript=on_transcript,
-            on_log=on_log
+            on_log=on_log,
+            on_metrics=on_metrics
         )
 
         # 2. Connect STT eagerly before participants join (avoids race condition and first-frame loss)
@@ -232,7 +294,7 @@ class LiveKitVoiceAgent:
                     logger.info("Ingesting: %d frames from user", frame_count)
 
                 if resampler is None:
-                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, frame.num_channels)
+                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, num_channels=frame.num_channels)
                     logger.info(
                         "AudioResampler initialized: %dHz %dch → 16000Hz 1ch",
                         frame.sample_rate, frame.num_channels,
