@@ -200,6 +200,34 @@ class ElevenLabsStreamingProvider:
         """Attach a cache backend (Redis) for audio caching."""
         self._cache = cache
 
+    async def get_voices(self) -> List[Dict[str, str]]:
+        """Fetch the available voice list from ElevenLabs API."""
+        import httpx
+        url = "https://api.elevenlabs.io/v1/voices"
+        headers = {"xi-api-key": self.api_key}
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    voices = []
+                    for v in data.get("voices", []):
+                        voices.append({
+                            "id": v["voice_id"],
+                            "name": v["name"],
+                            "provider": "elevenlabs",
+                            "preview_url": v.get("preview_url", ""),
+                            "labels": v.get("labels", {})
+                        })
+                    return voices
+                else:
+                    logger.error("ElevenLabs get_voices error: %d", response.status_code)
+                    return []
+        except Exception as e:
+            logger.error("ElevenLabs get_voices exception: %s", e)
+            return []
+
     async def disconnect(self) -> None:
         """Clean up resources."""
         self._stopped = True

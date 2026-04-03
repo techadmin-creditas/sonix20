@@ -218,18 +218,21 @@ class DeepgramStreamingProvider:
         detects speech (plus some trailing padding). This significantly reduces 
         Deepgram costs as idle/bot-speech silence is not billed as PCM.
         
-        LOW LATENCY: Uses manual finalize() on transition to silence to force 
-        immediate transcription results without waiting for Deepgram endpointing.
+        LOW LATENCY: Uses manual finalize() on transition from speech to silence
+        (ignoring the trailing padding for finalization) to force immediate 
+        transcription results without waiting for Deepgram endpointing.
         """
         if not self._connected or not self._ws:
             return
 
-        # Track speech state via local Silero VAD
+        # Track speech state via local Energy gate
         speech_detected = self._vad_gate.is_speech(audio_bytes)
         _was_talking = self._is_user_talking
 
         if speech_detected:
             self._is_user_talking = True
+            # Reset padding whenever speech is detected
+            # 20ms frames * padding = buffer_ms
             self._silence_padding_frames = self.MAX_SILENCE_PADDING
         else:
             if self._silence_padding_frames > 0:
@@ -238,9 +241,14 @@ class DeepgramStreamingProvider:
                 if self._is_user_talking:
                     self._is_user_talking = False
 
-        # Force final transcript immediately (saves ~300ms) on speech stop
-        if _was_talking and not self._is_user_talking:
-            asyncio.create_task(self.finalize())
+        # 🚀 AGGRESSIVE FORCE-FINALIZE:
+        # We call finalize() as soon as the SPEECH is gone, EVEN IF we are still
+        # sending padding frames. This tells Deepgram 'I am done speaking' 
+        # instantly, while the padding frames ensure Deepgram hears the full 
+        # acoustic decay (preventing cut-off suffixes).
+        if _was_talking and not speech_detected:
+             logger.debug("🧠 STT Latency Fix: Speech stopped, triggering immediate finalize.")
+             asyncio.create_task(self.finalize())
 
         # GATED SEND: Only send audio bytes if there is speech or padding
         if speech_detected or self._silence_padding_frames > 0:

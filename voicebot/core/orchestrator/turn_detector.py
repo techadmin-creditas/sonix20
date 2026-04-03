@@ -146,17 +146,23 @@ class TurnDetector:
         last_word = words[-1].rstrip(".,!?") if words else ""
         
         # Base patience mapping from confidence
+        # We start with a baseline of 0 silence to get the linguistic score
         confidence = self.compute_turn_complete_confidence(transcript, 0)
         
-        # Snap thresholds for sub-800ms targeting
-        if confidence > 0.8:
-            dynamic_threshold = 300.0  # Ultra-fast snap for high confidence
+        # 🚀 PRODUCTION TUNING:
+        # For short, definitive phrases typical of banking/automation (Yes, No, digit OTPs),
+        # we snap respond instantly (sub-400ms) regardless of punctuation.
+        if len(words) <= 2 and (confidence > 0.4 or self.is_backchannel(transcript) or last_word.isdigit()):
+            dynamic_threshold = 300.0
+        elif confidence > 0.8:
+            dynamic_threshold = 400.0  # Snappy snap for high confidence
         elif confidence > 0.5:
-            dynamic_threshold = 500.0
+            dynamic_threshold = 600.0
         else:
-            dynamic_threshold = 1000.0
+            dynamic_threshold = 900.0
 
         # Apply conjunction multiplier (Advanced Linguistic VAD)
+        # If they pause mid-thought (e.g. "I want to pay because..."), give them more time.
         if last_word in self.TRAILING_INCOMPLETE:
             dynamic_threshold *= 2.0
             
@@ -164,8 +170,8 @@ class TurnDetector:
         if kwargs.get("pitch_signal") == "flat":
             dynamic_threshold *= 1.5
 
-        # Safety: never wait longer than double the configured max threshold
-        return min(dynamic_threshold, base_max_threshold_ms * 2.0)
+        # Safety: never wait longer than the configured max threshold
+        return min(dynamic_threshold, base_max_threshold_ms)
 
     def is_sentence_boundary(self, text: str, char_cap: int = 100, mode: str = "balanced") -> bool:
         """

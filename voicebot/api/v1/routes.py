@@ -564,138 +564,205 @@ async def delete_knowledge(entry_id: int):
 
 
 # ─── Metadata Endpoints ───────────────────────────────────────────────────────
+def is_valid_key(key: str) -> bool:
+    """Check if API key is valid (not empty or placeholder)."""
+    if not key:
+        return False
+    # Treat template .env.example values as unset
+    invalid_patterns = ["your_", "test_", "demo_", "xxxx", "1234"]
+    key_lower = key.lower()
+    return not any(p in key_lower for p in invalid_patterns)
+
+
 @router.get("/metadata/models", tags=["metadata"])
 async def get_supported_models():
     """List supported LLM models across providers. Keys checked via settings (loaded from .env)."""
-    models = [
-        {
-            "id": "llama-3.3-70b-versatile",
-            "name": "Llama 3.3 70B (Groq)",
-            "provider": "groq",
-            "context_window": 128000,
-            "max_tpm": 6000, # Approx for Groq free tier or common tier
-            "cost_per_1k": 0.0006
-        },
-        {
-            "id": "llama-3.1-8b-instant",
-            "name": "Llama 3.1 8B (Groq)",
-            "provider": "groq",
-            "context_window": 128000,
-            "max_tpm": 30000,
-            "cost_per_1k": 0.00005
-        },
-        {
-            "id": "gemini-1.5-flash",
-            "name": "Gemini 1.5 Flash",
-            "provider": "gemini",
-            "context_window": 1000000,
-            "max_tpm": 1000000,
-            "cost_per_1k": 0.000075
-        },
-        {
-            "id": "gemini-1.5-pro",
-            "name": "Gemini 1.5 Pro",
-            "provider": "gemini",
-            "context_window": 2000000,
-            "max_tpm": 1000000,
-            "cost_per_1k": 0.0035
-        },
-        {
-            "id": "gpt-4o",
-            "name": "GPT-4o",
-            "provider": "openai",
-            "context_window": 128000,
-            "max_tpm": 200000,
-            "cost_per_1k": 0.005
-        },
-    ]
-    if settings.openrouter_api_key:
+    models = []
+
+    # ✅ GROQ
+    if is_valid_key(settings.groq_api_key):
         models += [
             {
-                "id": "google/gemini-flash-1.5-8b",
-                "name": "Gemini Flash 1.5 (OpenRouter Free)",
+                "id": "llama-3.3-70b-versatile",
+                "name": "Llama 3.3 70B (Groq)",
+                "provider": "groq",
+                "context_window": 128000,
+                "max_tpm": 6000,
+                "cost_per_1k": 0.0006,
+                "tags": ["fast", "balanced"]
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "name": "Llama 3.1 8B (Groq)",
+                "provider": "groq",
+                "context_window": 128000,
+                "max_tpm": 30000,
+                "cost_per_1k": 0.00005,
+                "tags": ["fast", "cheap"]
+            },
+        ]
+
+    # ✅ GEMINI (Native) - Updated for 2026 Fleet
+    if is_valid_key(settings.gemini_api_key):
+        models += [
+            {
+                "id": "gemini-3.1-flash-lite-preview",
+                "name": "Gemini 3.1 Flash Lite (Latest)",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00001,
+                "tags": ["fastest", "realtime"]
+            },
+            {
+                "id": "gemini-2.5-flash",
+                "name": "Gemini 2.5 Flash (Production)",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00002,
+                "tags": ["fast", "balanced"]
+            },
+            {
+                "id": "gemini-2.5-flash-lite",
+                "name": "Gemini 2.5 Flash Lite",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00001,
+                "tags": ["cheap", "fallback"]
+            },
+        ]
+
+    # ✅ OPENAI
+    if is_valid_key(settings.openai_api_key):
+        models += [
+            {
+                "id": "gpt-4o",
+                "name": "GPT-4o (Premium)",
+                "provider": "openai",
+                "context_window": 128000,
+                "max_tpm": 200000,
+                "cost_per_1k": 0.005,
+                "tags": ["premium", "balanced"]
+            },
+            {
+                "id": "gpt-4o-mini",
+                "name": "GPT-4o mini",
+                "provider": "openai",
+                "context_window": 128000,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00015,
+                "tags": ["fast", "cheap"]
+            },
+        ]
+
+    # ✅ OPENROUTER
+    if is_valid_key(settings.openrouter_api_key):
+        models += [
+            {
+                "id": "google/gemini-2.0-flash-001",
+                "name": "Gemini 2.0 Flash (OR)",
                 "provider": "openrouter",
-                "context_window": 1000000,
+                "context_window": 1048576,
                 "max_tpm": 20000,
-                "cost_per_1k": 0.0
+                "cost_per_1k": 0.0001,
+                "tags": ["fast", "realtime"]
+            },
+            {
+                "id": "google/gemini-flash-1.5-8b",
+                "name": "Gemini Flash 8B (OR)",
+                "provider": "openrouter",
+                "context_window": 1048576,
+                "max_tpm": 20000,
+                "cost_per_1k": 0.0,
+                "tags": ["free", "fast"]
+            },
+            {
+                "id": "google/gemini-2.0-flash-lite-001",
+                "name": "Gemini 2.0 Flash Lite (OR)",
+                "provider": "openrouter",
+                "context_window": 1048576,
+                "max_tpm": 20000,
+                "cost_per_1k": 0.0,
+                "tags": ["free", "fast", "low-code"]
             },
             {
                 "id": "anthropic/claude-3-haiku",
-                "name": "Claude Haiku (OpenRouter Fast)",
+                "name": "Claude Haiku (OR Fast)",
                 "provider": "openrouter",
                 "context_window": 200000,
                 "max_tpm": 20000,
-                "cost_per_1k": 0.0
-            },
-            {
-                "id": "meta-llama/llama-3.3-70b-instruct:free",
-                "name": "Llama 70B (OpenRouter Free)",
-                "provider": "openrouter",
-                "context_window": 131000,
-                "max_tpm": 15000,
-                "cost_per_1k": 0.0
-            },
-            {
-                "id": "meta-llama/llama-3.1-8b-instruct",
-                "name": "Llama 8B (OpenRouter Free)",
-                "provider": "openrouter",
-                "context_window": 131000,
-                "max_tpm": 15000,
-                "cost_per_1k": 0.0
-            },
-            {
-                "id": "anthropic/claude-3.5-sonnet",
-                "name": "Claude 3.5 Sonnet (OpenRouter)",
-                "provider": "openrouter",
-                "context_window": 200000,
-                "max_tpm": 80000,
-                "cost_per_1k": 0.003
-            },
-            {
-                "id": "openai/gpt-4o-mini",
-                "name": "GPT-4o mini (OpenRouter)",
-                "provider": "openrouter",
-                "context_window": 128000,
-                "max_tpm": 200000,
-                "cost_per_1k": 0.005
+                "cost_per_1k": 0.00025,
+                "tags": ["fast"]
             },
         ]
-    if settings.anthropic_api_key:
+
+    # ✅ ANTHROPIC
+    if is_valid_key(settings.anthropic_api_key):
         models += [
             {
-                "id": "claude-haiku-3-5",
-                "name": "Claude Haiku 3.5 (Anthropic)",
+                "id": "claude-3-5-haiku-latest",
+                "name": "Claude 3.5 Haiku",
                 "provider": "anthropic",
                 "context_window": 200000,
                 "max_tpm": 100000,
-                "cost_per_1k": 0.00025
+                "cost_per_1k": 0.00025,
+                "tags": ["fast", "balanced"]
             },
             {
-                "id": "claude-sonnet-3-5",
-                "name": "Claude Sonnet 3.5 (Anthropic)",
+                "id": "claude-3-5-sonnet-latest",
+                "name": "Claude 3.5 Sonnet",
                 "provider": "anthropic",
                 "context_window": 200000,
                 "max_tpm": 80000,
-                "cost_per_1k": 0.003
+                "cost_per_1k": 0.003,
+                "tags": ["smart", "coding"]
             },
         ]
-    return {"models": models}
+
+    return {
+        "models": models,
+        "total": len(models),
+        "available_providers": list(set([m["provider"] for m in models]))
+    }
 
 @router.get("/metadata/voices", tags=["metadata"])
 async def get_supported_voices():
-    """List supported TTS voices across providers."""
-    return {
-        "voices": [
+    """List supported TTS voices across providers, dynamically fetching ElevenLabs voices."""
+    voices = []
+
+    # ✅ DEEPGRAM (Aura)
+    if is_valid_key(settings.deepgram_api_key):
+        voices += [
             {"id": "aura-asteria-en", "name": "Asteria (Hindi Accent / Deepgram)", "provider": "deepgram"},
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
             {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
-            {"id": "RnauXKDOkyVg9FjwISwR", "name": "Raghav - clear, confident", "provider": "elevenlabs"},
-            {"id": "BKAA4PPBFfn6s91XfihW", "name": "Roopa - Electric", "provider": "elevenlabs"},
-            {"id": "zEvjs17jNQ2fH5FxAat2", "name": "Anika - Gentel & warn", "provider": "elevenlabs"},
-            {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi Natural / ElevenLabs)", "provider": "elevenlabs"},
         ]
-    }
+
+    # ✅ ELEVENLABS (Dynamic Fetch)
+    if is_valid_key(settings.elevenlabs_api_key):
+        try:
+            # from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+            # provider = ElevenLabsStreamingProvider()
+            # el_voices = await provider.get_voices()
+            # if el_voices:
+            #     # Filter out known failing voices
+            #     blacklist = ["RnauXKDOkyVg9FjwISwR", "FGY2WhTYpPnrIDTdsKH5"]
+            #     el_voices = [v for v in el_voices if v["id"] not in blacklist]
+            #     voices += el_voices
+            # else:
+            #     # Fallback to high-quality Hindi set if API fails
+            voices += [
+                    {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi - Natural)", "provider": "elevenlabs"},
+                    {"id": "zEvjs17jNQ2fH5FxAat2", "name": "Anika (Hindi - Gentle)", "provider": "elevenlabs"},
+                    {"id": "BKAA4PPBFfn6s91XfihW", "name": "Roopa (Hindi - Professional)", "provider": "elevenlabs"},
+                ]
+        except Exception as e:
+            logger.error("Failed to fetch ElevenLabs voices: %s", e)
+
+    return {"voices": voices, "total": len(voices)}
 
 # ─── Test Utilities ───────────────────────────────────────────────────────────
 

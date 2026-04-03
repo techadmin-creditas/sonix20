@@ -63,6 +63,116 @@ def _make_summariser_llm(bot_config: dict):
     return GroqStreamingProvider(model="llama-3.3-70b-versatile")
 
 
+async def _archive_voice_session(
+    session_id: str,
+    bot_config: dict,
+    db: any,
+    mode: str = "classic",
+    user_id: Optional[str] = None,
+    vector_memory: Optional[any] = None,
+):
+    """
+    Centralized post-call archiving logic.
+    Generates summary/intent, updates DB, fires webhooks, and stores in vector memory.
+    Designed to be run as a background task.
+    """
+    try:
+        log_entries = await db.get_session_log(session_id)
+        transcript_text = "\n".join(
+            [f"{e['role']}: {e['content']}" for e in log_entries if e["role"] in ["user", "assistant"]]
+        )
+
+        summary = "No meaningful conversation occurred."
+        intent = "Unknown"
+
+        if len(log_entries) > 1 and transcript_text.strip():
+            try:
+                # Use the helper to get the best LLM for summarisation
+                sum_llm = _make_summariser_llm(bot_config)
+                logger.info(
+                    "Post-call archiving (%s) using: provider=%s model=%s",
+                    session_id[:8],
+                    getattr(sum_llm, "provider", type(sum_llm).__name__),
+                    getattr(sum_llm, "model", "?"),
+                )
+
+                # Generate Summary
+                sum_prompt = (
+                    "Summarize the following conversation in exactly 1 or 2 concise sentences. "
+                    "Focus solely on the user's primary intent and the resolution. "
+                    "Do not add conversational filler:\n\n" + transcript_text
+                )
+                sum_parts = []
+                async for chunk in sum_llm.stream_completion(
+                    system_prompt="You are a concise summarizer.",
+                    messages=[{"role": "user", "content": sum_prompt}],
+                ):
+                    if chunk.content:
+                        sum_parts.append(chunk.content)
+                if sum_parts:
+                    summary = "".join(sum_parts).strip()
+
+                # Generate Intent Tag
+                intent_prompt = (
+                    "Based on the following conversation, provide a strict 1-3 word noun phrase "
+                    "representing the core operational intent (e.g. 'Password Reset', "
+                    "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n" + transcript_text
+                )
+                intent_parts = []
+                async for chunk in sum_llm.stream_completion(
+                    system_prompt="You are a concise intent classifier.",
+                    messages=[{"role": "user", "content": intent_prompt}],
+                ):
+                    if chunk.content:
+                        intent_parts.append(chunk.content)
+                if intent_parts:
+                    intent = "".join(intent_parts).strip()
+
+            except Exception as llm_err:
+                logger.error("LLM Archiving failed for %s: %s", session_id[:8], llm_err)
+
+        # Update DB
+        await db.close_session(
+            session_id=session_id,
+            turn_count=len(log_entries),
+            metadata={"summary": summary, "intent": intent, "mode": mode},
+        )
+        logger.info("Session %s archived with summary (mode=%s).", session_id[:8], mode)
+
+        # Store in vector memory
+        if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
+            try:
+                await vector_memory.store_conversation(
+                    session_id=session_id,
+                    summary=summary,
+                    user_id=user_id,
+                )
+            except Exception as _vec_err:
+                logger.debug("Vector memory store failed for %s: %s", session_id[:8], _vec_err)
+
+        # Fire Webhook
+        _post_call_url = bot_config.get("post_call_webhook_url", "")
+        if _post_call_url and summary != "No meaningful conversation occurred.":
+            try:
+                import httpx as _httpx
+                async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                    await _hc.post(_post_call_url, json={
+                        "session_id": session_id,
+                        "user_id": user_id,
+                        "bot_id": bot_config.get("id"),
+                        "summary": summary,
+                        "intent": intent,
+                        "turn_count": len(log_entries),
+                        "mode": mode,
+                    })
+                logger.info("Post-call webhook fired for session %s", session_id[:8])
+            except Exception as _wh_err:
+                logger.warning("Post-call webhook failed for %s: %s", session_id[:8], _wh_err)
+
+    except Exception as archive_err:
+        logger.error("Failed to archive session %s: %s", session_id[:8], archive_err, exc_info=True)
+
+
 class AudioFrameNormalizer:
     """
     Converts variable-size TTS audio chunks into uniform 10 ms PCM frames.
@@ -783,88 +893,19 @@ async def voice_websocket(
         if hasattr(tts_provider, "disconnect"):
             await tts_provider.disconnect()
         
-        # --- Post-Call Summarization ---
-        # try:
-        #     log_entries = await db.get_session_log(session_id)
-        #     transcript_text = "\n".join([f"{e['role']}: {e['content']}" for e in log_entries if e['role'] in ['user', 'assistant']])
-            
-        #     summary = "No meaningful conversation occurred."
-        #     intent = "Unknown"
-            
-        #     if len(log_entries) > 1 and transcript_text.strip():
-        #         try:
-        #             # Reuse the bot's own provider — same model used during the call.
-        #             # brain.cleanup() nulled _client; _get_client() lazy-reinits on first use.
-        #             sum_llm = llm_provider
-        #             logger.info(
-        #                 "Post-call summarisation using bot LLM: provider=%s model=%s",
-        #                 getattr(sum_llm, "provider", type(sum_llm).__name__),
-        #                 getattr(sum_llm, "model", "?"),
-        #             )
+        # --- Post-Call Archiving (Background Task) ---
+        asyncio.create_task(_archive_voice_session(
+            session_id=session_id,
+            bot_config=bot_config,
+            db=db,
+            mode="classic",
+            user_id=user_id,
+            vector_memory=locals().get("vector_memory")
+        ))
 
-        #             # Generate Summary
-        #             system_summary = "You are a concise assistant. In 1-2 sentences summarize the user's inquiry and the outcome."
-        #             sum_parts = []
-        #             async for chunk in sum_llm.stream_completion(system_summary, [{"role": "user", "content": transcript_text}]):
-        #                 if chunk.content:
-        #                     sum_parts.append(chunk.content)
-        #             if sum_parts:
-        #                 summary = "".join(sum_parts).strip()
-
-        #             # Generate Intent Tag
-        #             system_intent = "You are a classification assistant. Output ONLY a 1-3 word noun phrase for the intent."
-        #             intent_parts = []
-        #             async for chunk in sum_llm.stream_completion(system_intent, [{"role": "user", "content": transcript_text}]):
-        #                 if chunk.content:
-        #                     intent_parts.append(chunk.content)
-        #             if intent_parts:
-        #                 intent = "".join(intent_parts).strip()
-
-        #         except Exception as llm_err:
-        #             logger.error("LLM Summarization failed: %s", llm_err)
-            
-        #     await db.close_session(
-        #         session_id=session_id, 
-        #         turn_count=len(log_entries), 
-        #         metadata={'summary': summary, 'intent': intent}
-        #     )
-        #     logger.info("Session %s archived with summary.", session_id[:8])
-
-        #     # Store summary in vector memory for future RAG retrieval
-        #     if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
-        #         try:
-        #             await vector_memory.store_conversation(
-        #                 session_id=session_id,
-        #                 summary=summary,
-        #                 user_id=user_id,
-        #             )
-        #         except Exception as _vec_err:
-        #             logger.debug("Vector memory store failed: %s", _vec_err)
-
-        #     # Post-call webhook: fire summary to external URL if configured
-        #     _post_call_url = bot_config.get("post_call_webhook_url", "")
-        #     if _post_call_url and summary != "No meaningful conversation occurred.":
-        #         try:
-        #             import httpx as _httpx
-        #             async with _httpx.AsyncClient(timeout=10.0) as _hc:
-        #                 await _hc.post(_post_call_url, json={
-        #                     "session_id": session_id,
-        #                     "user_id": user_id,
-        #                     "bot_id": bot_config.get("id"),
-        #                     "summary": summary,
-        #                     "intent": intent,
-        #                     "turn_count": len(log_entries),
-        #                 })
-        #             logger.info("Post-call webhook fired for session %s", session_id[:8])
-        #         except Exception as _wh_err:
-        #             logger.warning("Post-call webhook failed: %s", _wh_err)
-
-        # except Exception as archive_err:
-        #     logger.error("Failed to archive session %s: %s", session_id[:8], archive_err)
-        # finally:
-        #     # Remove from singleton registry (always keyed by session_id)
-        #     if _active_voice_sessions.get(session_id) == websocket:
-        #         _active_voice_sessions.pop(session_id, None)
+        # Remove from singleton registry
+        if _active_voice_sessions.get(session_id) == websocket:
+            _active_voice_sessions.pop(session_id, None)
 
 async def _handle_gemini_s2s_session(
     websocket: WebSocket,
@@ -973,86 +1014,15 @@ async def _handle_gemini_s2s_session(
     finally:
         heartbeat_task.cancel()
         await bridge.disconnect()
-
-        # ── Post-call summarisation (same as classic mode) ─────────────────
-        try:
-            log_entries = await db.get_session_log(session_id)
-            transcript_text = "\n".join(
-                f"{e['role']}: {e['content']}"
-                for e in log_entries
-                if e["role"] in ("user", "assistant")
-            )
-
-            summary = "No meaningful conversation occurred."
-            intent = "Unknown"
-
-            if len(log_entries) > 1 and transcript_text.strip():
-                try:
-                    sum_llm = _make_summariser_llm(bot_config)
-                    logger.info(
-                        "S2S (gemini) post-call summarisation using: provider=%s model=%s",
-                        getattr(sum_llm, "provider", type(sum_llm).__name__),
-                        getattr(sum_llm, "model", "?"),
-                    )
-
-                    sum_prompt = (
-                        "Summarize the following conversation in exactly 1 or 2 concise sentences. "
-                        "Focus solely on the user's primary intent and the resolution. "
-                        "Do not add conversational filler:\n\n" + transcript_text
-                    )
-                    parts: list[str] = []
-                    async for chunk in sum_llm.stream_completion(
-                        system_prompt="You are a concise summarizer.",
-                        messages=[{"role": "user", "content": sum_prompt}],
-                    ):
-                        if chunk.content:
-                            parts.append(chunk.content)
-                    if parts:
-                        summary = "".join(parts).strip()
-
-                    intent_prompt = (
-                        "Based on the following conversation, provide a strict 1-3 word noun phrase "
-                        "representing the core operational intent (e.g. 'Password Reset', "
-                        "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n"
-                        + transcript_text
-                    )
-                    iparts: list[str] = []
-                    async for chunk in sum_llm.stream_completion(
-                        system_prompt="You are a concise intent classifier.",
-                        messages=[{"role": "user", "content": intent_prompt}],
-                    ):
-                        if chunk.content:
-                            iparts.append(chunk.content)
-                    if iparts:
-                        intent = "".join(iparts).strip()
-                except Exception as llm_err:
-                    logger.error("S2S (gemini) post-call LLM summarisation failed: %s", llm_err)
-
-            await db.close_session(
-                session_id=session_id,
-                turn_count=len(log_entries),
-                metadata={"summary": summary, "intent": intent, "mode": "gemini_s2s"},
-            )
-            logger.info("S2S (gemini) session %s archived.", session_id[:8])
-
-            # Post-call webhook for S2S mode
-            _post_call_url = bot_config.get("post_call_webhook_url", "")
-            if _post_call_url and summary != "No meaningful conversation occurred.":
-                try:
-                    import httpx as _httpx
-                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
-                        await _hc.post(_post_call_url, json={
-                            "session_id": session_id,
-                            "user_id": language,
-                            "summary": summary,
-                            "intent": intent,
-                            "mode": "gemini_s2s",
-                        })
-                except Exception as _wh_err:
-                    logger.warning("S2S (gemini) post-call webhook failed: %s", _wh_err)
-
-        except Exception as archive_err:
-            logger.error("Failed to archive S2S (gemini) session %s: %s", session_id[:8], archive_err)
+        
+        # --- Post-Call Archiving (Background Task) ---
+        asyncio.create_task(_archive_voice_session(
+            session_id=session_id,
+            bot_config=bot_config,
+            db=db,
+            mode="gemini_s2s",
+            user_id=language  # Using language as user_id for S2S per-bot preference
+        ))
 
 async def _handle_speech_speech_session(
     websocket: WebSocket,
@@ -1163,86 +1133,14 @@ async def _handle_speech_speech_session(
         heartbeat_task.cancel()
         await bridge.disconnect()
 
-        # ── Post-call summarisation (same as classic mode) ─────────────────
-        try:
-            log_entries = await db.get_session_log(session_id)
-            transcript_text = "\n".join(
-                f"{e['role']}: {e['content']}"
-                for e in log_entries
-                if e["role"] in ("user", "assistant")
-            )
-
-            summary = "No meaningful conversation occurred."
-            intent  = "Unknown"
-
-            if len(log_entries) > 1 and transcript_text.strip():
-                try:
-                    sum_llm = _make_summariser_llm(bot_config)
-                    logger.info(
-                        "S2S post-call summarisation using: provider=%s model=%s",
-                        getattr(sum_llm, "provider", type(sum_llm).__name__),
-                        getattr(sum_llm, "model", "?"),
-                    )
-
-                    sum_prompt = (
-                        "Summarize the following conversation in exactly 1 or 2 concise sentences. "
-                        "Focus solely on the user's primary intent and the resolution. "
-                        "Do not add conversational filler:\n\n" + transcript_text
-                    )
-                    parts: list[str] = []
-                    async for chunk in sum_llm.stream_completion(
-                        system_prompt="You are a concise summarizer.",
-                        messages=[{"role": "user", "content": sum_prompt}],
-                    ):
-                        if chunk.content:
-                            parts.append(chunk.content)
-                    if parts:
-                        summary = "".join(parts).strip()
-
-                    intent_prompt = (
-                        "Based on the following conversation, provide a strict 1-3 word noun phrase "
-                        "representing the core operational intent (e.g. 'Password Reset', "
-                        "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n"
-                        + transcript_text
-                    )
-                    iparts: list[str] = []
-                    async for chunk in sum_llm.stream_completion(
-                        system_prompt="You are a concise intent classifier.",
-                        messages=[{"role": "user", "content": intent_prompt}],
-                    ):
-                        if chunk.content:
-                            iparts.append(chunk.content)
-                    if iparts:
-                        intent = "".join(iparts).strip()
-
-                except Exception as llm_err:
-                    logger.error("S2S post-call LLM summarisation failed: %s", llm_err)
-
-            await db.close_session(
-                session_id=session_id,
-                turn_count=len(log_entries),
-                metadata={"summary": summary, "intent": intent, "mode": "speech_speech"},
-            )
-            logger.info("S2S session %s archived.", session_id[:8])
-
-            # Post-call webhook for S2S mode
-            _post_call_url = bot_config.get("post_call_webhook_url", "")
-            if _post_call_url and summary != "No meaningful conversation occurred.":
-                try:
-                    import httpx as _httpx
-                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
-                        await _hc.post(_post_call_url, json={
-                            "session_id": session_id,
-                            "user_id": language,  # language is in scope from outer
-                            "summary": summary,
-                            "intent": intent,
-                            "mode": "speech_speech",
-                        })
-                except Exception as _wh_err:
-                    logger.warning("S2S post-call webhook failed: %s", _wh_err)
-
-        except Exception as archive_err:
-            logger.error("Failed to archive S2S session %s: %s", session_id[:8], archive_err)
+        # --- Post-Call Archiving (Background Task) ---
+        asyncio.create_task(_archive_voice_session(
+            session_id=session_id,
+            bot_config=bot_config,
+            db=db,
+            mode="speech_speech",
+            user_id=language
+        ))
 
 
 if __name__ == "__main__":
