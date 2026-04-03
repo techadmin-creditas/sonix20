@@ -38,8 +38,8 @@ class TurnDetector:
 
     def __init__(
         self,
-        min_silence_ms: float = 400,
-        max_silence_ms: float = 1000,
+        min_silence_ms: float = 300,
+        max_silence_ms: float = 800,
         confidence_threshold: float = 0.7,
         extra_backchannels: Optional[list[str]] = None,
     ):
@@ -71,9 +71,9 @@ class TurnDetector:
         if silence_duration_ms >= self.max_silence_ms:
             score += 0.5
         elif silence_duration_ms >= self.min_silence_ms:
-            ratio = (silence_duration_ms - self.min_silence_ms) / (
+            ratio = (silence_duration_ms - self.min_silence_ms) / max(1, (
                 self.max_silence_ms - self.min_silence_ms
-            )
+            ))
             score += 0.3 * ratio
 
         # ── Signal 2: Sentence completeness ──
@@ -96,7 +96,14 @@ class TurnDetector:
         if last_word in self.TRAILING_INCOMPLETE:
             score -= 0.25
 
+        # ── Signal 6: Numerical Input (OTP/PIN) ──
+        # Purely numerical or space-separated numbers (e.g. "1 1 2 2" or "1122")
+        # These are usually complete answers in banking/verification workflows.
+        if re.fullmatch(r"[\d\s]+", text) and len(text.replace(" ", "")) >= 2:
+            score += 0.2
+
         return max(0.0, min(1.0, score))
+
 
     def is_turn_complete(
         self,
@@ -139,14 +146,13 @@ class TurnDetector:
         last_word = words[-1].rstrip(".,!?") if words else ""
         
         # Base patience mapping from confidence
-        # (calculated without silence duration to see linguistic completeness)
         confidence = self.compute_turn_complete_confidence(transcript, 0)
         
-        # Low confidence (Mid-sentence pause) → Patient response (1500ms+)
+        # Snap thresholds for sub-800ms targeting
         if confidence > 0.8:
-            dynamic_threshold = 400.0
+            dynamic_threshold = 300.0  # Ultra-fast snap for high confidence
         elif confidence > 0.5:
-            dynamic_threshold = 600.0
+            dynamic_threshold = 500.0
         else:
             dynamic_threshold = 1000.0
 
@@ -164,6 +170,7 @@ class TurnDetector:
     def is_sentence_boundary(self, text: str, char_cap: int = 100, mode: str = "balanced") -> bool:
         """
         Decide whether to flush the TTS buffer at the current text length.
+        Supports both English and Hindi sentence boundaries.
         """
         text = text.rstrip()
         if not text:
@@ -176,10 +183,10 @@ class TurnDetector:
             return False
 
         if mode == "sentence_only":
-            return last in ".!?" or len(text) >= char_cap
+            return last in ".!?" or last == "।" or len(text) >= char_cap
 
-        # Rule 2: hard sentence end
-        if last in ".!?":
+        # Rule 2: hard sentence end (English and Hindi)
+        if last in ".!?" or last == "।":
             return True
 
         # Rule 3: clause boundary — only if past 1/3 of cap
@@ -195,10 +202,52 @@ class TurnDetector:
 
     def is_backchannel(self, text: str) -> bool:
         """
-        Heuristic to determine if a transcript is a 'Backchannel' (verbal nod)
-        intended to acknowledge, not interrupt.
+        Heuristic to determine if a transcript is a 'Backchannel' (verbal nod).
         """
         words = text.lower().strip().split()
         if not words or len(words) > 2:
             return False
         return any(w in self._backchannel_words for w in words)
+
+    def is_likely_duplicate(self, text: str, last_processed_text: str) -> bool:
+        """
+        Check if the incoming text is likely a redundant fragment or suffix
+        of the text we just processed into a turn.
+        """
+        t1 = text.lower().strip().rstrip(".,!?।")
+        t2 = last_processed_text.lower().strip().rstrip(".,!?।")
+        
+        if not t1 or not t2:
+            return False
+            
+        # Exact match
+        if t1 == t2:
+            return True
+            
+        # Suffix/Fragment match (Deepgram artifact)
+        if t2.endswith(t1) and len(t1) > 2:
+            return True
+            
+        # Substring match
+        if t1 in t2 and len(t1) > 5:
+            return True
+            
+        return False
+
+    def is_meaningful_barge_in(self, barge_in_text: str, last_processed_text: str) -> bool:
+        """
+        Determine if the current barge-in collection is a fresh utterance
+        or just trailing noise/reflections from the last turn.
+        """
+        if not barge_in_text.strip():
+            return False
+            
+        # If it's a duplicate of the turn we just finished, it's NOT meaningful.
+        if self.is_likely_duplicate(barge_in_text, last_processed_text):
+            return False
+            
+        # If it's a pure backchannel, it's acknowledged but NOT an interruption.
+        if self.is_backchannel(barge_in_text):
+            return False
+            
+        return True

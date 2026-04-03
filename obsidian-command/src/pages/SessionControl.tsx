@@ -1413,11 +1413,20 @@ export default function SessionControl() {
 
 function MetricCard({ label, value, unit, color, highlight }: any) {
   return (
-    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2", color)}>
-      <p className="text-[10px] uppercase tracking-wider text-outline mb-1">{label}</p>
-      <p className={cn("text-2xl font-headline font-extrabold", highlight && "text-primary")}>
-        {value}<span className="text-xs font-normal text-outline ml-1">{unit}</span>
-      </p>
+    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2 transition-all duration-300", color, "hover:bg-surface-high")}>
+      <p className="text-[10px] uppercase tracking-wider text-outline/60 mb-1.5 font-bold">{label}</p>
+      <div className="flex items-baseline gap-1.5">
+        <motion.span 
+          key={value}
+          initial={{ scale: 1.15, opacity: 0.8 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
+          className={cn("text-2xl font-headline font-black", highlight ? "text-primary" : "text-on-surface")}
+        >
+          {value}
+        </motion.span>
+        <span className="text-xs font-bold text-outline uppercase tracking-tighter">{unit}</span>
+      </div>
     </div>
   );
 }

@@ -413,23 +413,24 @@ async def voice_websocket(
         # --- LLM Provider (Detect from Bot Config + High-Perf Default) ---
         _llm_prov = str(bot_config.get("llm_provider") or "").lower()
         llm_model = bot_config.get("llm_model")
-        
-        # 🚀 HIGH-LEVEL OPTIMIZATION: Default to Groq for Finance/Banking assistants
-        # if no explicit model is set, to guarantee sub-500ms TTFT.
         _bot_name_lower = str(bot_config.get("name", "")).lower()
-        if not llm_model and ("banking" in _bot_name_lower or "assistant" in _bot_name_lower):
-             _llm_prov = "groq"
-             llm_model = "llama3-70b-8192"
-             logger.info("Auto-selecting high-perf Groq engine for %s", _bot_name_lower)
 
         if not llm_model:
             raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no LLM Model configured.")
 
+        # 🚀 PRODUCTION OPTIMIZATION: Force Groq for high-performance Hindi banking bots.
+        # OpenRouter (even with 4o-mini) adds ~500ms protocol delay. Direct Groq is the goal.
+        _is_high_perf = ("hindi" in _bot_name_lower or "banking" in _bot_name_lower)
+        if _is_high_perf and (_llm_prov == "openrouter" or "openai/gpt-4o-mini" in str(llm_model)):
+             _llm_prov = "groq"
+             llm_model = "llama-3.3-70b-versatile"
+             logger.warning("🚀 OVERRIDING slow model with high-perf Groq (%s) for low-latency session.", llm_model)
+
         # OpenRouter models use "provider/model" slugs
         if _llm_prov == "openrouter" or ("/" in str(llm_model) and _llm_prov not in ("gemini", "openai", "groq", "anthropic")):
-            from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
-            llm_provider = OpenRouterStreamingProvider(model=llm_model)
-            logger.info("Using OpenRouter LLM (model=%s) ✅", llm_model)
+             from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+             llm_provider = OpenRouterStreamingProvider(model=llm_model)
+             logger.info("Using OpenRouter LLM (model=%s) ✅", llm_model)
         elif _llm_prov == "openai":
             llm_provider = OpenAIStreamingProvider(model=llm_model)
             logger.info("Using OpenAI LLM (model=%s) ✅", llm_model)
@@ -465,14 +466,14 @@ async def voice_websocket(
              from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
              tts_provider = ElevenLabsStreamingProvider(
                  voice_id=voice_id,
-                 model_id="eleven_multilingual_v2"
+                 model_id="eleven_flash_v2_5"
              )
              logger.info("Hindi Bot detected: Forcing ElevenLabs Multilingual ✅")
         elif _tts_prov_name == "elevenlabs":
             from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
             tts_provider = ElevenLabsStreamingProvider(
                 voice_id=voice_id,
-                model_id="eleven_multilingual_v2"
+                model_id="eleven_flash_v2_5"
             )
             logger.info("Using ElevenLabs TTS (Multilingual v2) ✅")
         elif _tts_prov_name == "deepgram_http":
