@@ -332,7 +332,10 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
           </div>
 
           {/* Avatar */}
-          <div className="size-9 sm:size-10 rounded-full border border-primary/20 p-0.5 shrink-0">
+          <div
+            onClick={() => navigate('/profile')}
+            className="size-9 sm:size-10 rounded-full border border-primary/20 p-0.5 shrink-0 cursor-pointer hover:border-primary/50 transition-colors"
+          >
             <img
               src="https://picsum.photos/seed/admin/100/100"
               alt="Avatar"

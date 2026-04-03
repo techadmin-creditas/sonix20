@@ -13,7 +13,8 @@ import {
   PlusCircle,
   Sun,
   Moon,
-  GitBranch
+  GitBranch,
+  User
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { icon: Database, label: 'Knowledge Base', path: '/knowledge' },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: User, label: 'Profile', path: '/profile' },
 ];
 
 export function Sidebar() {
@@ -94,17 +96,23 @@ export function Sidebar() {
         </div> */}
       </div>
 
-      <div className="p-6 border-t border-outline-variant/10">
+      <NavLink
+        to="/profile"
+        className={({ isActive }) => cn(
+          "p-6 border-t border-outline-variant/10 transition-all hover:bg-surface-high/50 cursor-pointer",
+          isActive && "bg-primary/5"
+        )}
+      >
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-surface-high border border-outline-variant/20 flex items-center justify-center text-primary font-bold">
             AR
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Alex Rivera</span>
-            <span className="text-[10px] uppercase tracking-tighter text-outline">Organization Owner</span>
+            <span className="text-sm font-semibold text-on-surface">Alex Rivera</span>
+            <span className="text-[10px] uppercase tracking-tighter text-outline font-bold">Owner • Enterprise</span>
           </div>
         </div>
-      </div>
+      </NavLink>
     </aside>
   );
 }

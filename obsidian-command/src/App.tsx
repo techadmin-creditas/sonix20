@@ -12,6 +12,7 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
+import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 
 function App() {
@@ -35,6 +36,7 @@ function App() {
               <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile />} />
             </Routes>
           </main>
         </div>
