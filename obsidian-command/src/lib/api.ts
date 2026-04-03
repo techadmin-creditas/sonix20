@@ -167,21 +167,21 @@ export const api = {
     const data = await res.json();
     return data.bots;
   },
-  
+
   async getBot(id: string): Promise<Bot> {
     const res = await fetch(`${BASE_URL}/bots/${id}`);
     if (!res.ok) throw new Error('Failed to fetch bot');
     return res.json();
   },
 
-  async getModels(): Promise<{id: string, name: string, provider: string}[]> {
+  async getModels(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/models`);
     if (!res.ok) throw new Error('Failed to fetch models');
     const data = await res.json();
     return data.models;
   },
 
-  async getVoices(): Promise<{id: string, name: string, provider: string}[]> {
+  async getVoices(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/voices`);
     if (!res.ok) throw new Error('Failed to fetch voices');
     const data = await res.json();
@@ -316,7 +316,7 @@ export const api = {
     return res.json();
   },
 
-  async saveWorkflow(data: Partial<Workflow>): Promise<{status: string, id: string}> {
+  async saveWorkflow(data: Partial<Workflow>): Promise<{ status: string, id: string }> {
     const res = await fetch(`${BASE_URL}/workflows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
