@@ -1,11 +1,11 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  UserRoundPen, 
-  MessageSquareText, 
-  Settings2, 
-  Wrench, 
+import {
+  ArrowLeft,
+  UserRoundPen,
+  MessageSquareText,
+  Settings2,
+  Wrench,
   SlidersHorizontal,
   ChevronDown,
   Search,
@@ -14,12 +14,12 @@ import {
   BrainCircuit,
   Loader2,
   CheckCircle2,
-  Cloud, 
-  PhoneOff, 
-  ClipboardList, 
-  Webhook, 
-  ShieldCheck, 
-  Wallet, 
+  Cloud,
+  PhoneOff,
+  ClipboardList,
+  Webhook,
+  ShieldCheck,
+  Wallet,
   Receipt,
   Sparkles,
   Trash2,
@@ -133,13 +133,13 @@ export default function BotConfig() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isCreateMode = !id;
-  
+
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [saveSuccess, setSaveSuccess] = React.useState(false);
   
   const [models, setModels] = React.useState<{id: string, name: string, provider: string}[]>([]);
-  const [voices, setVoices] = React.useState<{id: string, name: string}[]>([]);
+  const [voices, setVoices] = React.useState<{ id: string, name: string, provider: string }[]>([]);
   const [workflows, setWorkflows] = React.useState<{id: string, name: string}[]>([]);
   
   const [formData, setFormData] = React.useState<Partial<Bot>>({
@@ -314,8 +314,19 @@ export default function BotConfig() {
 
         if (!isCreateMode && id) {
           const botData = await api.getBot(id);
+
+          // Auto-sync provider with voice engine if they mismatch in DB
+          let tts_provider = botData.tts_provider;
+          const voice = voicesData.find(v => v.id === botData.voice_id);
+          if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
+            tts_provider = 'elevenlabs';
+          } else if (voice?.provider === 'deepgram' && tts_provider === 'elevenlabs') {
+            tts_provider = 'deepgram_ws';
+          }
+
           setFormData({
             ...botData,
+            tts_provider,
             pipeline_mode: botData.pipeline_mode || 'classic',
             guardrails: botData.guardrail_policy?.negative_constraints || '',
           });
@@ -409,11 +420,11 @@ export default function BotConfig() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen bg-background text-on-surface">
+    <div className="flex-1 flex flex-col  bg-background text-on-surface">
       {/* Focused Header */}
       <header className="h-20 flex items-center justify-between px-10 glass-panel sticky top-0 z-50 border-b border-outline-variant/10">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => navigate('/personas')}
             className="size-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors text-on-surface"
           >
@@ -422,7 +433,7 @@ export default function BotConfig() {
           <div>
             <h1 className="font-headline font-extrabold text-2xl tracking-tight text-on-surface">
               {isCreateMode ? (
-                <>Create <span className="text-primary">New Agent</span></>
+                <>Create <span className="text-primary">New Bot</span></>
               ) : (
                 <>Bot Config: <span className="text-primary">{formData.name}</span></>
               )}
@@ -433,19 +444,19 @@ export default function BotConfig() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => navigate('/personas')}
             className="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:text-on-surface ghost-border transition-all"
           >
             {isCreateMode ? 'Cancel' : 'Back'}
           </button>
-          <button 
+          <button
             onClick={handleSave}
             disabled={saving}
             className={cn(
               "px-8 py-2.5 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center gap-2",
-              saveSuccess 
-                ? "bg-green-500/10 text-green-500 border border-green-500/20" 
+              saveSuccess
+                ? "bg-green-500/10 text-green-500 border border-green-500/20"
                 : "ember-gradient text-on-primary-fixed shadow-primary/10 hover:shadow-primary/20",
               saving && "opacity-50 cursor-not-allowed"
             )}
@@ -457,18 +468,18 @@ export default function BotConfig() {
             ) : isCreateMode ? (
               <Sparkles className="size-4" />
             ) : null}
-            {saving 
-              ? (isCreateMode ? 'Synthesizing...' : 'Saving...') 
-              : saveSuccess ? 'Saved!' 
-              : isCreateMode ? 'Initialize Agent' : 'Save Changes'}
+            {saving
+              ? (isCreateMode ? 'Synthesizing...' : 'Saving...')
+              : saveSuccess ? 'Saved!'
+                : isCreateMode ? 'Initialize Bot' : 'Save Changes'}
           </button>
         </div>
       </header>
 
       {/* Editor Grid */}
-      <div className="p-10 grid grid-cols-12 gap-10 max-w-[1600px] mx-auto w-full">
+      <div className="p-10 grid grid-cols-12 gap-10 mx-auto w-full">
         {/* Left Column (Persona & Instructions) */}
-        <div className="col-span-12 lg:col-span-8 flex flex-col gap-8">
+        <div className="col-span-12 lg:col-span-8 flex flex-col gap-8  lg:h-[calc(100vh-0px)] lg:overflow-y-auto">
           {/* Persona Section */}
           <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
             <div className="flex items-center gap-3">
@@ -478,18 +489,18 @@ export default function BotConfig() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Identity Name</label>
-                <input 
-                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
-                  type="text" 
+                <input
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                  type="text"
                   value={formData.name}
                   onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Core Role</label>
-                <input 
-                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
-                  type="text" 
+                <input
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                  type="text"
                   value={formData.role}
                   onChange={e => setFormData(prev => ({ ...prev, role: e.target.value }))}
                 />
@@ -498,8 +509,8 @@ export default function BotConfig() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">System Prompt</label>
               <div className="relative">
-                <textarea 
-                  className="w-full h-80 bg-surface-container-highest border border-outline-variant/10 font-mono text-sm leading-relaxed p-6 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
+                <textarea
+                  className="w-full h-80 bg-surface-container-highest border border-outline-variant/10 font-mono text-sm leading-relaxed p-6 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                   spellCheck="false"
                   value={formData.system_prompt}
                   onChange={e => setFormData(prev => ({ ...prev, system_prompt: e.target.value }))}
@@ -539,21 +550,21 @@ export default function BotConfig() {
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">First Contact String</label>
-              <textarea 
-                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-14 transition-all hover:bg-surface-container-high" 
+              <textarea
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-14 transition-all hover:bg-surface-container-high"
                 rows={1}
                 value={formData.greeting}
                 onChange={e => setFormData(prev => ({ ...prev, greeting: e.target.value }))}
               />
             </div>
-            
+
             <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Proactive Silence Prompts</label>
                 <span className="text-[10px] text-on-surface-variant/60 font-medium italic">One per line</span>
               </div>
-              <textarea 
-                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-32 transition-all hover:bg-surface-container-high" 
+              <textarea
+                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-32 transition-all hover:bg-surface-container-high"
                 placeholder="Are you still there?&#10;I'm here whenever you're ready."
                 value={(formData.proactive_prompts || []).join('\n')}
                 onChange={e => {
@@ -564,9 +575,8 @@ export default function BotConfig() {
             </div>
           </section>
         </div>
-
         {/* Right Column (Config & Advanced) */}
-        <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
+        <div className="col-span-12 lg:col-span-4 flex flex-col gap-8  lg:h-[calc(100vh-0px)] lg:overflow-y-auto">
           {/* Model & Voice */}
           <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
             <div className="flex items-center gap-3">
@@ -577,7 +587,7 @@ export default function BotConfig() {
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">LLM Engine</label>
                 <div className="relative">
-                  <select 
+                  <select
                     className="appearance-none w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 pr-10 font-medium text-on-surface h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.llm_model}
                     onChange={e => {
@@ -597,13 +607,21 @@ export default function BotConfig() {
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant size-5" />
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Engine Profile</label>
                 <div className="relative">
-                  <select 
+                  <select
                     className="appearance-none w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 pr-10 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
                     value={formData.voice_id}
-                    onChange={e => setFormData(prev => ({ ...prev, voice_id: e.target.value }))}
+                    onChange={e => {
+                      const vid = e.target.value;
+                      const voice = voices.find(v => v.id === vid);
+                      setFormData(prev => ({
+                        ...prev,
+                        voice_id: vid,
+                        tts_provider: voice?.provider === 'elevenlabs' ? 'elevenlabs' : (prev.tts_provider === 'elevenlabs' ? 'deepgram_ws' : prev.tts_provider)
+                      }));
+                    }}
                   >
                     {voices.map(v => (
                       <option key={v.id} value={v.id}>{v.name}</option>
@@ -613,31 +631,44 @@ export default function BotConfig() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Provider</label>
-                  <select 
-                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                    value={formData.tts_provider || 'deepgram_ws'}
-                    onChange={e => setFormData(prev => ({ ...prev, tts_provider: e.target.value }))}
+              <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">TTS Provider</label>
+                <select
+                  className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={formData.tts_provider || 'deepgram_ws'}
+                  onChange={e => setFormData(prev => ({ ...prev, tts_provider: e.target.value }))}
+                >
+                  <option
+                    value="deepgram_ws"
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
                   >
-                    <option value="deepgram_ws">Deepgram (Websocket)</option>
-                    <option value="deepgram_http">Deepgram (HTTP)</option>
-                    <option value="elevenlabs">ElevenLabs (Multilingual)</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
-                  <select 
-                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                    value={formData.default_language || 'hi'}
-                    onChange={e => setFormData(prev => ({ ...prev, default_language: e.target.value }))}
+                    Deepgram (Websocket)
+                  </option>
+                  <option
+                    value="deepgram_http"
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider === 'elevenlabs'}
                   >
-                    <option value="hi">Hindi (hi)</option>
-                    <option value="en">English (en)</option>
-                    <option value="hi-en">Hinglish (Mixed)</option>
-                  </select>
-                </div>
+                    Deepgram (HTTP)
+                  </option>
+                  <option
+                    value="elevenlabs"
+                    disabled={voices.length > 0 && (voices.find(v => v.id === formData.voice_id)?.provider === 'deepgram' || !voices.find(v => v.id === formData.voice_id))}
+                  >
+                    ElevenLabs (Multilingual)
+                  </option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
+                <select
+                  className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                  value={formData.default_language || 'hi'}
+                  onChange={e => setFormData(prev => ({ ...prev, default_language: e.target.value }))}
+                >
+                  <option value="hi">Hindi (hi)</option>
+                  <option value="en">English (en)</option>
+                  <option value="hi-en">Hinglish (Mixed)</option>
+                </select>
               </div>
 
               <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
@@ -645,7 +676,7 @@ export default function BotConfig() {
                   Logic workflow binding <span className="font-normal normal-case text-on-surface-variant/70">(optional)</span>
                 </label>
                 <div className="relative">
-                  <select 
+                  <select
                     className="appearance-none w-full bg-surface-container-highest border border-outline-variant/20 rounded-2xl p-4 pr-10 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/40 transition-all hover:bg-surface-container-high"
                     value={formData.workflow_id || ''}
                     onChange={e => setFormData(prev => ({ ...prev, workflow_id: e.target.value || undefined }))}
@@ -815,7 +846,7 @@ export default function BotConfig() {
               />
             </div>
           </section>
-          
+
           <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border border-primary/20">
             <div className="flex items-center gap-3">
               <ShieldCheck className="size-5 text-primary" />
@@ -827,9 +858,9 @@ export default function BotConfig() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Domain Focus Topic</label>
-                <input 
-                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
-                  type="text" 
+                <input
+                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                  type="text"
                   placeholder="e.g. Indian Personal Banking"
                   value={formData.topic_restriction || ''}
                   onChange={e => setFormData(prev => ({ ...prev, topic_restriction: e.target.value }))}
@@ -839,11 +870,11 @@ export default function BotConfig() {
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Enforcement</label>
                 <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10 cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
                   <span className="text-sm font-bold text-on-surface-variant group-hover:text-primary">Strict Topic Refusal</span>
-                  <input 
-                    checked={formData.refuse_off_topic || false} 
+                  <input
+                    checked={formData.refuse_off_topic || false}
                     onChange={e => setFormData(prev => ({ ...prev, refuse_off_topic: e.target.checked }))}
-                    className="rounded border-outline-variant bg-surface-variant text-primary focus:ring-primary/20 size-6" 
-                    type="checkbox" 
+                    className="rounded border-outline-variant bg-surface-variant text-primary focus:ring-primary/20 size-6"
+                    type="checkbox"
                   />
                 </label>
               </div>
@@ -977,8 +1008,8 @@ export default function BotConfig() {
                   <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Temperature</label>
                   <span className="font-mono text-sm text-primary">{formData.temperature}</span>
                 </div>
-                <input 
-                  className="w-full custom-range cursor-pointer" max="1" min="0" step="0.1" type="range" 
+                <input
+                  className="w-full custom-range cursor-pointer" max="1" min="0" step="0.1" type="range"
                   value={formData.temperature}
                   onChange={e => setFormData(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
                 />
@@ -992,8 +1023,8 @@ export default function BotConfig() {
                   <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Max Tokens</label>
                   <span className="font-mono text-sm text-primary">{formData.max_tokens}</span>
                 </div>
-                <input 
-                  className="w-full custom-range cursor-pointer" max="4096" min="256" step="128" type="range" 
+                <input
+                  className="w-full custom-range cursor-pointer" max="4096" min="256" step="128" type="range"
                   value={formData.max_tokens}
                   onChange={e => setFormData(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
                 />
@@ -1006,7 +1037,7 @@ export default function BotConfig() {
           </section>
         </div>
       </div>
-      
+
       {/* Footer Visual Relief Spacing */}
       <div className="h-16"></div>
 
@@ -1026,6 +1057,7 @@ export default function BotConfig() {
           onClose={() => setSandboxOpen(false)}
         />
       )}
+      {/* <div className="h-16"></div> */}
     </div>
   );
 }

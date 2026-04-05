@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Header } from '../components/Header';
-import { 
-  Database, 
-  Search, 
-  PlusCircle, 
-  ChevronRight, 
-  Edit2, 
-  Trash2, 
+import {
+  Database,
+  Search,
+  PlusCircle,
+  ChevronRight,
+  Edit2,
+  Trash2,
   CheckCircle2,
   ExternalLink,
   X,
@@ -127,8 +127,8 @@ export default function KnowledgeBase() {
   }, [activeTab, selectedBotId, vectorSubTab]);
   
   const filteredEntries = entries.filter(entry => {
-    const matchesSearch = (entry.question || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         (entry.answer || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = activeFilter === 'Global' || (entry.topic === activeFilter);
     return matchesSearch && matchesFilter;
   });
@@ -189,7 +189,7 @@ export default function KnowledgeBase() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen relative overflow-hidden">
+    <div className="flex-1 flex flex-col  relative overflow-hidden">
       {/* Background Glows */}
       <div className="absolute -top-20 -right-20 w-96 h-96 bg-primary/5 blur-[120px] rounded-full"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/2 blur-[150px] rounded-full"></div>
@@ -228,8 +228,8 @@ export default function KnowledgeBase() {
         <div className="mb-10 flex flex-col md:flex-row gap-6 items-center">
           <div className="relative flex-1 group">
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 size-6 text-outline group-focus-within:text-primary transition-colors" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Find any topic, question, or answer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -674,13 +674,13 @@ export default function KnowledgeBase() {
 
 function FilterChip({ label, active, onClick }: any) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
-        "px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all",
-        active 
-          ? "bg-primary text-on-primary-fixed shadow-[0_0_20px_rgba(255,183,123,0.3)]" 
-          : "bg-surface-highest text-outline hover:bg-white/5 ghost-border border-white/5"
+        "px-5 py-2 rounded-full text-xs font-bold transition-all",
+        active
+          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]"
+          : "bg-surface text-outline hover:bg-surface-high ghost-border"
       )}
     >
       {label}

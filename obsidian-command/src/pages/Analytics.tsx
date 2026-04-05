@@ -1,19 +1,19 @@
 import React from 'react';
 import { Header } from '../components/Header';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  TrendingDown, 
-  Smile, 
-  Frown, 
+import {
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Smile,
+  Frown,
   Meh,
   Target,
   Zap,
   Clock,
   Loader2
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, Cell, PieChart, Pie
 } from 'recharts';
 import { cn } from '../lib/utils';
@@ -53,7 +53,7 @@ export default function Analytics() {
   // Sentiment pie from dashboard stats
   const sentimentPie = dashStats ? [
     { name: 'Positive', value: dashStats.sentiment?.positive ?? 0 },
-    { name: 'Neutral',  value: dashStats.sentiment?.neutral  ?? 0 },
+    { name: 'Neutral', value: dashStats.sentiment?.neutral ?? 0 },
     { name: 'Negative', value: dashStats.sentiment?.negative ?? 0 },
   ] : [];
 
@@ -62,33 +62,33 @@ export default function Analytics() {
   const completionRate = dashStats?.completion_rate ?? null;
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
+    <div className="flex-1 flex flex-col ">
       <Header title="Conversational Intelligence" subtitle="Analytics" />
 
       <div className="p-10 flex flex-col gap-10">
         {/* Top Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <InsightCard 
-            label="Total Sessions" 
-            value={loading ? '…' : totalSessions.toString()} 
-            subValue="All time" 
-            icon={Smile} 
+          <InsightCard
+            label="Total Sessions"
+            value={loading ? '…' : totalSessions.toString()}
+            subValue="All time"
+            icon={Smile}
             color="text-emerald-500"
             trend="From voicebot database"
           />
-          <InsightCard 
-            label="Completion Rate" 
-            value={loading ? '…' : completionRate != null ? `${Math.round(completionRate * 100)}%` : 'N/A'} 
-            subValue="Sessions ended cleanly" 
-            icon={Target} 
+          <InsightCard
+            label="Completion Rate"
+            value={loading ? '…' : completionRate != null ? `${Math.round(completionRate * 100)}%` : 'N/A'}
+            subValue="Sessions ended cleanly"
+            icon={Target}
             color="text-primary"
             trend="Based on ended_at field"
           />
-          <InsightCard 
-            label="Avg. Turn Count" 
-            value={loading ? '…' : avgTurns ? avgTurns.toFixed(1) : '—'} 
-            subValue="Per session" 
-            icon={Zap} 
+          <InsightCard
+            label="Avg. Turn Count"
+            value={loading ? '…' : avgTurns ? avgTurns.toFixed(1) : '—'}
+            subValue="Per session"
+            icon={Zap}
             color="text-cyan-500"
             trend="Conversation depth"
           />
@@ -142,7 +142,7 @@ export default function Analytics() {
                   <BarChart data={intentData.map(d => ({ name: d.intent, value: d.count }))} layout="vertical">
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#e3e2e5', fontSize: 13, fontWeight: 'bold' }} width={120} />
-                    <Tooltip 
+                    <Tooltip
                       cursor={{ fill: '#292a2d' }}
                       contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                     />
@@ -193,20 +193,20 @@ export default function Analytics() {
           <div className="bg-surface-low p-8 rounded-3xl ghost-border flex flex-col">
             <h4 className="font-headline text-xl font-bold mb-6">Key Insights</h4>
             <div className="space-y-6">
-              <InsightItem 
-                title="Latency data" 
-                desc="STT/LLM/TTS breakdown from per-turn metrics logged after each voice turn." 
+              <InsightItem
+                title="Latency data"
+                desc="STT/LLM/TTS breakdown from per-turn metrics logged after each voice turn."
                 icon={Clock}
               />
-              <InsightItem 
-                title="Intent distribution" 
-                desc="Aggregated from session metadata.intent field set at session close." 
+              <InsightItem
+                title="Intent distribution"
+                desc="Aggregated from session metadata.intent field set at session close."
                 icon={Frown}
                 warning={intentData.length === 0}
               />
-              <InsightItem 
-                title="Sentiment tracking" 
-                desc="Per-turn sentiment is scored live; session-level score persisted in metadata." 
+              <InsightItem
+                title="Sentiment tracking"
+                desc="Per-turn sentiment is scored live; session-level score persisted in metadata."
                 icon={TrendingUp}
               />
             </div>

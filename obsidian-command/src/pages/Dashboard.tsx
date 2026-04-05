@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
+import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
@@ -103,54 +103,54 @@ export default function Dashboard() {
   ] : SENTIMENT_DATA;
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Overview" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Overview"
         subtitle="Mission Control"
-        actions={
-          <Link 
-            to="/personas/create"
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-lg active:scale-95 transition-all"
-          >
-            <PlusCircle className="size-5" />
-            <span>New Bot</span>
-          </Link>
-        }
+      // actions={
+      //   <Link
+      //     to="/personas/create"
+      //     className="flex items-center gap-2 px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-lg active:scale-95 transition-all"
+      //   >
+      //     <PlusCircle className="size-5" />
+      //     <span>New Bot</span>
+      //   </Link>
+      // }
       />
 
       <div className="p-10 flex flex-col gap-10">
         {/* KPI Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatCard 
-            icon={Users} 
-            label="Total Sessions" 
-            value={stats?.metrics.totalSessions.toLocaleString() || "0"} 
-            trend="+0%" 
-            trendColor="text-emerald-500" 
+          <StatCard
+            icon={Users}
+            label="Total Sessions"
+            value={stats?.metrics.totalSessions.toLocaleString() || "0"}
+            trend="+0%"
+            trendColor="text-emerald-500"
             onClick={() => navigate('/sessions')}
           />
-          <StatCard 
-            icon={Bot} 
-            label="Active Bots" 
-            value={stats?.metrics.activeBots.toString() || "0"} 
-            trend="Live" 
-            trendColor="text-primary" 
+          <StatCard
+            icon={Bot}
+            label="Active Bots"
+            value={stats?.metrics.activeBots.toString() || "0"}
+            trend="Live"
+            trendColor="text-primary"
             onClick={() => navigate('/personas')}
           />
-          <StatCard 
-            icon={Calendar} 
-            label="Avg Duration" 
-            value={stats?.metrics.avgDuration || "0s"} 
-            trend="Sessions" 
-            trendColor="text-on-surface-variant" 
+          <StatCard
+            icon={Calendar}
+            label="Avg Duration"
+            value={stats?.metrics.avgDuration || "0s"}
+            trend="Sessions"
+            trendColor="text-on-surface-variant"
             onClick={() => navigate('/sessions')}
           />
-          <StatCard 
-            icon={Timer} 
-            label="Success Rate" 
-            value={stats?.metrics.successRate || "0%"} 
-            trend="Target 95%" 
-            trendColor="text-emerald-500" 
+          <StatCard
+            icon={Timer}
+            label="Success Rate"
+            value={stats?.metrics.successRate || "0%"}
+            trend="Target 95%"
+            trendColor="text-emerald-500"
             onClick={() => navigate('/sessions')}
           />
         </div>
@@ -191,11 +191,11 @@ export default function Dashboard() {
                 <AreaChart data={CHART_DATA}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#fb8c00" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#fb8c00" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#fb8c00" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#fb8c00" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                     itemStyle={{ color: '#ffb77b' }}
                   />
@@ -255,7 +255,7 @@ export default function Dashboard() {
                 <BarChart data={sentimentData} layout="vertical">
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'transparent' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                   />
@@ -287,7 +287,7 @@ export default function Dashboard() {
                 <BarChart data={DURATION_DATA}>
                   <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis hide />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                   />
@@ -311,7 +311,7 @@ export default function Dashboard() {
                 <BarChart data={SUCCESS_RATE_DATA}>
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis domain={[0, 100]} hide />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                   />
@@ -343,7 +343,7 @@ export default function Dashboard() {
                 <LineChart data={stats?.peakHours || PEAK_HOURS_DATA}>
                   <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis hide />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                     itemStyle={{ color: '#06b6d4' }}
                   />
@@ -384,8 +384,8 @@ export default function Dashboard() {
                 </thead>
                 <tbody className="divide-y divide-outline-variant/5">
                   {recentSessions.map((session) => (
-                    <tr 
-                      key={session.id} 
+                    <tr
+                      key={session.id}
                       className="group hover:bg-surface-high transition-all cursor-pointer"
                       onClick={() => navigate(`/sessions/${session.id}`)}
                     >
@@ -415,7 +415,7 @@ export default function Dashboard() {
 
 function StatCard({ icon: Icon, label, value, trend, trendColor, onClick }: any) {
   return (
-    <div 
+    <div
       onClick={onClick}
       className="bg-surface-low p-6 rounded-2xl ghost-border flex flex-col gap-4 cursor-pointer hover:border-primary/40 hover:bg-surface-high transition-all group"
     >

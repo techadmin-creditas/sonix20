@@ -12,31 +12,36 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
+import Profile from './pages/Profile';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 function App() {
   return (
-    <Router>
-      <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
-        <Sidebar />
-        <main className="flex-1 flex flex-col overflow-x-hidden">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/sessions" element={<Sessions />} />
-            <Route path="/sessions/live" element={<SessionControl />} />
-            <Route path="/sessions/:id" element={<SessionDetail />} />
-            <Route path="/personas" element={<Personas />} />
-            <Route path="/personas/create" element={<BotConfig />} />
-            <Route path="/personas/:id/config" element={<BotConfig />} />
-            <Route path="/knowledge" element={<KnowledgeBase />} />
-            <Route path="/workflows" element={<Workflows />} />
-            <Route path="/workflows/create" element={<WorkflowEditor />} />
-            <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <NotificationProvider>
+      <Router>
+        <div className="flex h-screen overflow-hidden bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
+          <Sidebar />
+          <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/sessions" element={<Sessions />} />
+              <Route path="/sessions/live" element={<SessionControl />} />
+              <Route path="/sessions/:id" element={<SessionDetail />} />
+              <Route path="/personas" element={<Personas />} />
+              <Route path="/personas/create" element={<BotConfig />} />
+              <Route path="/personas/:id/config" element={<BotConfig />} />
+              <Route path="/knowledge" element={<KnowledgeBase />} />
+              <Route path="/workflows" element={<Workflows />} />
+              <Route path="/workflows/create" element={<WorkflowEditor />} />
+              <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile />} />
+            </Routes>
+          </main>
+        </div>
+      </Router>
+    </NotificationProvider>
   );
 }
 
