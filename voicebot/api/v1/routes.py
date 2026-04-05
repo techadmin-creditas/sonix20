@@ -14,10 +14,22 @@ import asyncio
 import json
 import logging
 import time
+import os
+import uuid
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, BackgroundTasks, Request
+from fastapi import (
+    APIRouter,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+    HTTPException,
+    BackgroundTasks,
+    Request,
+    File,
+    UploadFile,
+)
 from starlette.websockets import WebSocketState
 
 from voicebot.shared.config import get_settings
@@ -26,10 +38,21 @@ from voicebot.shared.logging.logger import generate_correlation_id
 from voicebot.services.memory.sqlite_provider import SQLiteProvider
 from voicebot.shared.livekit_util import normalize_livekit_client_url
 
+# Guardrails
+from voicebot.core.guardrails import get_rule_metadata, RuleSuggestor
+from voicebot.shared.policy import parse_json_dict
+from voicebot.services.stt.deepgram_provider import (
+    extract_linear16_pcm_16k_mono,
+    resolve_stt_language_for_session,
+    transcribe_sandbox_via_streaming_provider,
+)
+
 settings = get_settings()
 logger = setup_logger("gateway-routes", level=settings.log_level)
 
 router = APIRouter()
+
+_MAX_STT_SANDBOX_BYTES = 6 * 1024 * 1024
 
 # Shared DB instance for REST routes
 _db: Optional[SQLiteProvider] = None
@@ -293,6 +316,7 @@ async def create_bot(data: dict):
             tts_provider=data.get("tts_provider", "deepgram_ws"),
             default_language=data.get("default_language", "hi"),
             proactive_prompts=data.get("proactive_prompts", []),
+            min_stt_confidence=data.get("min_stt_confidence", 0.35),
         )
         bid = result.get("id")
         if bid:
@@ -326,6 +350,84 @@ async def update_bot(bot_id: str, data: dict):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     await db.update_bot(bot_id, **data)
     return {"status": "updated", "bot_id": bot_id}
+
+
+@router.post("/bots/{bot_id}/stt-sandbox", tags=["bots", "stt"])
+async def stt_sandbox(
+    bot_id: str,
+    file: UploadFile = File(...),
+    raw_pcm: bool = Query(
+        False,
+        description="Raw s16le mono 16kHz PCM (same as live WebSocket). Otherwise WAV must be 16-bit mono 16kHz.",
+    ),
+):
+    """
+    STT only via DeepgramStreamingProvider (WebSocket + SileroVADGate + send_audio), same as live voice.
+    """
+    db = await get_db()
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+
+    key = (settings.deepgram_api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=503, detail="Deepgram API key not configured")
+
+    data = await file.read()
+    if len(data) > _MAX_STT_SANDBOX_BYTES:
+        raise HTTPException(status_code=413, detail=f"Audio too large (max {_MAX_STT_SANDBOX_BYTES // (1024 * 1024)} MB)")
+
+    pol = parse_json_dict(bot.get("conversation_policy"))
+    session_lang = (bot.get("default_language") or "hi").strip()
+    resolved = resolve_stt_language_for_session(session_lang, pol)
+    stt_model = str(pol.get("stt_model") or "nova-2").strip() or "nova-2"
+
+    _stt_ep = pol.get("stt_endpointing_ms")
+    try:
+        _stt_ep_i = int(_stt_ep) if _stt_ep is not None else None
+    except (TypeError, ValueError):
+        _stt_ep_i = None
+    _stt_vad = pol.get("stt_rms_vad_threshold")
+    try:
+        _stt_vad_f = float(_stt_vad) if _stt_vad is not None else None
+    except (TypeError, ValueError):
+        _stt_vad_f = None
+
+    fn = (file.filename or "").lower()
+    ct0 = (file.content_type or "").split(";")[0].strip().lower()
+    if not raw_pcm and not (
+        fn.endswith(".wav") or ct0 in ("audio/wav", "audio/x-wav")
+    ):
+        raise HTTPException(
+            status_code=415,
+            detail="Upload 16-bit mono 16kHz .wav, or send raw PCM with raw_pcm=true",
+        )
+
+    try:
+        pcm = extract_linear16_pcm_16k_mono(data, raw_pcm=raw_pcm)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    try:
+        transcript, confidence, q = await transcribe_sandbox_via_streaming_provider(
+            pcm,
+            api_key=key,
+            language=resolved,
+            model=stt_model,
+            endpointing_ms=_stt_ep_i,
+            vad_rms_threshold=_stt_vad_f,
+        )
+    except Exception as e:
+        logger.exception("stt-sandbox failed")
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    return {
+        "transcript": transcript,
+        "confidence": confidence,
+        "resolved_stt_language": resolved,
+        "default_language": session_lang,
+        "deepgram_query_params": q,
+    }
 
 
 @router.delete("/bots/{bot_id}", tags=["bots"])
@@ -763,6 +865,357 @@ async def get_supported_voices():
             logger.error("Failed to fetch ElevenLabs voices: %s", e)
 
     return {"voices": voices, "total": len(voices)}
+    
+@router.get("/metadata/guardrails", tags=["metadata", "guardrails"])
+async def get_guardrail_options():
+    """Return available trigger types, actions, and their metadata for UI builders."""
+    return get_rule_metadata()
+
+@router.post("/bots/{bot_id}/suggest-rules", tags=["bots", "guardrails"])
+async def suggest_bot_rules(bot_id: str):
+    """Analyze bot persona and suggest 5 tailored security guardrails."""
+    db = await get_db()
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+        
+    suggestor = RuleSuggestor()
+    suggestions = await suggestor.suggest_rules(
+        bot_id=bot_id,
+        persona=bot.get("persona", "general assistant"),
+        system_prompt=bot.get("system_prompt", "")
+    )
+    
+    # Also include the standard library for the user to pick from
+    library = suggestor.get_standard_library()
+    
+    return {
+        "bot_id": bot_id,
+        "suggested_rules": [r.dict() for r in suggestions],
+        "library_rules": [r.dict() for r in library]
+    }
+
+
+@router.get("/scopes", tags=["bots"])
+async def list_scopes():
+    """Return available tool scopes and the tools each scope enables."""
+    from voicebot.core.orchestrator.brain import _SCOPE_TOOL_NAMES
+    return {"scopes": {k: list(v) for k, v in _SCOPE_TOOL_NAMES.items()}}
+
+
+def _extract_json_object(text: str) -> dict:
+    """Robustly extract the first valid JSON object from LLM output."""
+    import re
+    # Strip markdown fences first
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
+    # Try direct parse
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    # Find the outermost { ... } block and parse that
+    match = re.search(r"\{[\s\S]*\}", cleaned)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    # Last-resort: repair a truncated JSON object
+    try:
+        return _repair_truncated_json(text)
+    except Exception:
+        pass
+    raise ValueError(f"No valid JSON object found in LLM response. Raw: {text[:200]}")
+
+
+def _repair_truncated_json(text: str) -> dict:
+    """Close an unclosed JSON object caused by mid-stream safety truncation."""
+    import re
+    cleaned = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
+    # Trim back to the last safe delimiter (comma or opening brace) to drop a partial value
+    last_safe = max(cleaned.rfind(","), cleaned.rfind("{"))
+    if last_safe > 0:
+        cleaned = cleaned[:last_safe]
+    # Count unclosed brackets and braces
+    open_braces = cleaned.count("{") - cleaned.count("}")
+    open_brackets = cleaned.count("[") - cleaned.count("]")
+    cleaned += "]" * open_brackets + "}" * open_braces
+    return json.loads(cleaned)
+
+
+@router.post("/guardrails/suggest-data-access", tags=["guardrails"])
+async def suggest_data_access_policy(data: dict):
+    """Use AI to suggest data_access_policy based on bot context."""
+    name = data.get("name", "")
+    role = data.get("role", "")
+    # Truncate system_prompt to avoid injecting special chars that break LLM JSON output
+    raw_prompt = data.get("system_prompt", "")
+    prompt_summary = raw_prompt[:250].replace('"', "'") if raw_prompt else ""
+    available_scopes = data.get("available_scopes", {})
+
+    scope_descriptions = "\n".join(
+        f"  {scope}: {tools}"
+        for scope, tools in available_scopes.items()
+    )
+
+    prompt = (
+        f"Bot name: {name}\n"
+        f"Bot role: {role}\n"
+        f"Bot purpose summary: {prompt_summary}\n\n"
+        f"Available scopes and their tools:\n{scope_descriptions}\n\n"
+        "Return a JSON object selecting which scopes to enable for this bot.\n"
+        "Rules:\n"
+        "- Only include scopes relevant to the bot purpose.\n"
+        "- Set appointments_match_session_user true only if bot handles personal appointments.\n"
+        "- Include integrations.weather only if weather scope is selected.\n"
+        "- The reasoning value must be a single plain sentence with no quotes inside.\n\n"
+        "Required output format (JSON only, no markdown, no extra text):\n"
+        '{"enabled_scopes":["scope1"],"appointments_match_session_user":false,'
+        '"integrations":{},"reasoning":"reason here"}'
+    )
+
+    try:
+        from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+        llm = GeminiStreamingProvider()
+        result = ""
+        # Use stream_completion (generate_content_stream) — immune to the silent
+        # truncation that complete() (generate_content) suffers when safety filters
+        # partially flag financial keywords like "banking" / "get_loan_status".
+        async for chunk in llm.stream_completion(
+            system_prompt="You output only valid compact JSON. No markdown. No explanation.",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=1024,
+        ):
+            if chunk.content:
+                result += chunk.content
+        if not result:
+            raise ValueError("Empty LLM response")
+        policy = _extract_json_object(result)
+        return policy
+    except Exception as e:
+        logger.error("Failed to suggest data access policy: %s", e)
+        raise HTTPException(status_code=500, detail=f"AI suggestion failed: {e}")
+
+
+# ─── Guardrail Sandbox ────────────────────────────────────────────────────────
+
+async def _sandbox_llm_complete(llm, system_prompt: str, user_text: str, temperature: float, max_tokens: int) -> str:
+    """Call LLM and aggregate full response text for sandbox testing."""
+    from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+    if isinstance(llm, GeminiStreamingProvider):
+        return await llm.complete(
+            system_prompt=system_prompt,
+            messages=[{"role": "user", "content": user_text}],
+        )
+    full = ""
+    async for chunk in llm.stream_completion(
+        system_prompt=system_prompt,
+        messages=[{"role": "user", "content": user_text}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+    ):
+        if chunk.content:
+            full += chunk.content
+    return full
+
+
+def _make_sandbox_llm(provider: str, model: str):
+    """Instantiate the right LLM provider for sandbox test (mirrors /llm/test logic)."""
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+    if provider == "gemini":
+        return GeminiStreamingProvider(model=model)
+    if provider == "openrouter":
+        from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+        return OpenRouterStreamingProvider(model=model)
+    return GroqStreamingProvider(model=model or "llama-3.3-70b-versatile")
+
+
+@router.post("/guardrails/sandbox-test", tags=["guardrails"])
+async def sandbox_test(data: dict):
+    """
+    Live sandbox: apply guardrail rules and optionally call the real LLM.
+    Uses the guardrail_policy sent from the UI (unsaved draft is fine).
+    """
+    from voicebot.core.guardrails import RuleEngine, GuardrailRule, RuleScope
+
+    user_input: str = data.get("user_input", "")
+    guardrail_policy: dict = data.get("guardrail_policy") or {}
+    system_prompt: str = data.get("system_prompt", "You are a helpful AI assistant.")
+    llm_model: str = data.get("llm_model", "llama-3.3-70b-versatile")
+    llm_provider: str = data.get("llm_provider", "groq")
+    temperature: float = float(data.get("temperature") or 0.7)
+    max_tokens: int = min(int(data.get("max_tokens") or 512), 512)
+    test_mode: str = data.get("test_mode", "guardrail_only")
+
+    if not user_input.strip():
+        raise HTTPException(status_code=422, detail="user_input is required")
+
+    # 1. Build rule engine from the policy supplied by the UI
+    rules_data = guardrail_policy.get("rules") or []
+    try:
+        rules = [GuardrailRule(**r) for r in rules_data if isinstance(r, dict)]
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid rule definition: {e}")
+
+    engine = RuleEngine(rules=rules, bot_id="sandbox")
+
+    # 2. INPUT guardrail pass
+    safe_input, input_block = await engine.apply_policies(user_input, RuleScope.INPUT)
+    input_result = {
+        "original": user_input,
+        "sanitized": safe_input,
+        "blocked": input_block is not None,
+        "block_rule": input_block.get("rule_id") if input_block else None,
+        "block_message": input_block.get("message") if input_block else None,
+        "was_masked": safe_input != user_input and input_block is None,
+    }
+
+    if input_block or test_mode == "guardrail_only":
+        return {"input_result": input_result, "llm_result": None, "output_result": None, "final_output": None}
+
+    # 3. LLM call (full pipeline mode)
+    try:
+        llm = _make_sandbox_llm(llm_provider, llm_model)
+        llm_text = await _sandbox_llm_complete(llm, system_prompt, safe_input, temperature, max_tokens)
+    except Exception as e:
+        logger.error("Sandbox LLM call failed: %s", e)
+        return {
+            "input_result": input_result,
+            "llm_result": {"error": str(e)},
+            "output_result": None,
+            "final_output": None,
+        }
+
+    # 4. OUTPUT guardrail pass
+    safe_output, output_block = await engine.apply_policies(llm_text, RuleScope.OUTPUT)
+    output_result = {
+        "original": llm_text,
+        "sanitized": safe_output,
+        "blocked": output_block is not None,
+        "block_rule": output_block.get("rule_id") if output_block else None,
+        "block_message": output_block.get("message") if output_block else None,
+        "was_masked": safe_output != llm_text and output_block is None,
+    }
+
+    return {
+        "input_result": input_result,
+        "llm_result": llm_text,
+        "output_result": output_result,
+        "final_output": safe_output if not output_block else output_result["block_message"],
+    }
+
+
+# ─── 🛡️ Dynamic (No-Code) Tools ──────────────────────────────────────────────
+
+@router.get("/tools/custom", tags=["tools"])
+async def list_custom_tools():
+    """List all dynamic tools created via UI."""
+    db = await get_db()
+    tools = await db.list_custom_tools()
+    return {"tools": tools, "count": len(tools)}
+
+
+@router.post("/tools/custom", tags=["tools"])
+async def create_custom_tool(data: dict):
+    """Create or update a dynamic tool."""
+    import uuid
+    tool_id = data.get("id") or str(uuid.uuid4())
+    db = await get_db()
+    
+    await db.save_custom_tool(
+        tool_id=tool_id,
+        name=data["name"],
+        description=data["description"],
+        params=data.get("parameters", {}),
+        config=data.get("config", {}),
+        tool_type=data.get("type", "webhook")
+    )
+    return {"status": "success", "id": tool_id}
+
+
+# ─── 📚 Knowledge Ingestion (Unified RAG) ────────────────────────────────────
+
+@router.post("/knowledge/ingest/url", tags=["knowledge"])
+async def ingest_url(data: dict, background_tasks: BackgroundTasks):
+    """Trigger ingestion of a website URL into Vector Memory."""
+    url = data.get("url")
+    bot_id = data.get("bot_id")
+    if not url:
+        raise HTTPException(status_code=422, detail="url is required")
+        
+    db = await get_db()
+    # 1. Register job
+    job_id = str(uuid.uuid4())
+    await db.save_ingestion_job(job_id, "url", url, bot_id)
+    
+    # 2. Start background processing
+    from voicebot.services.memory.ingestor import KnowledgeIngestor
+    from voicebot.services.memory.vector_provider import VectorMemoryProvider
+    
+    async def _process():
+        vm = VectorMemoryProvider()
+        await vm.connect()
+        ingestor = KnowledgeIngestor(db=db, vector_memory=vm)
+        result = await ingestor.ingest_url(url, bot_id)
+        
+        status = "completed" if "error" not in result else "failed"
+        await db.update_ingestion_status(
+            job_id, status, 
+            chunk_count=result.get("chunks", 0), 
+            error=result.get("error")
+        )
+
+    background_tasks.add_task(_process)
+    return {"status": "accepted", "job_id": job_id}
+
+
+@router.post("/knowledge/ingest/upload", tags=["knowledge"])
+async def upload_pdf(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    bot_id: Optional[str] = None
+):
+    """Upload a PDF file and trigger Vector Memory ingestion."""
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+        
+    # Save file locally
+    upload_dir = "data/uploads"
+    os.makedirs(upload_dir, exist_ok=True)
+    file_path = os.path.join(upload_dir, f"{uuid.uuid4()}_{file.filename}")
+    
+    with open(file_path, "wb") as buffer:
+        import shutil
+        shutil.copyfileobj(file.file, buffer)
+        
+    db = await get_db()
+    job_id = str(uuid.uuid4())
+    await db.save_ingestion_job(job_id, "pdf", file.filename, bot_id)
+    
+    # Background process
+    from voicebot.services.memory.ingestor import KnowledgeIngestor
+    from voicebot.services.memory.vector_provider import VectorMemoryProvider
+    
+    async def _process_pdf():
+        vm = VectorMemoryProvider()
+        await vm.connect()
+        ingestor = KnowledgeIngestor(db=db, vector_memory=vm)
+        result = await ingestor.ingest_pdf(file_path, bot_id or "global")
+        
+        status = "completed" if "error" not in result else "failed"
+        await db.update_ingestion_status(
+            job_id, status,
+            chunk_count=result.get("chunks", 0),
+            error=result.get("error")
+        )
+        # Cleanup file after ingestion? Maybe keep it as reference?
+        # For now we keep it.
+
+    background_tasks.add_task(_process_pdf)
+    return {"status": "accepted", "job_id": job_id, "filename": file.filename}
+
 
 # ─── Test Utilities ───────────────────────────────────────────────────────────
 

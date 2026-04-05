@@ -8,6 +8,7 @@
 fastapi==0.135.2
 uvicorn[standard]==0.42.0
 starlette==1.0.0
+python-multipart>=0.0.9  # File uploads / multipart (e.g. STT sandbox)
 
 # --- WebSocket & HTTP Client ---
 websockets==16.0

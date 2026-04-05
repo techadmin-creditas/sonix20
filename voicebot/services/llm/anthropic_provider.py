@@ -13,6 +13,7 @@ import logging
 from typing import Any, AsyncIterator, List, Optional
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 from voicebot.shared.models.tools import LLMResponse, ToolCall, ToolDefinition
@@ -47,6 +48,10 @@ class AnthropicStreamingProvider:
         """Lazily initialize the Anthropic async client."""
         if self._client is None:
             try:
+                if not is_valid_api_key(self.api_key):
+                    logger.error("🚫 Anthropic API Key is invalid or a placeholder.")
+                    raise AuthError(f"Anthropic API Key is a placeholder or invalid.")
+                    
                 from anthropic import AsyncAnthropic
                 self._client = AsyncAnthropic(api_key=self.api_key)
             except ImportError:
@@ -89,7 +94,42 @@ class AnthropicStreamingProvider:
         with the existing brain.py streaming loop.
         """
         client = await self._get_client()
-        _messages = messages or []
+        # 🛡️ Message Transformation: Ensure Anthropic compatibility for tool calls in history
+        import json
+        transformed_messages = []
+        for m in messages or []:
+            new_msg = m.copy()
+            role = new_msg.get("role")
+            
+            # 1. Format Assistant Tool Calls (Anthropic uses content-block list)
+            if role == "assistant" and new_msg.get("tool_calls"):
+                legacy_calls = new_msg.pop("tool_calls")
+                content = []
+                if new_msg.get("content"):
+                    content.append({"type": "text", "text": new_msg.pop("content")})
+                
+                for tc in legacy_calls:
+                    content.append({
+                        "type": "tool_use",
+                        "id": tc.get("id"),
+                        "name": tc.get("name"),
+                        "input": tc.get("arguments") if isinstance(tc.get("arguments"), dict) else json.loads(tc.get("arguments") or "{}")
+                    })
+                new_msg["content"] = content
+            
+            # 2. Format Tool Results (Anthropic uses content-block list with role='user')
+            elif role == "tool":
+                # Anthropic doesn't have a 'tool' role; it uses 'user' role with 'tool_result' block
+                new_msg["role"] = "user"
+                new_msg["content"] = [{
+                    "type": "tool_result",
+                    "tool_use_id": new_msg.pop("tool_call_id") or new_msg.pop("id", ""),
+                    "content": new_msg.pop("content", "")
+                }]
+            
+            transformed_messages.append(new_msg)
+
+        _messages = transformed_messages
         _max_tokens = max_tokens or self.max_tokens
         _temperature = temperature if temperature is not None else 0.7
 

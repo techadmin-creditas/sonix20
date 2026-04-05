@@ -41,6 +41,7 @@ class SQLiteProvider:
     def __init__(self, db_path: Optional[str] = None):
         self._db_path = Path(db_path or DEFAULT_DB_PATH)
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sqlite")
+        self._lock = asyncio.Lock()
         self._conn: Optional[sqlite3.Connection] = None
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -54,9 +55,72 @@ class SQLiteProvider:
         return self._conn
 
     async def _run(self, fn, *args, **kwargs):
-        """Execute a blocking function in the thread pool."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self._executor, lambda: fn(*args, **kwargs))
+        """Execute a blocking function in the thread pool, shielded by an async lock."""
+        async with self._lock:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(self._executor, lambda: fn(*args, **kwargs))
+
+    # ─── 🛡️ Custom (No-Code) Tools ──────────────────────────────────────────
+
+    async def save_custom_tool(self, tool_id: str, name: str, description: str, 
+                               params: dict, config: dict, tool_type: str = "webhook"):
+        """Save or update a dynamic UI-defined tool."""
+        sql = """
+            INSERT INTO custom_tools (id, name, description, parameters, config, type, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'))
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                description=excluded.description,
+                parameters=excluded.parameters,
+                config=excluded.config,
+                type=excluded.type,
+                updated_at=excluded.updated_at
+        """
+        async with self._lock:
+            self._conn.execute(sql, (
+                tool_id, name, description, 
+                json.dumps(params), json.dumps(config), tool_type
+            ))
+            self._conn.commit()
+
+    async def list_custom_tools(self) -> List[Dict[str, Any]]:
+        """List all dynamic tools available in the system."""
+        sql = "SELECT * FROM custom_tools ORDER BY name ASC"
+        async with self._lock:
+            cursor = self._conn.execute(sql)
+            rows = cursor.fetchall()
+            
+        tools = []
+        for r in rows:
+            tools.append({
+                "id": r[0],
+                "name": r[1],
+                "description": r[2],
+                "type": r[3],
+                "parameters": json.loads(r[4] or "{}"),
+                "config": json.loads(r[5] or "{}"),
+                "created_at": r[6]
+            })
+        return tools
+
+    # ─── 📚 Knowledge Ingestion Tracking ────────────────────────────────────
+
+    async def save_ingestion_job(self, job_id: str, source_type: str, source_path: str, bot_id: str = None):
+        """Register a new knowledge ingestion job."""
+        sql = """
+            INSERT INTO knowledge_ingestion (id, source_type, source_path, bot_id)
+            VALUES (?, ?, ?, ?)
+        """
+        async with self._lock:
+            self._conn.execute(sql, (job_id, source_type, source_path, bot_id))
+            self._conn.commit()
+
+    async def update_ingestion_status(self, job_id: str, status: str, chunk_count: int = 0, error: str = None):
+        """Update the status of an ingestion job."""
+        sql = "UPDATE knowledge_ingestion SET status=?, chunk_count=?, error=? WHERE id=?"
+        async with self._lock:
+            self._conn.execute(sql, (status, chunk_count, error, job_id))
+            self._conn.commit()
 
     # ─── Schema Initialization ────────────────────────────────────────────────
 
@@ -106,18 +170,25 @@ class SQLiteProvider:
             ("tts_provider", "TEXT DEFAULT 'deepgram_ws'"),      # deepgram_ws | deepgram_http | elevenlabs
             ("stt_endpointing_ms", "INTEGER DEFAULT 300"),        # Deepgram endpointing silence window
             ("stt_utterance_end_ms", "INTEGER DEFAULT 800"),      # Deepgram definitive utterance-end timeout
-            ("first_segment_chars", "INTEGER DEFAULT 80"),        # First TTS flush char cap (fast-path)
+            ("first_segment_chars", "INTEGER DEFAULT 15"),        # First TTS flush char cap (fast-path)
+            ("ultra_first_segment_chars", "INTEGER DEFAULT 8"),   # Ultra-early flush after ~2 words
+            ("barge_in_grace_period_ms", "INTEGER DEFAULT 300"),  # Post-speech guard window before interrupt fires
+            ("barge_in_debounce_ms", "INTEGER DEFAULT 100"),      # Confirmation window to avoid false barge-in
+            ("topic_check_async", "INTEGER DEFAULT 1"),           # 1 = run topic check off critical path
             ("audio_frame_normalize", "INTEGER DEFAULT 1"),       # 1 = normalize to 20 ms frames
             ("default_language", "TEXT DEFAULT 'hi'"),
             ("proactive_prompts", "TEXT DEFAULT '[]'"),
             ("topic_restriction", "TEXT DEFAULT NULL"),
             ("refuse_off_topic", "INTEGER DEFAULT 0"),
+            ("min_stt_confidence", "REAL DEFAULT 0.5"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
-            except sqlite3.OperationalError as e:
+            except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+                # Check for "duplicate column name" in message or specifically skip if it exists
                 if "duplicate column name" not in str(e).lower():
-                    raise
+                    logger.error("Migration error adding %s: %s", col_name, e)
+                    # We don't raise here to allow other columns to attempt creation
         
         conn.commit()
 
@@ -152,6 +223,30 @@ class SQLiteProvider:
                 content     TEXT NOT NULL,
                 timestamp   REAL NOT NULL DEFAULT (strftime('%s','now')),
                 metadata    TEXT DEFAULT '{}'
+            );
+
+            -- 🛡️ UI-Defined (No-Code) Tools
+            CREATE TABLE IF NOT EXISTS custom_tools (
+                id           TEXT PRIMARY KEY,
+                name         TEXT NOT NULL UNIQUE,
+                description  TEXT NOT NULL,
+                type         TEXT NOT NULL DEFAULT 'webhook',
+                parameters   TEXT NOT NULL DEFAULT '{}',
+                config       TEXT NOT NULL DEFAULT '{}',
+                created_at   REAL NOT NULL DEFAULT (strftime('%s','now')),
+                updated_at   REAL NOT NULL DEFAULT (strftime('%s','now'))
+            );
+
+            -- 📚 Knowledge Base Ingestion Registry 
+            CREATE TABLE IF NOT EXISTS knowledge_ingestion (
+                id           TEXT PRIMARY KEY,
+                source_type  TEXT NOT NULL, -- 'pdf', 'url', 'api'
+                source_path  TEXT NOT NULL,
+                bot_id       TEXT REFERENCES bots(id),
+                status       TEXT DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
+                error        TEXT,
+                chunk_count  INTEGER DEFAULT 0,
+                created_at   REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
 
             CREATE TABLE IF NOT EXISTS appointments (
@@ -280,10 +375,11 @@ class SQLiteProvider:
         )
         system_prompt = (
             "You are a concise, professional voice assistant for callers whose session may have "
-            "dropped, transferred, or restarted. Greet briefly, confirm you are ready to help, and "
-            "keep replies short and clear. For business facts, use search_knowledge when appropriate. "
-            "Do not invent policies or data you have not retrieved."
+            "dropped, transferred, or restarted. Greet briefly and confirm you are ready to help. "
+            "If you need to look up information, use search_knowledge immediately without "
+            "announcing it. Do not invent policies or data. Keep replies short and clear."
         )
+
         greeting = "Hi — I'm here to continue. What do you need help with?"
         description = (
             "Built-in fallback persona for call recovery and advanced handoff. No workflow binding; "
@@ -307,7 +403,7 @@ class SQLiteProvider:
                 greeting,
                 tools_json,
                 "llama-3.3-70b-versatile",
-                "aura-asteria-en",
+                "EXAVITQu4vr4xnSDxMaL",
                 "Call recovery",
                 "bot",
                 "primary",
@@ -332,16 +428,17 @@ class SQLiteProvider:
                          color: str = "primary",
                          temperature: float = 0.7,
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
-                         topic_restriction: Optional[str] = None, refuse_off_topic: bool = False) -> dict:
+                         topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
+                         min_stt_confidence: float = 0.35) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, min_stt_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -391,7 +488,7 @@ class SQLiteProvider:
         """List all active bots."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
+            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
             results = []
             for r in rows:
                 d = dict(r)
@@ -414,8 +511,10 @@ class SQLiteProvider:
                 "guardrail_policy", "data_access_policy", "conversation_policy", "pipeline_mode",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
-                "stt_utterance_end_ms", "first_segment_chars", "audio_frame_normalize", "proactive_prompts",
-                "topic_restriction", "refuse_off_topic",
+                "stt_utterance_end_ms", "first_segment_chars", "ultra_first_segment_chars",
+                "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
+                "audio_frame_normalize", "proactive_prompts",
+                "topic_restriction", "refuse_off_topic", "min_stt_confidence",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
@@ -1068,15 +1167,15 @@ class SQLiteProvider:
 
     # ─── Banking Tools ────────────────────────────────────────────────────────
 
-    async def verify_customer(self, account_number: str, dob: str) -> Optional[dict]:
-        """Verify a customer by account number and date of birth."""
+    async def verify_customer(self, account_number: str, dob: str, phone_last_4: str) -> Optional[dict]:
+        """Verify a customer by account number, date of birth, and last 4 digits of phone."""
         def _do():
             conn = self._get_conn()
             row = conn.execute(
-                """SELECT account_number, customer_name, balance, account_type
+                """SELECT id, account_number, customer_name, balance, account_type
                    FROM customer_accounts
-                   WHERE account_number = ? AND dob = ? AND is_active = 1""",
-                (account_number.upper().strip(), dob.strip()),
+                   WHERE account_number = ? AND dob = ? AND substr(phone, -4) = ? AND is_active = 1""",
+                (account_number.upper().strip(), dob.strip(), phone_last_4.strip()),
             ).fetchone()
             return dict(row) if row else None
         return await self._run(_do)

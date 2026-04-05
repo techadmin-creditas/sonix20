@@ -11,7 +11,8 @@ from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.models.session import SessionState
 from voicebot.core.orchestrator.brain import AgenticBrain, BotState
 from voicebot.services.memory.sqlite_provider import SQLiteProvider
-from voicebot.services.stt.deepgram_provider import DeepgramStreamingProvider
+from voicebot.shared.policy import parse_json_dict
+from voicebot.services.stt.deepgram_provider import DeepgramStreamingProvider, resolve_stt_language_for_session
 from voicebot.services.llm.groq_provider import GroqStreamingProvider
 from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
 
@@ -112,6 +113,11 @@ class LiveKitVoiceAgent:
                 del _audio_buf[:_FRAME_BYTES]
                 await _emit_audio_frame(frame_data)
 
+        async def on_audio_interrupt():
+            # Drop any partial frame sitting in the normalizer buffer so stale
+            # audio bytes from the interrupted turn are never played.
+            _audio_buf.clear()
+
         async def broadcast_data(data_type: str, payload: dict):
             try:
                 if self.room.local_participant:
@@ -144,8 +150,24 @@ class LiveKitVoiceAgent:
 
         # 🚀 DYNAMIC PROVIDER SELECTION (Based on bot_config)
         # 1. STT Provider
-        _stt_lang = (bot_config.get("default_language") or "hi").lower()
-        stt_provider = DeepgramStreamingProvider(language=_stt_lang)
+        _lk_pol = parse_json_dict(bot_config.get("conversation_policy") or {})
+        _session_lang = (bot_config.get("default_language") or "hi").lower()
+        _stt_lang = resolve_stt_language_for_session(_session_lang, _lk_pol)
+        _ep = _lk_pol.get("stt_endpointing_ms")
+        try:
+            _ep_i = int(_ep) if _ep is not None else None
+        except (TypeError, ValueError):
+            _ep_i = None
+        _vad = _lk_pol.get("stt_rms_vad_threshold")
+        try:
+            _vad_f = float(_vad) if _vad is not None else None
+        except (TypeError, ValueError):
+            _vad_f = None
+        stt_provider = DeepgramStreamingProvider(
+            language=_stt_lang,
+            endpointing_ms=_ep_i,
+            vad_rms_threshold=_vad_f,
+        )
 
         # 2. LLM Provider
         _llm_prov = str(bot_config.get("llm_provider") or "").lower()
@@ -164,10 +186,14 @@ class LiveKitVoiceAgent:
             # High-perf default (Groq)
             llm_provider = GroqStreamingProvider(model=_llm_model)
 
+        from voicebot.services.llm.voice_llm_factory import wrap_llm_with_fallbacks
+
+        llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
+
         # 3. TTS Provider (Hindi-Aware)
         _voice_id = bot_config.get("voice_id") or "aura-asteria-en"
         _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
-        _is_hindi_bot = _stt_lang.startswith("hi")
+        _is_hindi_bot = _session_lang.startswith("hi")
 
         if _is_hindi_bot or _tts_prov_name == "elevenlabs":
             from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
@@ -206,6 +232,7 @@ class LiveKitVoiceAgent:
             db_handler=db,
             bot_config=bot_config,
             on_audio_output=on_audio_output,
+            on_audio_interrupt=on_audio_interrupt,
             on_bot_transcript=on_bot_transcript,
             on_transcript=on_transcript,
             on_log=on_log,

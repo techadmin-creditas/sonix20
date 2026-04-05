@@ -67,7 +67,13 @@ class ElevenLabsStreamingProvider:
         **kwargs,
     ) -> AsyncIterator[bytes]:
         """
-        Stream audio chunks for the given text via WebSocket.
+        Stream audio chunks for the given text.
+        PRIMARY: HTTP POST streaming (reliable, works on all plans).
+        FAST PATH: WebSocket streaming (lower latency when available).
+
+        NOTE: WS is currently disabled by default because the stream-input endpoint
+        is rejecting connections (likely plan/model restriction). Set _use_ws_primary=True
+        on the instance to re-enable WS once confirmed working.
         """
         if not text.strip():
             return
@@ -91,80 +97,84 @@ class ElevenLabsStreamingProvider:
             except Exception as cache_err:
                 logger.debug("TTS cache read error: %s", cache_err)
 
-        # ── WebSocket Stream from ElevenLabs ─────────────────────────────────
-        import websockets
-        import base64
-
         accumulated: list[bytes] = []
-        try:
-            # 🚀 PRODUCTION OPTIMIZATION: Persistent WebSocket
-            # Reuse the connection if possible to skip TCP/TLS handshake (~200ms saving)
-            # Reuse the connection if possible to skip TCP/TLS handshake (~200ms saving)
-            # websockets >= 14.0 uses different state checks, .closed is safer than .open
-            if not hasattr(self, "_ws") or self._ws is None or getattr(self._ws, "closed", True):
-                if hasattr(self, "_ws") and self._ws:
-                    logger.debug("Closing stale ElevenLabs connection...")
-                logger.debug("Establishing new ElevenLabs WebSocket...")
-                self._ws = await websockets.connect(self._ws_url)
 
-            ws = self._ws
-            
-            # 1. Send initial configuration and text
-            init_msg = {
-                "text": text + " ",
-                "voice_settings": {
-                    "stability": stability,
-                    "similarity_boost": similarity_boost,
-                    "style": style,
-                    "use_speaker_boost": True,
-                },
-                "xi_api_key": self.api_key,
-            }
-            await ws.send(json.dumps(init_msg))
-            
-            # 2. Signal end of text to start generation immediately
-            await ws.send(json.dumps({"text": ""}))
+        # ── WS diagnostic fast-path (disabled until WS confirmed working) ────
+        # To re-enable: set `provider._use_ws_primary = True` on the instance.
+        if getattr(self, "_use_ws_primary", False):
+            import websockets
+            import base64
+            _ws_ok = False
+            try:
+                logger.debug("ElevenLabs WS attempt (url=%s)...", self._ws_url[-60:])
+                async with websockets.connect(self._ws_url) as ws:
+                    init_msg = {
+                        "text": text + " ",
+                        "voice_settings": {
+                            "stability": stability,
+                            "similarity_boost": similarity_boost,
+                            "style": style,
+                            "use_speaker_boost": True,
+                        },
+                        "xi_api_key": self.api_key,
+                    }
+                    await ws.send(json.dumps(init_msg))
+                    await ws.send(json.dumps({"text": ""}))
 
-            # 3. Listen for audio chunks
-            _chunk_count = 0
-            while True:
-                if self._stopped:
-                    break
-                
-                try:
-                    message = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.warning("ElevenLabs WS recv timeout")
-                    break
-                except websockets.exceptions.ConnectionClosed:
-                    logger.warning("ElevenLabs WS connection closed prematurely")
-                    self._ws = None
-                    break
-                
-                data = json.loads(message)
-                if data.get("audio"):
-                    chunk = base64.b64decode(data["audio"])
-                    _chunk_count += 1
-                    if _chunk_count == 1:
-                        logger.info("ElevenLabs (WS): First chunk received. Model: %s", self.model_id)
-                    
-                    accumulated.append(chunk)
-                    yield chunk
-                
-                if data.get("isFinal"):
-                    break
+                    _chunk_count = 0
+                    while True:
+                        if self._stopped:
+                            break
+                        try:
+                            message = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                        except asyncio.TimeoutError:
+                            logger.warning("ElevenLabs WS recv timeout")
+                            break
+                        except websockets.exceptions.ConnectionClosed as cc:
+                            # Log the close code/reason to diagnose WS rejections
+                            logger.warning(
+                                "ElevenLabs WS closed: code=%s reason=%r",
+                                getattr(cc, "code", "?"),
+                                getattr(cc, "reason", ""),
+                            )
+                            break
 
-            logger.info("ElevenLabs (WS): Streaming complete. Total chunks: %d", _chunk_count)
+                        data = json.loads(message)
+                        if data.get("audio"):
+                            chunk = base64.b64decode(data["audio"])
+                            _chunk_count += 1
+                            if _chunk_count == 1:
+                                logger.info("ElevenLabs (WS): First chunk. model=%s", self.model_id)
+                            accumulated.append(chunk)
+                            yield chunk
+                        if data.get("isFinal"):
+                            break
 
-        except Exception as e:
-            logger.error("ElevenLabs WebSocket error: %s", e)
-            self._ws = None # Drop the stale connection
+                if _chunk_count > 0:
+                    _ws_ok = True
+                    logger.info("ElevenLabs (WS): %d chunks streamed", _chunk_count)
+                else:
+                    logger.warning("ElevenLabs WS: 0 chunks — falling back to HTTP")
+            except Exception as e:
+                logger.error("ElevenLabs WS error: %s", e)
 
-            # FALLBACK to HTTP if WS fails (Resilience)
-            logger.warning("Falling back to HTTP for TTS turn...")
-            async for chunk in self._fallback_http_stream(text, stability, similarity_boost, style):
-                accumulated.append(chunk)
-                yield chunk
+            if _ws_ok or self._stopped:
+                # WS succeeded — cache and return
+                if self._cache is not None and accumulated and not self._stopped:
+                    try:
+                        await self._cache.set_cache(cache_key, b"".join(accumulated).hex(), ttl=self._CACHE_TTL)
+                    except Exception:
+                        pass
+                return
+
+            # WS failed — fall through to HTTP below
+            accumulated.clear()
+
+        # ── PRIMARY: HTTP POST streaming ──────────────────────────────────────
+        # Reliable on all ElevenLabs plans, ~200-400ms TTFA.
+        async for chunk in self._fallback_http_stream(text, stability, similarity_boost, style):
+            accumulated.append(chunk)
+            yield chunk
 
         # ── Cache the rendered audio ─────────────────────────────────────────
         if self._cache is not None and accumulated and not self._stopped:
@@ -175,7 +185,7 @@ class ElevenLabsStreamingProvider:
                 logger.debug("TTS cache write error: %s", cache_err)
 
     async def _fallback_http_stream(self, text, stability, similarity_boost, style):
-        """Standard HTTP POST fallback for reliability."""
+        """HTTP POST streaming — primary TTS path, works on all ElevenLabs plans."""
         import httpx
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}/stream?output_format={self.output_format}"
         headers = {"xi-api-key": self.api_key, "Content-Type": "application/json"}
@@ -184,17 +194,47 @@ class ElevenLabsStreamingProvider:
             "model_id": self.model_id,
             "voice_settings": {"stability": stability, "similarity_boost": similarity_boost, "style": style}
         }
+        logger.debug("ElevenLabs HTTP TTS: voice=%s model=%s len=%d", self.voice_id, self.model_id, len(text))
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", url, json=payload, headers=headers) as response:
                 if response.status_code == 200:
+                    _chunks = 0
                     async for chunk in response.aiter_bytes(chunk_size=4096):
-                        if self._stopped: return
+                        if self._stopped:
+                            return
+                        _chunks += 1
+                        if _chunks == 1:
+                            logger.info("ElevenLabs (HTTP): First chunk received. voice=%s", self.voice_id)
                         yield chunk
+                    logger.info("ElevenLabs (HTTP): Streaming complete. Total chunks: %d", _chunks)
+                else:
+                    body = await response.aread()
+                    logger.error(
+                        "ElevenLabs HTTP error: status=%d voice=%s model=%s body=%s",
+                        response.status_code, self.voice_id, self.model_id, body[:200]
+                    )
 
     async def stop(self) -> None:
         """Stop current TTS streaming (called on interruption)."""
         self._stopped = True
         logger.debug("TTS stop signal sent")
+
+    async def prewarm(self) -> None:
+        """
+        🚀 Pre-open the ElevenLabs WebSocket connection in the background.
+        Called by the brain when the first LLM token arrives, so by the time
+        a complete sentence is buffered (~300-500ms later), the TTS connection
+        is already established — saving ~200ms TCP/TLS handshake latency.
+        """
+        try:
+            if not hasattr(self, "_ws") or self._ws is None or getattr(self._ws, "closed", True):
+                import websockets
+                logger.debug("🚀 TTS WebSocket pre-warming...")
+                self._ws = await websockets.connect(self._ws_url)
+                logger.debug("🚀 TTS WebSocket pre-warmed successfully")
+        except Exception as e:
+            logger.debug("TTS prewarm failed (non-fatal): %s", e)
+            self._ws = None
 
     def set_cache(self, cache) -> None:
         """Attach a cache backend (Redis) for audio caching."""

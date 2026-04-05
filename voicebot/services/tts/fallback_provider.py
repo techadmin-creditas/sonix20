@@ -5,7 +5,7 @@ Transparently wraps multiple TTS providers and falls back to subsequent ones if 
 
 from __future__ import annotations
 import logging
-from typing import AsyncIterator, List, Any
+from typing import AsyncIterator, List, Any, Optional
 from voicebot.shared.logging.logger import setup_logger
 
 logger = setup_logger("tts-fallback", level="INFO")
@@ -16,8 +16,9 @@ class FallbackTTSProvider:
     If one fails (raises an exception or yields 0 bytes), moves to the next.
     """
 
-    def __init__(self, providers: List[Any], on_log_fn=None):
+    def __init__(self, providers: List[Any], labels: Optional[List[str]] = None, on_log_fn=None):
         self.providers = [p for p in providers if p is not None]
+        self.labels = labels or [type(p).__name__ for p in self.providers]
         self.on_log_fn = on_log_fn
         self._current_index = 0
         self._stopped = False
@@ -51,27 +52,32 @@ class FallbackTTSProvider:
                     self._current_index = i
                     return
                 else:
-                    logger.warning("TTS Provider %s yielded 0 chunks. Trying next...", p_name)
+                    label = self.labels[i]
+                    logger.warning("TTS Provider %s (%s) yielded 0 chunks. Trying next...", label, p_name)
                     if self.on_log_fn:
-                        await self.on_log_fn("[TTS]", f"Provider {p_name} returned 0 chunks. Trying fallback...", "text-yellow-400")
+                        await self.on_log_fn("[TTS]", f"Provider {label} returned 0 chunks. Trying fallback...", "text-yellow-400")
             
             except Exception as e:
                 from voicebot.shared.exceptions import ServiceExhaustedError, AuthError
                 
+                label = self.labels[i]
                 err_str = str(e).lower()
                 # Categorize errors to decide whether to fallback or fail hard (per user rules)
                 is_terminal = any(x in err_str for x in ["quota", "exhausted", "credit", "balance", "429", "401", "unauthorized"])
                 
-                if is_terminal:
-                    # Bailing immediately - User wants clear UI error and disconnection, not slow fallbacks
-                    logger.critical("Terminal TTS error in %s: %s", p_name, e)
+                # 🛡️ RESILIENCE: If this is the LAST provider, we must raise.
+                # If there are more providers, try falling back even on terminal errors.
+                if i + 1 >= len(self.providers):
+                    logger.critical("Terminal TTS error in final provider %s (%s): %s", label, p_name, e)
                     if "unauthorized" in err_str or "401" in err_str:
-                         raise AuthError(f"{p_name} authentication failed or key expired.")
-                    raise ServiceExhaustedError(f"{p_name} quota or usage limits reached.")
-
-                logger.error("TTS Provider %s failed: %s. Trying next...", p_name, e)
+                         raise AuthError(f"{label} authentication failed or key expired.")
+                    raise ServiceExhaustedError(f"{label} quota or usage limits reached.")
+                
+                logger.warning("TTS Provider %s (%s) failed with %s error: %s. Trying fallback...", 
+                               label, p_name, "terminal" if is_terminal else "retryable", e)
                 if self.on_log_fn:
-                    await self.on_log_fn("[TTS]", f"Provider {p_name} error: {str(e)[:50]}. Trying fallback...", "text-yellow-400")
+                    tag = "[TTS-FALLBACK]" if is_terminal else "[TTS]"
+                    await self.on_log_fn(tag, f"Provider {label} failed. Trying next...", "text-yellow-400")
                 
         logger.error("All TTS Providers failed for text: %s", text[:50])
 

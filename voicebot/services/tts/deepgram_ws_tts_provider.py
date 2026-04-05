@@ -200,13 +200,24 @@ class DeepgramWSTTSProvider:
         if not self._connected or not self._ws:
             return
         self._resetting = True
+        # Drain queued audio immediately so stream_speech() unblocks without
+        # playing stale chunks from the interrupted turn.
+        drained = 0
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+                drained += 1
+            except asyncio.QueueEmpty:
+                break
+        if drained:
+            logger.debug("WS TTS reset: drained %d stale audio chunks", drained)
         try:
             await self._ws.send(json.dumps({"type": "Reset"}))
         except Exception as exc:
             logger.warning("WS TTS reset send error: %s", exc)
         # Unblock any waiting stream_speech caller.
         await self._audio_queue.put(None)
-        logger.debug("WS TTS: Reset sent")
+        logger.debug("WS TTS: Reset sent (drained=%d)", drained)
 
     async def stop(self) -> None:
         """Alias for reset() — matches HTTP provider interface."""

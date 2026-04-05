@@ -85,7 +85,7 @@ async def _archive_voice_session(
         summary = "No meaningful conversation occurred."
         intent = "Unknown"
 
-        if len(log_entries) > 1 and transcript_text.strip():
+        if settings.enable_post_call_summary and len(log_entries) > 1 and transcript_text.strip():
             try:
                 # Use the helper to get the best LLM for summarisation
                 sum_llm = _make_summariser_llm(bot_config)
@@ -130,6 +130,8 @@ async def _archive_voice_session(
 
             except Exception as llm_err:
                 logger.error("LLM Archiving failed for %s: %s", session_id[:8], llm_err)
+        elif not settings.enable_post_call_summary:
+            logger.info("Skipping post-call LLM analysis as ENABLE_POST_CALL_SUMMARY is False.")
 
         # Update DB
         await db.close_session(
@@ -139,16 +141,16 @@ async def _archive_voice_session(
         )
         logger.info("Session %s archived with summary (mode=%s).", session_id[:8], mode)
 
-        # Store in vector memory
-        if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
-            try:
-                await vector_memory.store_conversation(
-                    session_id=session_id,
-                    summary=summary,
-                    user_id=user_id,
-                )
-            except Exception as _vec_err:
-                logger.debug("Vector memory store failed for %s: %s", session_id[:8], _vec_err)
+        # Store in vector memory (Disabled per user request)
+        # if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
+        #     try:
+        #         await vector_memory.store_conversation(
+        #             session_id=session_id,
+        #             summary=summary,
+        #             user_id=user_id,
+        #         )
+        #     except Exception as _vec_err:
+        #         logger.debug("Vector memory store failed for %s: %s", session_id[:8], _vec_err)
 
         # Fire Webhook
         _post_call_url = bot_config.get("post_call_webhook_url", "")
@@ -315,7 +317,6 @@ async def voice_websocket(
     logger.info("New voice session: %s [lang=%s]", session_id[:8], language)
     
     from voicebot.core.orchestrator.brain import AgenticBrain, BotState
-    from voicebot.services.stt.deepgram_provider import DeepgramStreamingProvider
     from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
     from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
     from voicebot.services.llm.groq_provider import GroqStreamingProvider
@@ -516,8 +517,31 @@ async def voice_websocket(
 
     # ─── Initialize Providers with bot-specific overrides ──────────────────
     try:
-        # STT
-        stt_provider = DeepgramStreamingProvider(language=session_language)
+        from voicebot.shared.policy import parse_json_dict
+
+        # STT — language from policy (hinglish → multilingual detect) + optional endpointing
+        from voicebot.services.stt.deepgram_provider import (
+            DeepgramStreamingProvider,
+            resolve_stt_language_for_session,
+        )
+
+        _conv_pol = parse_json_dict(bot_config.get("conversation_policy") or {})
+        _stt_lang = resolve_stt_language_for_session(session_language, _conv_pol)
+        _stt_ep = _conv_pol.get("stt_endpointing_ms")
+        try:
+            _stt_ep_i = int(_stt_ep) if _stt_ep is not None else None
+        except (TypeError, ValueError):
+            _stt_ep_i = None
+        _stt_vad = _conv_pol.get("stt_rms_vad_threshold")
+        try:
+            _stt_vad_f = float(_stt_vad) if _stt_vad is not None else None
+        except (TypeError, ValueError):
+            _stt_vad_f = None
+        stt_provider = DeepgramStreamingProvider(
+            language=_stt_lang,
+            endpointing_ms=_stt_ep_i,
+            vad_rms_threshold=_stt_vad_f,
+        )
         
         # LLM — auto-detect provider from bot config or model slug
         # --- LLM Provider (Detect from Bot Config + High-Perf Default) ---
@@ -557,6 +581,10 @@ async def voice_websocket(
             llm_provider = GroqStreamingProvider(model=_model)
             logger.info("Using Groq LLM (model=%s) ✅", _model)
 
+        from voicebot.services.llm.voice_llm_factory import wrap_llm_with_fallbacks
+
+        llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
+
         # --- TTS Provider (Robust, Anti-Fallback, Hindi-Aware) ---
         voice_id = bot_config.get("voice_id")
         if not voice_id:
@@ -569,9 +597,9 @@ async def voice_websocket(
         # Deepgram Aura does not support Hindi. If bot is Hindi, force ElevenLabs.
         if _is_hindi_bot:
              # Fix for invalid IDs: If database holds a Deepgram Aura ID, map to an ElevenLabs default ID
-             if "aura" in voice_id.lower() or len(voice_id) != 21:
+             if "aura" in voice_id.lower() or len(voice_id) < 18:
                  logger.warning(f"Invalid ElevenLabs voice ID '{voice_id}' detected for Hindi bot. Using fallback.")
-                 voice_id = "pNInz6obpgDQGcFmaJgB"  # Default ElevenLabs voice (Adam)
+                 voice_id = "BKAA4PPBFfn6s91XfihW"  # Default ElevenLabs Hindi voice (Roopa)
                  
              from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
              tts_provider = ElevenLabsStreamingProvider(
@@ -602,6 +630,10 @@ async def voice_websocket(
                 from voicebot.shared.exceptions import HandshakeError
                 raise HandshakeError(f"TTS WebSocket connection failed: {_tts_err}")
 
+        # 🛡️ RESILIENCE: Wrap TTS with fallback chain (e.g. ElevenLabs -> Deepgram)
+        from voicebot.services.tts.voice_tts_factory import wrap_tts_with_fallbacks
+        tts_provider = await wrap_tts_with_fallbacks(tts_provider, bot_config, settings, on_log_fn=on_log)
+
         # Attach Redis cache for high-frequency phrase caching
         memory_local = RedisSessionProvider(redis_url=settings.redis_url)
         await memory_local.connect()
@@ -609,7 +641,7 @@ async def voice_websocket(
             tts_provider.set_cache(memory_local)
 
         # Essential Services — policies from bot JSON (Obsidian / API)
-        from voicebot.shared.policy import output_guard_extra_patterns, parse_json_dict
+        from voicebot.shared.policy import output_guard_extra_patterns
 
         _gp = parse_json_dict(bot_config.get("guardrail_policy"))
         guardrail = PIIDetector()
@@ -722,6 +754,28 @@ async def voice_websocket(
         # Collect STT result before we enter the main receive loop
         stt_ok = await _stt_task
 
+        # Deepgram net0001: classic WS drops silent mic frames (EnergyGate), so send_audio never
+        # runs and JSON KeepAlive is not sent — use wall-clock ticks while the session is up.
+        _stt_keepalive_stop = asyncio.Event()
+        _stt_kp_task = None
+
+        async def _stt_wall_keepalive_loop() -> None:
+            while not _stt_keepalive_stop.is_set():
+                try:
+                    await asyncio.wait_for(_stt_keepalive_stop.wait(), timeout=4.5)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                if not vt.connected:
+                    return
+                try:
+                    await brain.tick_stt_keepalive_wall()
+                except Exception as _k_err:
+                    logger.debug("STT wall keepalive: %s", _k_err)
+
+        if stt_ok:
+            _stt_kp_task = asyncio.create_task(_stt_wall_keepalive_loop())
+
         # --- INFRA HEARTBEAT ---
         async def infra_heartbeat():
             while vt.connected:
@@ -772,10 +826,10 @@ async def voice_websocket(
                 last_activity_time = time.time()
                 audio_bytes = data.get("bytes")
                 
-                # [LOCAL VAD] Drop silent frames before STT to save costs/latency
-                if energy_gate.is_silent(audio_bytes):
-                    continue
-
+                # [LOCAL VAD] We now offload VAD optimization to the STT provider class
+                # which implements a smarter 300ms lookback buffer to avoid clipping.
+                # Dropping frames here interferes with Deepgram's endpointing.
+                
                 chunk_count += 1
                 if chunk_count % 100 == 0:  # Periodically log active audio pressure
                     logger.debug("🔉 Receiving audio pressure: %d bytes (Total active frames: %d)", len(audio_bytes), chunk_count)
@@ -787,22 +841,72 @@ async def voice_websocket(
                     msg = json.loads(data.get("text"))
                     msg_type = msg.get("type")
                     
+                    from voicebot.shared.utils.validation import is_valid_api_key
+
                     if msg_type == "config":
                         # DYNAMIC RECONFIGURATION
                         llm_choice = msg.get("llm", "groq")
                         llm_model = msg.get("llmModel")
 
+                        # Secure validation before switching
+                        _target_key = None
+                        if llm_choice == "openrouter" or ("/" in str(llm_model) and llm_choice not in ("gemini", "openai", "groq", "anthropic")):
+                             _target_key = settings.openrouter_api_key
+                        elif llm_choice == "gemini":
+                             _target_key = settings.gemini_api_key
+                        elif llm_choice == "groq":
+                             _target_key = settings.groq_api_key
+                        elif llm_choice == "anthropic":
+                             _target_key = settings.anthropic_api_key
+                        else:
+                             _target_key = settings.openai_api_key
+                             
+                        # PROVIDER/MODEL MISMATCH VALIDATION
+                        mismatch_warning = None
+                        model_lower = str(llm_model).lower()
+                        
+                        if llm_choice == "groq" and "gemini" in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Groq does not host Gemini models ({llm_model})."
+                        elif llm_choice == "groq" and "claude" in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Groq does not host Claude models ({llm_model})."
+                        elif llm_choice == "gemini" and "gemini" not in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Gemini provider expects a Gemini model name ({llm_model})."
+                        elif llm_choice == "anthropic" and "claude" not in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Anthropic provider expects a Claude model name ({llm_model})."
+                        
+                        if mismatch_warning:
+                            logger.warning(mismatch_warning)
+                            await vt.send_json({
+                                "type": "log",
+                                "tag": "[CONFIG]",
+                                "message": mismatch_warning + " Switching anyway but errors are likely.",
+                                "color": "text-orange-400"
+                            })
+
+                        if not is_valid_api_key(_target_key):
+                            logger.warning("🚫 Blocked LLM switch to %s: Invalid/Placeholder API Key", llm_choice)
+                            await vt.send_json({
+                                "type": "log",
+                                "tag": "[SYSTEM]",
+                                "message": f"Cannot switch to {llm_choice}: API Key is a placeholder. Please check your .env file.",
+                                "color": "text-red-400"
+                            })
+                            continue
+
                         if llm_choice == "openrouter" or ("/" in str(llm_model) and llm_choice not in ("gemini", "openai", "groq", "anthropic")):
                             from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
                             brain.llm = OpenRouterStreamingProvider(model=llm_model)
                         elif llm_choice == "gemini":
+                            from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
                             brain.llm = GeminiStreamingProvider(model=llm_model)
                         elif llm_choice == "groq":
+                            from voicebot.services.llm.groq_provider import GroqStreamingProvider
                             brain.llm = GroqStreamingProvider(model=llm_model)
                         elif llm_choice == "anthropic":
                             from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
                             brain.llm = AnthropicStreamingProvider(model=llm_model)
                         else:
+                            from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
                             brain.llm = OpenAIStreamingProvider(model=llm_model)
                             
                         # Update TTS
@@ -838,6 +942,32 @@ async def voice_websocket(
                             logger.info("Bot switched to: %s", new_bot_cfg.get("name"))
                         else:
                             await vt.send_json({"type": "error", "message": f"Bot not found"})
+
+                    elif msg_type == "test_interruption":
+                        if not brain:
+                            await vt.send_json({"type": "error", "message": "Bridge not initialized."})
+                            continue
+
+                        # 🚀 Triggering Full-Pipeline (STT -> LLM -> TTS) Test
+                        logger.info("🧪 Launching LLM-driven Interruption & Hallucination Test")
+                        await vt.send_json({"type": "log", "tag": "[TEST]", "message": "🔍 Stress-Testing: STT Accuracy & Hallucination Check...", "color": "text-blue-400 font-bold"})
+                        
+                        # B) Inject a System-level instruction turn
+                        # We instruct the LLM to be a test subject and repeat the user's words upon interruption.
+                        test_prompt = (
+                            "ACT AS A TEST SUBJECT. Your goal is to help me test barge-in accuracy and verify no hallucinations occur. "
+                            "1. Start by saying: 'I am now beginning a lengthy, high-speed explanation of planetary mechanics. Please interrupt me now.' "
+                            "2. Then, provide a very long, complex paragraph. "
+                            "3. CRITICAL: When I interrupt you, your next response MUST acknowledge exactly what you heard me say. "
+                            "For example: 'Interruption successful! I heard you say [user utterance]. No hallucinations detected.' "
+                            "Now, begin Step 1."
+                        )
+                        
+                        # C) Trigger the test in the Brain (Hidden from UI logs)
+                        # The UI will stay clean until the bot starts the monologue
+                        asyncio.create_task(brain.process_stt_partial(test_prompt, is_final=True, suppress_transcript=True))
+                        
+                        await vt.send_json({"type": "log", "tag": "[TEST]", "message": "✅ Mode: HALLUCINATION CHECK. Speak over the bot and check its next reply.", "color": "text-green-400"})
 
                     elif msg_type == "text_query":
                         # SIMULATOR MODE: Direct text to brain
@@ -888,6 +1018,14 @@ async def voice_websocket(
     finally:
         if 'heartbeat_task' in locals():
             heartbeat_task.cancel()
+        if locals().get("_stt_keepalive_stop") is not None:
+            _stt_keepalive_stop.set()
+        if locals().get("_stt_kp_task") is not None:
+            _stt_kp_task.cancel()
+            try:
+                await _stt_kp_task
+            except asyncio.CancelledError:
+                pass
         await brain.cleanup()
         await stt_provider.disconnect()
         if hasattr(tts_provider, "disconnect"):

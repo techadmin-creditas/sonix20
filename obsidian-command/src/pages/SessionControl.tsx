@@ -96,7 +96,8 @@ export default function SessionControl() {
     noiseSuppression: true,
     latencyMode: 'ultra-low',
     temperature: 0.7,
-    maxDuration: 30
+    maxDuration: 30,
+    testInterruption: false
   });
 
   useEffect(() => {
@@ -384,7 +385,8 @@ export default function SessionControl() {
     setMicActivity(0);
   };
 
-  const startSession = async () => {
+  const startSession = async (isTestModeArg: any = false) => {
+    const isTestMode = isTestModeArg === true;
     if (!selectedBot) return;
     setIsConnecting(true);
     setStatus('Initializing...');
@@ -641,6 +643,9 @@ export default function SessionControl() {
         setIsConnecting(false);
         setStatus('Connecting...');
         startMic(socket);
+        if (isTestMode && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'test_interruption' }));
+        }
       };
       
       socket.onmessage = async (event) => {
@@ -843,10 +848,18 @@ export default function SessionControl() {
                     <option value="webrtc">WebRTC</option>
                   </select>
                 </div>
+                <button
+                  onClick={() => setIsConfigOpen(true)}
+                  title="Session Config"
+                  className="bg-surface-high text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
+                >
+                  <Settings2 className="size-4 shrink-0" />
+                  <span className="hidden md:inline">Config</span>
+                </button>
 
                 {/* Initialize Bridge CTA */}
                 <button
-                  onClick={startSession}
+                  onClick={() => startSession()}
                   disabled={!selectedBot || isConnecting}
                   className="ember-gradient text-on-primary-fixed px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
@@ -863,6 +876,17 @@ export default function SessionControl() {
                     </>
                   )}
                 </button>
+                {config.testInterruption && sessionTransport === 'websocket' && (
+                  <button
+                    onClick={() => startSession(true)}
+                    disabled={!selectedBot || isConnecting}
+                    className="ml-2 bg-primary/10 text-primary border border-primary/20 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-sm hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    <Zap className="size-4" />
+                    <span className="hidden sm:inline">Test Interruption</span>
+                    <span className="sm:hidden">Test</span>
+                  </button>
+                )}
               </>
             ) : (
               /* ── Live: session controls ──────────────────────── */
@@ -948,6 +972,14 @@ export default function SessionControl() {
                   description="Filter background noise in real-time"
                   active={config.noiseSuppression}
                   onToggle={() => setConfig(prev => ({ ...prev, noiseSuppression: !prev.noiseSuppression }))}
+                />
+
+                <ConfigToggle 
+                  icon={Zap}
+                  label="Test Interruption" 
+                  description="Enable barge-in testing button in logs"
+                  active={config.testInterruption}
+                  onToggle={() => setConfig(prev => ({ ...prev, testInterruption: !prev.testInterruption }))}
                 />
 
                 <div className="space-y-4">
@@ -1340,9 +1372,19 @@ export default function SessionControl() {
 
             <div className="surface-lowest rounded-3xl p-4 sm:p-6 font-mono text-[10px] h-[220px] sm:h-[260px] lg:h-[300px] flex flex-col shrink-0 border border-outline-variant/5">
               <div className="flex items-center justify-between mb-4 border-b border-outline-variant/10 pb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <Terminal className="size-4 text-primary" />
                   <span className="uppercase tracking-widest font-bold text-on-surface-variant">Neural Logs</span>
+                  {isLive && config.testInterruption && sessionTransport === 'websocket' && (
+                    <button 
+                      onClick={() => ws?.send(JSON.stringify({ type: 'test_interruption' }))}
+                      className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/20 transition-all flex items-center gap-1 shadow-sm"
+                      title="Test barge-in logic without LLM latency"
+                    >
+                      <Zap className="size-2.5" />
+                      Test Interruption
+                    </button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <TabButton active={activeLogTab === 'neural'} onClick={() => setActiveLogTab('neural')}>Pathway</TabButton>

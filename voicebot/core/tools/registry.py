@@ -7,6 +7,7 @@ from voicebot.core.tools.implementations.end_voice_session import EndVoiceSessio
 from voicebot.core.tools.implementations.banking_tools import (
     VerifyCustomerTool, GetAccountBalanceTool, GetLoanStatusTool
 )
+from voicebot.core.tools.implementations.configurable import DynamicAPITool
 
 # Registry of all available tool classes
 _TOOL_CLASSES: Dict[str, Type[BaseTool]] = {

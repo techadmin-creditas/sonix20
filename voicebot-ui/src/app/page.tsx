@@ -8,6 +8,8 @@ import { PipelineVisualizer } from '@/components/PipelineVisualizer';
 import { KnowledgeMemory } from '@/components/KnowledgeMemory';
 import { Settings, LogOut, Terminal, Activity, Zap, Shield, HelpCircle, User, MessageCircle, FileText, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { KnowledgeIngestor } from '@/components/KnowledgeIngestor';
+import { NoCodeToolForge } from '@/components/NoCodeToolForge';
 
 export default function Home() {
   const { state, transcripts, error, startSession, endSession, interrupt, metrics } = useVoiceBot();
@@ -210,6 +212,31 @@ export default function Home() {
            </div>
         </div>
 
+      </section>
+
+      {/* 🛠️ Platform Administration Section */}
+      <section className="max-w-[1600px] w-full mx-auto px-6 lg:px-10 pb-20">
+        <div className="flex items-center justify-between mb-8 px-4">
+          <h2 className="text-[12px] font-black uppercase tracking-[0.4em] text-slate-500 flex items-center gap-3">
+             <div className="w-6 h-6 rounded-lg bg-blue-600/10 flex items-center justify-center">
+                <Settings size={14} className="text-blue-500" />
+             </div>
+             Platform Administration
+          </h2>
+          <span className="text-[10px] text-slate-700 font-bold uppercase tracking-widest italic flex items-center gap-2">
+             Deployment Zone: Alpha-v1.5
+             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+           <div className="lg:col-span-2">
+              <KnowledgeIngestor botId={activeBotId || 'default'} />
+           </div>
+           <div>
+              <NoCodeToolForge />
+           </div>
+        </div>
       </section>
 
       {/* 🧭 Footing */}

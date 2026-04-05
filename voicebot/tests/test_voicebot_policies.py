@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from voicebot.core.orchestrator.brain import AgenticBrain
+from voicebot.core.orchestrator.brain import AgenticBrain, _merge_stt_final_with_partial
 from voicebot.shared.models.session import SessionState
 from voicebot.shared.agent_task_spec import render_agent_task_spec_appendix
 from voicebot.shared.policy import (
@@ -15,6 +15,14 @@ from voicebot.shared.policy import (
     tts_pipeline_llm,
     tts_streaming_mode,
 )
+
+
+def test_merge_stt_final_prefers_longer_interim_suffix() -> None:
+    interim = "हाँ बोल रहा हूँ"
+    final = "रहा हूँ।"
+    assert _merge_stt_final_with_partial(interim, final) == interim
+    assert _merge_stt_final_with_partial("", "only final") == "only final"
+    assert _merge_stt_final_with_partial("same", "other") == "other"
 
 
 def test_parse_json_dict() -> None:
@@ -54,23 +62,33 @@ def test_is_sentence_boundary_sentence_only() -> None:
     b = AgenticBrain(
         SessionState(session_id="boundary-so"),
         bot_config={
+            "guardrail_policy": {},
+            "data_access_policy": {},
             "conversation_policy": {"tts_flush_mode": "sentence_only", "max_tts_buffer_chars": 100},
         },
     )
-    assert b._is_sentence_boundary("Hello world") is False
-    assert b._is_sentence_boundary("Hello world.") is True
-    assert b._is_sentence_boundary("x" * 100) is True
-    assert b._is_sentence_boundary("a" * 50 + ",") is False
+    td = b.turn_detector
+    cap = b._max_tts_buffer_chars
+    mode = b._tts_flush_mode
+    assert td.is_sentence_boundary("Hello world", char_cap=cap, mode=mode) is False
+    assert td.is_sentence_boundary("Hello world.", char_cap=cap, mode=mode) is True
+    assert td.is_sentence_boundary("x" * 100, char_cap=cap, mode=mode) is True
+    assert td.is_sentence_boundary("a" * 50 + ",", char_cap=cap, mode=mode) is False
 
 
 def test_is_sentence_boundary_balanced_comma() -> None:
     b = AgenticBrain(
         SessionState(session_id="boundary-bal"),
         bot_config={
+            "guardrail_policy": {},
+            "data_access_policy": {},
             "conversation_policy": {"tts_flush_mode": "balanced", "max_tts_buffer_chars": 80},
         },
     )
-    assert b._is_sentence_boundary("a" * 50 + ",") is True
+    td = b.turn_detector
+    cap = b._max_tts_buffer_chars
+    mode = b._tts_flush_mode
+    assert td.is_sentence_boundary("a" * 50 + ",", char_cap=cap, mode=mode) is True
 
 
 def test_tool_scope_filters_weather() -> None:
@@ -79,6 +97,7 @@ def test_tool_scope_filters_weather() -> None:
         memory_handler=None,
         bot_config={
             "id": "1",
+            "guardrail_policy": {},
             "tools_enabled": ["search_knowledge", "get_weather"],
             "data_access_policy": {"enabled_scopes": ["knowledge"]},
         },

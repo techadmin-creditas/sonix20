@@ -26,8 +26,10 @@ import time
 from typing import Any, AsyncIterator, List, Optional
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.models.tools import LLMResponse, ToolCall, ToolDefinition
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
 logger = setup_logger("llm-openrouter", level="INFO")
 settings = get_settings()
@@ -86,8 +88,9 @@ class OpenRouterStreamingProvider:
         if self._client is None:
             from openai import AsyncOpenAI
 
-            if not self.api_key:
-                raise ValueError("OPENROUTER_API_KEY is required — add it to your .env file.")
+            if not is_valid_api_key(self.api_key):
+                logger.error("🚫 OpenRouter API Key is invalid or a placeholder.")
+                raise AuthError(f"OpenRouter API Key is a placeholder or invalid.")
 
             extra_headers: dict[str, str] = {
                 "HTTP-Referer": APP_SITE_URL,
@@ -144,8 +147,37 @@ class OpenRouterStreamingProvider:
         else:
             system_msg = {"role": "system", "content": system_prompt}
 
+        # 🛡️ Message Transformation: Ensure OpenAI/OpenRouter compatibility for tool calls in history
+        import json
+        transformed_messages = []
+        for m in messages:
+            new_msg = m.copy()
+            # 1. Format Assistant Tool Calls
+            if new_msg.get("role") == "assistant" and new_msg.get("tool_calls"):
+                legacy_calls = new_msg.pop("tool_calls")
+                new_calls = []
+                for tc in legacy_calls:
+                    # Map from internal flat model to OpenAI structured model
+                    new_calls.append({
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name"),
+                            "arguments": json.dumps(tc.get("arguments")) if isinstance(tc.get("arguments"), dict) else (tc.get("arguments") or "{}")
+                        }
+                    })
+                new_msg["tool_calls"] = new_calls
+            
+            # 2. Ensure Tool Results have correct fields
+            if new_msg.get("role") == "tool":
+                # OpenAI/OpenRouter expects 'tool_call_id'
+                if "tool_call_id" not in new_msg and "id" in new_msg:
+                    new_msg["tool_call_id"] = new_msg.pop("id")
+            
+            transformed_messages.append(new_msg)
+
         full_messages = [system_msg]
-        full_messages.extend(messages)
+        full_messages.extend(transformed_messages)
 
         # Convert ToolDefinition → OpenAI function-calling schema
         openai_tools = []

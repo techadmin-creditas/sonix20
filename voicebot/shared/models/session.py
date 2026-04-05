@@ -18,16 +18,20 @@ class TurnRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+    TOOL = "tool"
 
 
 class ConversationTurn(BaseModel):
     """A single turn in the conversation history."""
     role: TurnRole
-    content: str
+    content: Optional[str] = None
+    tool_calls: Optional[list[dict[str, Any]]] = None  # Structured tool calls from LLM
+    tool_call_id: Optional[str] = None                 # ID matching the call (for 'tool' role)
     timestamp: float = Field(default_factory=time.time)
     language: Optional[str] = None  # Detected language code (e.g. "en", "hi")
     duration_ms: Optional[float] = None  # Audio duration of this turn
     metadata: dict[str, Any] = Field(default_factory=dict)
+
 
 
 class SessionState(BaseModel):
@@ -91,13 +95,24 @@ class SessionState(BaseModel):
         )
         self.updated_at = time.time()
 
-    def get_context_window(self, max_turns: int = 20) -> list[dict[str, str]]:
+    def get_context_window(self, max_turns: int = 20) -> list[dict[str, Any]]:
         """
         Return the most recent turns formatted for LLM context injection.
         Limits to max_turns to control token usage.
         """
         recent = self.conversation_history[-max_turns:]
-        return [{"role": t.role.value, "content": t.content} for t in recent]
+        context = []
+        for t in recent:
+            msg = {"role": t.role.value}
+            if t.content is not None:
+                msg["content"] = t.content
+            if t.tool_calls:
+                msg["tool_calls"] = t.tool_calls
+            if t.tool_call_id:
+                msg["tool_call_id"] = t.tool_call_id
+            context.append(msg)
+        return context
+
 
     def mark_interrupted(self) -> None:
         """Mark that the user interrupted the bot's response."""

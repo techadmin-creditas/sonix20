@@ -19,6 +19,8 @@ import asyncio
 import async_timeout
 import hashlib
 import json
+import random
+import re
 import time
 import logging
 from enum import Enum
@@ -39,6 +41,7 @@ from voicebot.shared.policy import (
     tts_pipeline_llm,
     tts_streaming_mode,
 )
+from voicebot.core.guardrails import RuleEngine, GuardrailRule, RuleScope
 from voicebot.services.guardrail.injection_detector import InjectionDetector
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.models.session import SessionState, TurnRole
@@ -57,6 +60,80 @@ settings = get_settings()
 logger = setup_logger("orchestrator-brain", level=settings.log_level)
 
 _VOICEBOT_PROCESS_START = time.time()
+
+
+def _merge_stt_final_with_partial(last_interim: str, final_text: str) -> str:
+    """
+    Deepgram sometimes emits a short final that is only a suffix of the last interim
+    (e.g. partial 'हाँ बोल रहा हूँ' vs final 'रहा हूँ।'). Prefer the fuller interim when
+    the final is clearly contained at the end of the interim.
+    """
+    part = (last_interim or "").strip()
+    fin = (final_text or "").strip()
+    if not fin:
+        return part
+    if not part or len(part) <= len(fin):
+        return fin
+
+    def _norm(s: str) -> str:
+        return re.sub(r"[\s।.?!,;:'\"\-]+", "", s.casefold())
+
+    pn, fn = _norm(part), _norm(fin)
+    if not fn:
+        return fin
+    if pn.endswith(fn):
+        return part
+    if fn in pn and len(pn) >= len(fn) + 2:
+        return part
+    return fin
+
+# Latency bridge phrases (watchdog). Override via conversation_policy.latency_fillers or bot_config.
+_LATENCY_FILLERS_EN_DEFAULT = (
+    "One moment please.",
+    "Just a second.",
+    "Let me check that for you.",
+    "Bear with me.",
+    "Alright, one moment.",
+    "Hmm, give me a moment.",
+)
+_LATENCY_FILLERS_EN_QUESTION = (
+    "Let me look that up.",
+    "Good question — one moment.",
+    "Let me find that for you.",
+)
+_LATENCY_FILLERS_EN_ACK = (
+    "Got it — one moment.",
+    "Thanks — let me check.",
+    "Okay, just a second.",
+)
+_LATENCY_FILLERS_EN_FRUSTRATION = (
+    "I understand — let me help with that.",
+    "Sorry about the wait — one moment.",
+    "Let me sort that out for you.",
+)
+_LATENCY_FILLERS_HI_DEFAULT = (
+    "Ek second, main check karta hoon.",
+    "Thoda wait kijiye.",
+    "Bas ek moment...",
+    "Theek hai, abhi dekh raha hoon.",
+    "Ek minute, please.",
+    "Haan, bas ek second.",
+)
+_LATENCY_FILLERS_HI_QUESTION = (
+    "Achha, yeh dekh leta hoon.",
+    "Theek hai, main check karta hoon.",
+    "Ek second, main dekh raha hoon.",
+)
+_LATENCY_FILLERS_HI_ACK = (
+    "Theek hai, ek second.",
+    "Samajh gaya, bas ek moment.",
+    "Ji, abhi check karta hoon.",
+)
+_LATENCY_FILLERS_HI_FRUSTRATION = (
+    "Main samajhta hoon — ek second.",
+    "Theek hai, main madad karta hoon.",
+    "Bas ek moment, dekh leta hoon.",
+)
 
 _SCOPE_TOOL_NAMES = {
     "knowledge": ("search_knowledge",),
@@ -125,6 +202,7 @@ class AgenticBrain:
         self.guardrail = guardrail_handler
         self.output_guard = output_guard_handler
         self.memory = memory_handler
+        self._vector_memory = None
         self.db = db_handler
         self._bot_config = bot_config or {}
         
@@ -151,12 +229,23 @@ class AgenticBrain:
         # Tracks the active 'thinking' or 'speaking' task to allow immediate cancellation on barge-in.
         self._current_turn_task: Optional[asyncio.Task] = None
         self._filler_fired_this_turn = False
+        self._last_latency_filler: str = ""
         self._guardrail_policy: dict = parse_json_dict(self._bot_config.get("guardrail_policy"))
         self._data_access_policy: dict = parse_json_dict(self._bot_config.get("data_access_policy"))
         self._conversation_policy: dict = parse_json_dict(self._bot_config.get("conversation_policy"))
         self._agent_task_spec: dict = parse_agent_task_spec(self._bot_config.get("agent_task_spec"))
         self._topic_restriction: Optional[str] = self._bot_config.get("topic_restriction")
         self._refuse_off_topic: bool = bool(self._bot_config.get("refuse_off_topic", 0))
+
+        # 🛡️ Universal Rule Engine — Generic Guardrails
+        rules_data = self._guardrail_policy.get("rules", [])
+        try:
+            rules = [GuardrailRule(**r) for r in rules_data] if isinstance(rules_data, list) else []
+            self.rule_engine = RuleEngine(rules=rules, bot_id=str(self._bot_id))
+            logger.info("🛡️ Guardrail Engine initialized with %d rules for bot %s", len(rules), self._bot_id)
+        except Exception as e:
+            logger.error("Failed to parse guardrail rules for bot %s: %s", self._bot_id, e)
+            self.rule_engine = RuleEngine(rules=[], bot_id=str(self._bot_id))
 
         # Phase 2: Logic (Speculative Intent)
         from voicebot.core.orchestrator.task_manager import TaskCancellationManager
@@ -179,6 +268,8 @@ class AgenticBrain:
         if injection_enabled(self._guardrail_policy):
             self._injection_detector = InjectionDetector(threshold=injection_threshold(self._guardrail_policy))
         self._interrupt_prompt_suffix: str = ""
+        self._enable_rag: bool = bool(self._bot_config.get("enable_rag", 0))
+        logger.info("🧠 Brain: RAG (Knowledge Base) is %s", "ENABLED" if self._enable_rag else "DISABLED")
 
         # Hydrate session from memory if available
         if self.memory:
@@ -204,6 +295,24 @@ class AgenticBrain:
         # Interruption control
         self._interrupt_event = asyncio.Event()
         self._current_task: Optional[asyncio.Task] = None
+        self._pending_latency_watchdogs: list[asyncio.Task] = []
+        self._llm_static_prompt_cache: dict[str, str] = {}
+        self._sentiment_sidecar_llm_loaded: bool = False
+        self._sentiment_sidecar_llm: Any = None
+
+        # ── Ultra-low-latency pipeline state ──────────────────────────────────
+        # Stored reference to the running TTS consumer task so handle_interruption()
+        # can cancel it immediately without waiting for the next chunk boundary.
+        self._active_tts_consumer_task: Optional[asyncio.Task] = None
+        # Timestamp of the current turn start, set in _process_user_turn() and
+        # used in _emit_tts_audio_stream() to compute true end-to-end TTFS.
+        self._turn_start_ref: float = 0.0
+        # Configurable barge-in timing — loaded from conversation_policy in
+        # _apply_conversation_policy_derived(); defaults match plan targets.
+        self._barge_in_grace_ms: int = 300
+        self._barge_in_debounce_ms: int = 100
+        # Ultra-early TTS flush: fire synthesis after first N chars (word boundary).
+        self._ultra_first_segment_chars: int = 8
 
         # Partial transcript accumulation
         self._partial_buffer: str = ""
@@ -232,11 +341,15 @@ class AgenticBrain:
         self._sentiment_history: list[str] = []  # "positive" | "neutral" | "negative" per turn
         
         # Tools Registry (loaded based on bot config)
+        self._tool_instances: dict[str, Any] = {}
         self._tools = self._register_tools()
 
         # Latency tracking
         self._turn_start_time: float = 0.0
         self._turn_count: int = 0
+        # User turns that passed STT confidence gate (for proactive_after_user_turns)
+        self._completed_user_turns: int = 0
+        self._last_stt_partial_monotonic: float = 0.0
         
         # Extensible dynamic node workflow
         self.workflow_engine = None
@@ -267,6 +380,60 @@ class AgenticBrain:
         self._tts_flush_mode = tts_flush_mode(pol)
         self._tts_streaming_mode = tts_streaming_mode(pol)
         self._tts_pipeline_llm = tts_pipeline_llm(pol) and self._tts_streaming_mode == "chunked"
+        try:
+            self._proactive_silence_sec = float(pol.get("proactive_silence_sec", 30) or 30)
+            self._proactive_silence_sec = max(5.0, min(120.0, self._proactive_silence_sec))
+        except (TypeError, ValueError):
+            self._proactive_silence_sec = 30.0
+        try:
+            # Default 5s grace so bot doesn't prompt immediately after speaking
+            self._proactive_grace_after_bot_sec = float(pol.get("proactive_grace_after_bot_sec", 5) or 5)
+            self._proactive_grace_after_bot_sec = max(0.0, min(120.0, self._proactive_grace_after_bot_sec))
+        except (TypeError, ValueError):
+            self._proactive_grace_after_bot_sec = 5.0
+        try:
+            self._proactive_after_user_turns = int(pol.get("proactive_after_user_turns", 0) or 0)
+            self._proactive_after_user_turns = max(0, min(50, self._proactive_after_user_turns))
+        except (TypeError, ValueError):
+            self._proactive_after_user_turns = 0
+        try:
+            # Raise to 1.2s so fast Groq responses (400-800ms TTFT) don't get swamped by the filler
+            _w = float(pol.get("llm_latency_watchdog_sec", 1.2) or 1.2)
+            self._llm_latency_watchdog_sec = max(0.5, min(5.0, _w))
+        except (TypeError, ValueError):
+            self._llm_latency_watchdog_sec = 1.2
+
+        # ── Barge-in timing (conversation_policy takes priority over bot_config) ──
+        try:
+            _grace = (
+                pol.get("barge_in_grace_period_ms")
+                or (self._bot_config or {}).get("barge_in_grace_period_ms")
+                or 300
+            )
+            self._barge_in_grace_ms = max(100, min(2000, int(_grace)))
+        except (TypeError, ValueError):
+            self._barge_in_grace_ms = 300
+
+        try:
+            _deb = (
+                pol.get("barge_in_debounce_ms")
+                or (self._bot_config or {}).get("barge_in_debounce_ms")
+                or 100
+            )
+            self._barge_in_debounce_ms = max(50, min(800, int(_deb)))
+        except (TypeError, ValueError):
+            self._barge_in_debounce_ms = 100
+
+        # ── Ultra-early TTS first-word flush ─────────────────────────────────
+        try:
+            _ultra = (
+                pol.get("ultra_first_segment_chars")
+                or (self._bot_config or {}).get("ultra_first_segment_chars")
+                or 8
+            )
+            self._ultra_first_segment_chars = max(4, min(30, int(_ultra)))
+        except (TypeError, ValueError):
+            self._ultra_first_segment_chars = 8
 
     async def _set_state(self, new_state: BotState) -> None:
         """Transition to a new state and notify listeners."""
@@ -298,11 +465,18 @@ class AgenticBrain:
         elif new_state == BotState.LISTENING:
             tag = "[EARS]"
             color = "text-green-400"
-            # Flush Deepgram's buffer FIRST to discard any TTS-echo audio accumulated
-            # during the speaking period, then reset VAD for the new listening turn.
-            if self.stt and hasattr(self.stt, "finalize"):
-                await self.stt.finalize()
-            if self.stt and hasattr(self.stt, "reset_vad"):
+            
+            # Flush Deepgram's buffer only if finishing a turn NORMALLY (not interrupted).
+            # If interrupted, the user is mid-speech and we don't want to inject silence.
+            is_interruption = self._interrupt_event.is_set()
+            if self.stt and not is_interruption:
+                if hasattr(self.stt, "flush_endpoint"):
+                    await self.stt.flush_endpoint()
+            
+            # Always reset VAD buffers on state entry
+            if self.stt and hasattr(self.stt, "reset_buffer"):
+                self.stt.reset_buffer()
+            elif self.stt and hasattr(self.stt, "reset_vad"):
                 self.stt.reset_vad()
 
         await self._log_event(tag, f"Transitioned to {new_state.value}", color)
@@ -327,10 +501,12 @@ class AgenticBrain:
         
         # Clean technical gibberish for the user
         raw_reason = str(error)
-        if "Groq error" in raw_reason:
-            raw_reason = raw_reason.split("See 'failed_generation'")[0].strip()
-        
         friendly_msg = f"Sorry, I encountered a technical error: {raw_reason[:120]}"
+        
+        if "Model NotFound" in raw_reason or "model_not_found" in raw_reason:
+            friendly_msg = "Configuration Error: The selected model is not available for this provider. Please check your bot settings."
+        elif "API Key invalid" in raw_reason or "invalid_api_key" in raw_reason:
+            friendly_msg = "Authentication Error: The API key for this provider is invalid or a placeholder. Please check your .env file."
         
         # 1. Notify the user via transcript
         if self._on_bot_transcript:
@@ -418,6 +594,17 @@ class AgenticBrain:
 
     # ─── Audio Input Handling ────────────────────────────────────────────
 
+    async def tick_stt_keepalive_wall(self) -> None:
+        """Deepgram JSON KeepAlive on wall-clock (see main.py EnergyGate + net0001)."""
+        stt = self.stt
+        if stt is not None and hasattr(stt, "keepalive_wallclock_if_due"):
+            await stt.keepalive_wallclock_if_due()
+
+    def _should_schedule_proactive_timer(self) -> bool:
+        # Never schedule the proactive timer on the very first boot (before user has spoken once)
+        # This prevents the "Are you there?" prompt interrupting the greeting flow
+        return self._completed_user_turns >= max(1, self._proactive_after_user_turns)
+
     async def process_audio_chunk(self, chunk: bytes) -> None:
         """
         Ingest raw audio from the client.
@@ -437,21 +624,37 @@ class AgenticBrain:
         self.session.is_user_speaking = True
         self._turn_start_time = self._turn_start_time or time.time()
 
-    async def process_stt_partial(self, text: str, is_final: bool, **kwargs: Any) -> None:
+    async def process_stt_partial(self, text: str, is_final: bool, suppress_transcript: bool = False, **kwargs: Any) -> None:
         """
         Handle a partial or final transcript from STT.
         """
         try:
             msg_type = kwargs.get("msg_type")
+            
+            # --- TERMINAL ERROR HANDLER ---
+            if msg_type == "terminal_error":
+                error_msg = kwargs.get("error", "Unknown STT Error")
+                logger.error("🛑 STT Terminal Error signaled: %s", error_msg)
+                await self._handle_fatal_error(VoiceBotError(error_msg), context="stt_terminal_error")
+                return
+
             confidence = kwargs.get("confidence", 1.0)
             
+            # [DEDUPLICATION] Deepgram sometimes sends duplicate Finals if the connection is slow.
+            if is_final and text.strip() and text.strip() == getattr(self, "_last_processed_text", ""):
+                 time_since_processed = time.time() - getattr(self, "_last_processed_time", 0.0)
+                 if time_since_processed < 5.0:  # Ignore identical finals within 5s
+                     logger.debug("🧠 Brain STT Filter: ignoring duplicate final transcript '%s'", text.strip())
+                     return
+
             # [GEMINI-GRADE] Noise & Hallucination Filter
             if text.strip() and len(text.strip()) < 2 and not is_final and confidence < 0.5:
                  logger.debug("🧠 Hallucination Filter: dropping short token '%s' (conf=%.2f)", text.strip(), confidence)
                  return
 
-            # Skip empty finals (often noise or endpointing artifacts)
-            if is_final and not text.strip():
+            # Skip empty finals ONLY if we have no buffered text (otherwise we need it to reset the watchdog)
+            buffer_has_text = bool((getattr(self, "_utterance_buffer", "") or "").strip() or (getattr(self, "_partial_buffer", "") or "").strip())
+            if is_final and not text.strip() and not buffer_has_text:
                 logger.debug("🧠 Noise Filter: skipping empty final transcript")
                 return
 
@@ -462,33 +665,38 @@ class AgenticBrain:
             _barge_in_enabled = bool(self._bot_config.get("enable_barge_in", True))
             
             if msg_type == "speech_started" and _barge_in_enabled:
-                # Suspend any pending silence timers for previous turns while user is talking!
+                # 🛡️ SILENCE TIMER PROTECTION: If we already have a full sentence in the buffer (is_final),
+                # do NOT cancel the silence timer for a new 'speech_started' signal unless we actually
+                # see new text coming in. This prevents background noise from "resetting" the turn
+                # and leaving the bot in a silent hanging state.
+                has_pending_final = bool(self._utterance_buffer.strip())
+                
                 if self._silence_timer:
-                    logger.debug("🧠 STT Signal: User speaking, cancelling silence timer.")
-                    self._silence_timer.cancel()
-                    self._silence_timer = None
+                    if has_pending_final:
+                        logger.debug("🧠 STT Noise Filter: speech_started received but buffer has content. Keeping silence timer.")
+                    else:
+                        logger.debug("🧠 STT Signal: User speaking, cancelling silence timer.")
+                        self._silence_timer.cancel()
+                        self._silence_timer = None
 
                 # 🚀 PRODUCTION: Always allow interruption during SPEAKING or PROCESSING
                 # to achieve human-like responsiveness.
                 if self.state in (BotState.SPEAKING, BotState.PROCESSING):
-                    # 🚀 PRODUCTION OPTIMIZATION: Post-Turn Guard Window (800ms)
-                    # Ignore interruptions very early in the turn to prevent self-interruption from late STT fragments.
-                    _grace_period_ms = int(
-                        (self._bot_config or {}).get("barge_in_grace_period_ms", 800)
-                    )
+                    # Post-turn guard window: ignore interruptions very early to prevent
+                    # self-interruption from late STT fragments / echo.
+                    # Value from conversation_policy (set in _apply_conversation_policy_derived).
                     _elapsed = (time.time() - self._last_state_change_time) * 1000
-                    if _elapsed < _grace_period_ms:
-                        logger.debug("🧠 Barge-in Ignored: Within post-turn guard window (%.0fms < %dms)", _elapsed, _grace_period_ms)
+                    if _elapsed < self._barge_in_grace_ms:
+                        logger.debug("🧠 Barge-in Ignored: Within post-turn guard window (%.0fms < %dms)", _elapsed, self._barge_in_grace_ms)
                         return
 
                     # Signal the frontend to MUTE audio playback instantly (can be reversed if it was noise)
                     if self._on_audio_interrupt:
                         await self._on_audio_interrupt()
-                    
-                    _debounce_ms = int(
-                        (self._bot_config or {}).get("barge_in_debounce_ms", 350)
-                    )
-                    await asyncio.sleep(_debounce_ms / 1000.0)
+
+                    # Short confirmation window — distinguishes real speech from single noise burst.
+                    # Value from conversation_policy (set in _apply_conversation_policy_derived).
+                    await asyncio.sleep(self._barge_in_debounce_ms / 1000.0)
                     
                     if self.state in (BotState.SPEAKING, BotState.PROCESSING):
                         snapshot = (self._partial_buffer or text).strip()
@@ -555,15 +763,25 @@ class AgenticBrain:
                 if not is_final and len(text.split()) > 2:
                     asyncio.create_task(self._predictive_prewarm(text))
 
+                _prior_interim = (self._partial_buffer or "").strip()
                 self._partial_buffer = text
+                if not is_final:
+                    self._last_stt_partial_monotonic = time.monotonic()
 
                 if is_final:
-                    # Accumulate across Deepgram endpoint segments to handle split utterances.
+                    final_t = text.strip()
+                    chosen = _merge_stt_final_with_partial(_prior_interim, final_t)
+                    if chosen != final_t:
+                        logger.info(
+                            "STT: kept fuller interim over short final (interim_len=%d final_len=%d)",
+                            len(_prior_interim),
+                            len(final_t),
+                        )
                     sep = " " if self._utterance_buffer else ""
-                    self._utterance_buffer = (self._utterance_buffer + sep + text.strip()).strip()
+                    self._utterance_buffer = (self._utterance_buffer + sep + chosen).strip()
 
             # Notify client (with deduplication)
-            if self._on_transcript and _should_emit:
+            if self._on_transcript and _should_emit and not suppress_transcript:
                 self._last_emitted_transcript = text
                 await self._on_transcript(text, is_final)
 
@@ -575,14 +793,18 @@ class AgenticBrain:
                 self._last_stt_confidence = float(incoming_confidence)
 
             if text.strip():
-                # ⏱️ PHASE 4: STT Latency Tracking — track latest speech arrival
-                # Track when speech ended relative to local VAD or Deepgram signaling.
+                # ⏱️ STT latency: time from last non-final partial to this final (avoids bogus multi-second RTT
+                # when Deepgram delivers a late duplicate final after a long gap).
                 if is_final:
-                     # If we have a stored speech stop time (updated by deepgram_provider or watchdog)
-                     # we can calculate approximate STT round-trip latency.
-                     stt_rtt = (time.time() - self._last_speech_stop_time) * 1000
-                     logger.info("📊 STT Latency: %.0f ms [Final Received]", stt_rtt)
-                     self.session.last_stt_latency_ms = stt_rtt
+                    _now_m = time.monotonic()
+                    _partial_m = float(getattr(self, "_last_stt_partial_monotonic", 0.0) or 0.0)
+                    if _partial_m > 0 and (_now_m - _partial_m) < 30.0:
+                        stt_rtt = (_now_m - _partial_m) * 1000.0
+                    else:
+                        stt_rtt = (time.time() - self._last_speech_stop_time) * 1000
+                    logger.info("📊 STT Latency: %.0f ms [Final Received]", stt_rtt)
+                    self.session.last_stt_latency_ms = stt_rtt
+                    self._last_stt_partial_monotonic = 0.0
                 else:
                      # On every partial, we 'bump' the speech stop time to the NOW
                      # until the user actually stops speaking.
@@ -655,9 +877,8 @@ class AgenticBrain:
                 if not transcript:
                     return
 
-                # Deduplication
-                if transcript == self._last_processed_text:
-                    return
+                # Proceed with turn completion logic even if text matches last processed (e.g. repeated user command)
+                # Deduplication is already handled at the STT ingestion layer.
 
                 # Calculate actual elapsed silence since the last STT activity
                 actual_silence_ms = total_waited_ms
@@ -712,17 +933,20 @@ class AgenticBrain:
                     self._current_turn_task = None
             self._current_turn_task.add_done_callback(_clear_task)
 
-            # After the turn, start the proactive silence timer
-            self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
+            # After the turn, start the proactive silence timer (if policy allows)
+            if self._should_schedule_proactive_timer():
+                self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
 
         except asyncio.CancelledError:
             # More speech arrived — timer was reset
             pass
 
     async def _proactive_silence_check(self) -> None:
-        """If user is silent for 10s after a bot response, ask if they're still there."""
+        """If user is silent (policy: proactive_silence_sec) after bot speech, prompt."""
         try:
-            await asyncio.sleep(10.0)
+            if self._proactive_grace_after_bot_sec > 0:
+                await asyncio.sleep(self._proactive_grace_after_bot_sec)
+            await asyncio.sleep(self._proactive_silence_sec)
             # 🛡️ SAFETY CHECK: Don't prompt if there is pending user speech in the buffer
             # That the turn_detector is actively evaluating!
             if (self._utterance_buffer + self._partial_buffer).strip():
@@ -730,11 +954,26 @@ class AgenticBrain:
                 return
 
             if self.state == BotState.LISTENING:
-                logger.info("Proactive silence: user quiet for 10s, prompting...")
+                logger.info(
+                    "Proactive silence: user quiet for %.0fs (grace=%.0fs), prompting...",
+                    self._proactive_silence_sec,
+                    self._proactive_grace_after_bot_sec,
+                )
                 proactive_messages = self._bot_config.get("proactive_prompts", [])
                 if not proactive_messages:
                     lang = self.session.detected_language or "hi"
-                    if "hi" in lang.lower():
+                    _style = str(
+                        self._conversation_policy.get("language_style")
+                        or self._bot_config.get("language_style")
+                        or ""
+                    ).lower().strip()
+                    if _style == "hinglish":
+                        proactive_messages = [
+                            "Hello, aap line par hain? Agar kuch chahiye ho to bataiye.",
+                            "Main yahi hoon — jab aap ready hon, bol dijiye.",
+                            "Take your time, main sun raha hoon.",
+                        ]
+                    elif "hi" in lang.lower():
                         proactive_messages = [
                             "क्या आप अभी भी वहां हैं? अगर आपको किसी और चीज़ की ज़रूरत है तो मुझे बताएं.",
                             "जब आप तैयार हों तो मैं यहीं हूं.",
@@ -792,12 +1031,17 @@ class AgenticBrain:
                 logger.debug("🎯 Phase 2: Speculatively pre-warming tool '%s' for '%s'", tool_name, text)
                 # We spawn the tool speculatively (if tool system supports it)
                 # For now, we only pre-warm connections or light metadata fetches.
-                # await self.task_manager.spawn_speculative(
-                #     tool_name, 
-                #     lambda: self._execute_tool_silent(tool_name), 
-                #     confidence=confidence
-                # )
+                # The full speculative LLM call (below) handles the deeper optimization.
                 break
+
+        # 🚀 SPECULATIVE EXECUTION: If user says 4+ words with high confidence,
+        # pre-warm the LLM connection NOW — before the final transcript arrives.
+        # This overlaps the STT finalization gap (~400ms) with LLM connection setup.
+        # We only do client pre-warming (not a full call) to avoid wasted tokens.
+        if confidence >= 0.5 and len(words) >= 4:
+            if hasattr(self.llm, "_get_client"):
+                asyncio.create_task(self.llm._get_client())
+            logger.debug("🚀 Speculative LLM prewarm triggered (%.0f%% confidence, %d words)", confidence * 100, len(words))
 
     async def _load_cross_session_context(self) -> None:
         """
@@ -896,8 +1140,9 @@ class AgenticBrain:
         except Exception as e:
             await self._handle_fatal_error(e, "conversation_startup_failed")
 
-        # Start proactive timer after greeting
-        self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
+        # Proactive "still there?" — optional skip until first real user turn
+        if self._should_schedule_proactive_timer():
+            self._proactive_timer = asyncio.create_task(self._proactive_silence_check())
 
     async def _run_llm_turn(
         self,
@@ -905,6 +1150,7 @@ class AgenticBrain:
         override_system_prompt: bool = False,
         cache_key: Optional[str] = None,
         _qa_question: Optional[str] = None,
+        _system_prompt_override: Optional[str] = None,
     ) -> None:
         """
         Internal method to handle the LLM -> TTS flow.
@@ -914,48 +1160,74 @@ class AgenticBrain:
         max_iterations = 3
         iteration = 0
 
-        system_prompt = self._build_system_prompt()
+        if _system_prompt_override is not None:
+            system_prompt = _system_prompt_override
+        else:
+            system_prompt = self._build_system_prompt()
         if override_system_prompt:
             system_prompt = f"{system_prompt}\n\nINSTRUCTION: {instruction}"
 
         text_accumulated_whole_turn = ""
         total_turn_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         _filler_fired_this_turn = False  # Track whether watchdog filler already played
+        self._force_no_tools_this_turn = False
+        self._last_call_sig = None  # 🛡️ Reset loop detector for every NEW user turn
 
         try:
             if self.llm:
+                max_iterations = 4  # Allow enough steps for (Tool 1 -> Tool 2 -> Recovery -> Response)
                 while iteration < max_iterations:
                     iteration += 1
-                    context = self.session.get_context_window(max_turns=20)
+                    # 🏎️ LATENCY OPTIMIZATION: Reduce history window for voice turns (5000 char cap effectively)
+                    context = self.session.get_context_window(max_turns=10)
+                    if iteration == 1:
+                        try:
+                            # 🚀 CONTEXT COMPRESSION: Cache the serialized context to avoid
+                            # repeated JSON serialization on every LLM loop iteration.
+                            _ctx_hash = id(context)  # Fast identity check
+                            if getattr(self, "_last_ctx_hash", None) == _ctx_hash:
+                                _ctx_dump = self._last_ctx_dump
+                            else:
+                                _ctx_dump = json.dumps(context, default=str)
+                                self._last_ctx_hash = _ctx_hash
+                                self._last_ctx_dump = _ctx_dump
+                        except (TypeError, ValueError):
+                            _ctx_dump = str(context)
+                        logger.info(
+                            "LLM request profile: system_prompt_chars=%d context_chars=%d",
+                            len(system_prompt),
+                            len(_ctx_dump),
+                        )
+                    _watchdog_user_hint = ""
+                    for _m in reversed(context):
+                        if _m.get("role") == "user":
+                            _c = (_m.get("content") or "").strip()
+                            if _c:
+                                _watchdog_user_hint = _c[:240]
+                                break
                     tts_buffer = ""
+                    # 🛡️ Loop Recovery: If tools were forced off in previous iteration, keep them off
+                    current_tools = self._tools if getattr(self, "_force_no_tools_this_turn", False) is False else []
                     tool_calls_this_turn = []
                     executed_in_this_loop = set() # Track unique calls in this specific iteration
 
                     whole_turn = getattr(self, "_tts_streaming_mode", "chunked") == "whole_turn"
-                    use_pipeline = bool(getattr(self, "_tts_pipeline_llm", False)) and not whole_turn and bool(self.tts)
+                    # 🚀 LOW-LATENCY: Use pipeline mode for chunked streaming to achieve true parallelism
+                    use_pipeline = self._tts_streaming_mode == "chunked" and bool(self.tts) and not whole_turn
 
-                    segment_q: Optional[asyncio.Queue[Optional[str]]] = None
+                    segment_q: asyncio.Queue[Optional[tuple[str, bool]]] = asyncio.Queue(maxsize=3)
                     consumer_task: Optional[asyncio.Task] = None
 
-                    async def _consume_tts_queue() -> None:
-                        assert segment_q is not None
-                        while True:
-                            if self._interrupt_event.is_set():
-                                return
-                            seg = await segment_q.get()
-                            if seg is None:
-                                return
-                            if self._interrupt_event.is_set():
-                                return
-                            await self._emit_tts_audio_stream(seg)
-
                     if use_pipeline:
-                        segment_q = asyncio.Queue()
-                        consumer_task = asyncio.create_task(_consume_tts_queue())
+                        consumer_task = asyncio.create_task(self._tts_queue_consumer(segment_q, turn_start))
+                        self._active_tts_consumer_task = consumer_task
 
                     # First-sentence fast-path: use a smaller char cap (Phase 3)
                     # to achieve <300ms TTFS.
                     _first_segment_done = False
+                    # Ultra-flush fires exactly ONCE per turn — initialize here,
+                    # never reset inside the token loop.
+                    _ultra_flush_done = False
                     _first_seg_cap = int(
                         self._bot_config.get("first_segment_chars")
                         or self._conversation_policy.get("first_segment_chars")
@@ -969,33 +1241,56 @@ class AgenticBrain:
                     # repeated "Ek minute" fillers during multi-step tool chains.
                     _tokens_received = False
                     _watchdog_fired = False
-                    async def _latency_watchdog():
-                        nonlocal _tokens_received, _watchdog_fired, _filler_fired_this_turn
-                        # 🚀 PRODUCTION: 500ms threshold for snappier filler injection
-                        await asyncio.sleep(0.5) 
-                        if not _tokens_received and not self._interrupt_event.is_set() and not _filler_fired_this_turn:
+                    _watchdog_task: Optional[asyncio.Task] = None
+                    _wd_sec = float(self._llm_latency_watchdog_sec)
+                    if iteration == 1 and _wd_sec > 0:
+
+                        async def _latency_watchdog():
+                            nonlocal _tokens_received, _watchdog_fired, _filler_fired_this_turn
+                            try:
+                                await asyncio.sleep(_wd_sec)
+                            except asyncio.CancelledError:
+                                return
+                            if _tokens_received:
+                                return
+                            if not getattr(self.session, "is_active", True):
+                                return
+                            if self._interrupt_event.is_set():
+                                return
+                            if self.state not in (BotState.PROCESSING, BotState.SPEAKING):
+                                return
+                            if _filler_fired_this_turn:
+                                return
                             _watchdog_fired = True
                             _filler_fired_this_turn = True
-                            # Inject filler (Hinglish/English)
-                            # We check both detected_language and preferred_language to be safe.
-                            _current_lang = (self.session.detected_language or self.session.preferred_language or "hi").lower()
-                            filler = "Hmm... let me check." if "hi" not in _current_lang else "Ek minute... main check karta hoon."
-                            
-                            logger.info("🧠 Watchdog: LLM slow (>400ms), injecting filler: '%s' (lang=%s)", filler, _current_lang)
-                            # Sync context (Step 4.2: Prevent LLM Amnesia)
+                            _current_lang = (
+                                self.session.detected_language or self.session.preferred_language or "hi"
+                            ).lower()
+                            filler = self._pick_latency_watchdog_filler(
+                                _current_lang, _watchdog_user_hint
+                            )
+
+                            logger.info(
+                                "🧠 Watchdog: LLM slow (>%dms), injecting filler: '%s' (lang=%s)",
+                                int(_wd_sec * 1000),
+                                filler,
+                                _current_lang,
+                            )
                             self.session.add_turn(TurnRole.ASSISTANT, filler)
                             await self._emit_tts_audio_stream(filler, turbo=True)
 
-                    _watchdog_task = asyncio.create_task(_latency_watchdog())
+                        _watchdog_task = asyncio.create_task(_latency_watchdog())
+                        self._register_latency_watchdog_task(_watchdog_task)
 
                     try:
                         async with async_timeout.timeout(30.0):
                             async for chunk in self.llm.stream_completion(
                                 system_prompt=system_prompt,
                                 messages=context,
-                                tools=self._tools,
+                                tools=current_tools,
                                 temperature=self._bot_config.get("temperature"),
                                 max_tokens=self._bot_config.get("max_tokens"),
+                                ttft_timeout=1.5,  # 🛡️ If primary is slow, switch to Groq before watchdog fires
                             ):
                                 if not _tokens_received:
                                     _tokens_received = True
@@ -1005,8 +1300,12 @@ class AgenticBrain:
                                         self.session.last_llm_latency_ms = (time.time() - turn_start) * 1000
                                         logger.info("📊 LLM TTFT: %.2fms", self.session.last_llm_latency_ms)
 
-                                    if _watchdog_task:
+                                    if _watchdog_task and not _watchdog_task.done():
                                         _watchdog_task.cancel()
+                                        try:
+                                            await _watchdog_task
+                                        except asyncio.CancelledError:
+                                            pass
                                     if _watchdog_fired and self._on_metrics:
                                         # Signal frontend to crossfade (Phase 4)
                                         await self._on_metrics({"type": "audio_handoff"})
@@ -1022,36 +1321,43 @@ class AgenticBrain:
                                     total_turn_usage["completion_tokens"] += c
                                     total_turn_usage["total_tokens"] += t
                                     self.session.cumulative_prompt_tokens += p
-                                    self.session.cumulative_completion_tokens += c
-                                    self.session.cumulative_total_tokens += t
-
+                                
                                 if chunk.content:
-                                    # Anti-hallucination Filter: Remove <function> tags or raw JSON from spoken text
-                                    import re
-                                    clean_content = re.sub(r'<function.*?</function>', '', chunk.content, flags=re.DOTALL)
-                                    # Also strip standalone JSON-like blocks that Llama 3 sometimes leaks
-                                    clean_content = re.sub(r'\{".*?":\s*".*?"\}', '', clean_content)
-                                    
-                                    full_response += chunk.content
-                                    tts_buffer += clean_content
-                                    text_accumulated_whole_turn += clean_content
-
-                                    if whole_turn and self._on_bot_transcript:
-                                        await self._on_bot_transcript(text_accumulated_whole_turn, False)
+                                    text_accumulated_whole_turn += chunk.content
+                                    tts_buffer += chunk.content
 
                                     if not whole_turn and self.tts:
+                                        # 🏁 ULTRA-FLUSH (Phase 3): Fire TTS after first ~2 words (on word boundary)
+                                        # to achieve <300ms time-to-first-speech, beating sentence completion.
+                                        if not _ultra_flush_done and len(tts_buffer) >= self._ultra_first_segment_chars:
+                                            if tts_buffer[-1] in " .!?,;:":  # Word boundary detected
+                                                safe_text, block_meta = await self._guard_tts_segment(tts_buffer)
+                                                if not block_meta and safe_text:
+                                                    if use_pipeline:
+                                                        await segment_q.put((safe_text, True))  # is_first=True
+                                                    else:
+                                                        await self._emit_tts_audio_stream(safe_text)
+                                                    tts_buffer = ""
+                                                    _ultra_flush_done = True
+                                                    _first_segment_done = True
+                                                continue
+
                                         # First segment: use smaller cap for faster first audio
                                         flush_cap = _first_seg_cap if not _first_segment_done else self._max_tts_buffer_chars
                                         if self.turn_detector.is_sentence_boundary(tts_buffer, char_cap=flush_cap, mode=self._tts_flush_mode):
-                                            safe_tts_text = self._guard_tts_segment(tts_buffer)
+                                            safe_tts_text, block_meta = await self._guard_tts_segment(tts_buffer)
+                                            if block_meta:
+                                                logger.warning("🚫 Output Guardrail BLOCKED mid-stream (rule=%s)", block_meta.get("rule_id"))
+                                                self._interrupt_event.set()
+                                                if self._on_audio_interrupt: await self._on_audio_interrupt()
+                                                # Inject custom rejection message from the rule metadata
+                                                _block_msg = block_meta.get("message", "I'm sorry, I cannot provide that information.")
+                                                await self._emit_tts_audio_stream(_block_msg, turbo=True)
+                                                return
+
                                             if safe_tts_text:
-                                                if not _first_segment_done:
-                                                    # Record time from turn_start to first TTS flush
-                                                    self.session.first_audio_latency_ms = (
-                                                        time.time() - turn_start
-                                                    ) * 1000
                                                 if use_pipeline and segment_q is not None:
-                                                    await segment_q.put(safe_tts_text)
+                                                    await segment_q.put((safe_tts_text, not _first_segment_done))
                                                 else:
                                                     await self._emit_tts_audio_stream(safe_tts_text)
                                             if self._on_bot_transcript:
@@ -1067,65 +1373,118 @@ class AgenticBrain:
                         if self._interrupt_event.is_set():
                             pass
                         elif whole_turn and tts_buffer.strip() and self.tts:
-                            safe_final = self._guard_tts_segment(tts_buffer)
-                            if safe_final:
+                            safe_final, block_meta = await self._guard_tts_segment(tts_buffer)
+                            if block_meta:
+                                await self._emit_tts_audio_stream(block_meta.get("message", "I'm sorry, I cannot provide that information."), turbo=True)
+                            elif safe_final:
                                 await self._emit_tts_audio_stream(safe_final)
                         elif not whole_turn and tts_buffer.strip() and self.tts and not self._interrupt_event.is_set():
-                            safe_tail = self._guard_tts_segment(tts_buffer)
-                            if safe_tail:
+                            safe_tail, block_meta = await self._guard_tts_segment(tts_buffer)
+                            if block_meta:
+                                await self._emit_tts_audio_stream(block_meta.get("message", "I'm sorry, I cannot provide that information."), turbo=True)
+                            elif safe_tail:
                                 if use_pipeline and segment_q is not None:
-                                    await segment_q.put(safe_tail)
+                                    await segment_q.put((safe_tail, not _first_segment_done))
                                 else:
                                     await self._emit_tts_audio_stream(safe_tail)
                             if self._on_bot_transcript:
                                 await self._on_bot_transcript(text_accumulated_whole_turn, False)
 
                     finally:
+                        if _watchdog_task is not None and not _watchdog_task.done():
+                            _watchdog_task.cancel()
+                            try:
+                                await _watchdog_task
+                            except asyncio.CancelledError:
+                                pass
                         if use_pipeline and segment_q is not None and consumer_task is not None:
-                            await segment_q.put(None)
+                            await segment_q.put(None)  # Goodbye sentinel
                             if self._interrupt_event.is_set():
-                                # Cancel immediately so mid-TTS consumer stops without sending more audio.
+                                # 📡 IMMEDIATE CANCEL: Don't wait for current segment to finish
                                 consumer_task.cancel()
                             try:
                                 await consumer_task
                             except asyncio.CancelledError:
                                 pass
+                            finally:
+                                if self._active_tts_consumer_task is consumer_task:
+                                    self._active_tts_consumer_task = None
+
+                    # 🛡️ RESILIENCE: Hallucination Recovery
+                    # If LLM didn't use native tool-calls API, but wrote <function> tags in text,
+                    # recover them and trigger the execution pipeline manually.
+                    if not tool_calls_this_turn and full_response:
+                        extracted = self._extract_hallucinated_tool_calls(full_response)
+                        if extracted:
+                            tool_calls_this_turn.extend(extracted)
+                            await self._log_event("[PLAN]", f"Recovered {len(extracted)} hallucinated tool calls from text", "text-yellow-400")
 
                     if self._interrupt_event.is_set():
                         break
 
                     if tool_calls_this_turn:
+                        # 1. 🛡️ Record the Assistant Turn with Tool Calls (Phase 5: Structured Context)
+                        # This turns the history into:
+                        # assistant: {content: "...", tool_calls: [...]}
+                        # tool: {tool_call_id: "...", content: "..."}
+                        # This matches OpenAI/Groq/Gemini expectations perfectly.
+                        self.session.add_turn(
+                            TurnRole.ASSISTANT, 
+                            content=text_accumulated_whole_turn or None,
+                            tool_calls=[tc.model_dump() for tc in tool_calls_this_turn]
+                        )
+                        if self.memory:
+                            await self.memory.add_history(
+                                self.session.session_id,
+                                {
+                                    "role": "assistant",
+                                    "content": text_accumulated_whole_turn or None,
+                                    "tool_calls": [tc.model_dump() for tc in tool_calls_this_turn]
+                                }
+                            )
+
                         # Prevent infinite loops if LLM repeats same tool calls
                         call_sig = "|".join([f"{tc.name}:{tc.arguments}" for tc in tool_calls_this_turn])
                         if getattr(self, "_last_call_sig", None) == call_sig:
-                            logger.warning("🧠 Detect tool-call loop (same calls requested twice). Breaking with recovery.")
-                            # Force a recovery message so the bot doesn't go silent
-                            recovery_text = "I'm sorry, I'm having a little trouble with those details. Could you please repeat your account number and date of birth clearly?"
-                            if (self.session.detected_language or "en") == "hi":
-                                recovery_text = "Maaf kijiye, mujhe details samajhne mein dikkat ho rahi hai. Kya aap ek baar phir se apna account number bata sakte hain?"
-                            
-                            await self._stream_text_to_tts(recovery_text, time.time())
-                            self.session.add_turn(TurnRole.ASSISTANT, recovery_text)
-                            break
+                            logger.warning("🧠 Detect tool-call loop. Forcing dynamic conversation recovery.")
+                            # 1. Strip tools and force a SPEAKING iteration
+                            self._force_no_tools_this_turn = True
+                            self._last_call_sig = None 
+                            # 2. Inject a system hint to the context
+                            self.session.add_turn(TurnRole.SYSTEM, 
+                                "CRITICAL_LOOP: You are repeating tool calls. STOP calling tools and directly ask "
+                                "the user to clarify their information clearly."
+                            )
+                            continue 
                         self._last_call_sig = call_sig
 
+                        # 2. Execute and Record Results
                         tool_results = await self._execute_tools(tool_calls_this_turn)
                         for res in tool_results:
                             self.session.add_turn(
-                                TurnRole.SYSTEM, f"Tool Result [{res.name}]: {res.content}"
+                                TurnRole.TOOL, 
+                                content=res.content,
+                                tool_call_id=res.tool_call_id
                             )
                             if self.memory:
                                 await self.memory.add_history(
                                     self.session.session_id,
                                     {
-                                        "role": "system",
-                                        "content": f"Tool Result [{res.name}]: {res.content}",
+                                        "role": "tool",
+                                        "content": res.content,
+                                        "tool_call_id": res.tool_call_id
                                     },
                                 )
                         if self.session.voice_session_end_requested:
                             break
+                        
+                        # Reset accumulators for next iteration (follow-up response)
+                        # Phase 5: Ensure old text doesn't bleed into the next follow-up LLM prompt
+                        text_accumulated_whole_turn = "" 
+                        tool_calls_this_turn = []
                         continue
                     break
+
 
         except (WebSocketDisconnect, ClientDisconnected) as e:
             logger.info("📡 Client disconnected during turn (session=%s). Stopping generation.", self.session.session_id[:8])
@@ -1134,6 +1493,8 @@ class AgenticBrain:
         except Exception as e:
             await self._handle_fatal_error(e, "llm_generation_failed")
         finally:
+            if not getattr(self.session, "is_active", True):
+                return
             if text_accumulated_whole_turn and not self._interrupt_event.is_set():
                 ttl = cache_ttl_seconds(self._guardrail_policy)
                 await self._finalize_turn(
@@ -1147,6 +1508,59 @@ class AgenticBrain:
             elif not self._interrupt_event.is_set():
                 # Safety fallback to prevent state hanging
                 await self._set_state(BotState.LISTENING)
+
+    async def _tts_queue_consumer(self, q: asyncio.Queue, turn_start: float) -> None:
+        """
+        Consumes TTS segments from the LLM producer queue and streams audio.
+        Runs concurrently with the LLM loop — achieves overlapping synthesis.
+        Uses a 30s timeout per item to prevent hanging if producer crashes
+        without sending the sentinel (None).
+        """
+        try:
+            while True:
+                if self._interrupt_event.is_set():
+                    return
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    logger.warning("TTS consumer: 30s queue timeout — exiting")
+                    return
+                if item is None:
+                    return
+                if self._interrupt_event.is_set():
+                    return
+                text, _is_first = item
+                await self._emit_tts_audio_stream(text)
+        except asyncio.CancelledError:
+            pass
+
+    async def _background_topic_check(self, text: str, topic: str) -> None:
+        """
+        Performs topic relevance check off the critical path.
+        If user goes off-topic, it triggers an interruption to the bot's current turn.
+        """
+        try:
+            is_on_topic = await self._check_topic_relevance(text, topic)
+            if not is_on_topic and self.state in (BotState.PROCESSING, BotState.SPEAKING):
+                logger.warning("🧠 Async Topic Guardrail: User went off-topic mid-reply. Triggering interruption.")
+                self._interrupt_event.set()
+                if self._on_audio_interrupt:
+                    await self._on_audio_interrupt()
+                # 📡 Kill active TTS to unblock immediate refusal
+                if self._active_tts_consumer_task and not self._active_tts_consumer_task.done():
+                    self._active_tts_consumer_task.cancel()
+                if self.tts and hasattr(self.tts, "reset"):
+                    await self.tts.reset()
+                
+                # Immediate refusal — beats the rest of the current turn's LLM generation
+                await asyncio.sleep(0.05) # Yield to allow cancel to propagate
+                await self._generate_and_speak(
+                    f"I am specialized in {topic}. Is there something related to that I can help with?"
+                )
+        except asyncio.CancelledError:
+            pass  # Normal closure when turn completes on-topic
+        except Exception as e:
+            logger.debug("Background topic check suppressed error: %s", e)
 
     async def _generate_and_speak(self, text: str) -> None:
         """Speak fixed text (workflows, rejection messages). Logs assistant turn via _finalize_turn."""
@@ -1172,6 +1586,7 @@ class AgenticBrain:
             self._barge_in_buffer = ""  # Clear any leftover barge-in content from previous turn
 
             turn_start = time.time()
+            self._turn_start_ref = turn_start
             # ⏱️ PHASE 4: STT Latency Measurement
             # Time from Deepgram's final transcript arrival to Brain turn trigger.
             if hasattr(self, "_last_utterance_end_time") and self._last_utterance_end_time > 0:
@@ -1185,7 +1600,9 @@ class AgenticBrain:
                 or 0.5
             )
             _word_count = len(user_text.split())
-            if _word_count <= 2 and self._last_stt_confidence < _min_confidence:
+            _is_common = user_text.lower().strip("?.! ,") in ("hello", "hi", "ok", "okay", "theek hai", "haan", "theek", "yes", "ji")
+            
+            if _word_count <= 2 and self._last_stt_confidence < _min_confidence and not _is_common:
                 logger.info(
                     "Low STT confidence (%.2f < %.2f) on short utterance '%s' — asking for repeat",
                     self._last_stt_confidence, _min_confidence, user_text,
@@ -1196,100 +1613,91 @@ class AgenticBrain:
                 )
                 return
 
-            # ── Step 1: Guardrail check ──
-            await self._log_event("[BRAIN]", f"Screening input (PII Detection & Safety)...", "text-indigo-400")
-            logger.debug("Phase 1: Guardrail check starting... (session=%s)", self.session.session_id[:8])
-            safe_text = user_text
-            pii_detected = False
-            if self.guardrail:
-                # Apply Input Guardrails (PII Detection)
-                try:
-                    logger.debug("Running guardrails on user input...")
-                    # Note: PIIDetector.detect_and_mask is synchronous
-                    guardrail_result = self.guardrail.detect_and_mask(user_text)
-                    pii_detected = bool(guardrail_result.get("detected"))
-                    if pii_detected:
-                        logger.warning(
-                            "PII detected in user input! Masked Version: %s",
-                            guardrail_result.get("masked_text"),
-                        )
-                        # We continue with the masked text for the LLM
-                        safe_text = guardrail_result.get("masked_text", user_text)
-                    # If not detected, safe_text remains user_text
-                except Exception as e:
-                    logger.error("Guardrail check failed: %s", e, exc_info=True)
-                    # Fail open — continue with original text (user_text)
+            self._completed_user_turns += 1
 
-            if self._guardrail_policy.get("reject_on_pii") and self.guardrail and pii_detected:
-                msg = self._guardrail_policy.get(
-                    "pii_reject_message",
-                    "I can't process requests that include that kind of personal information.",
-                )
-                logger.warning("PII reject policy triggered (session=%s)", self.session.session_id[:8])
-                self.session.add_turn(TurnRole.USER, safe_text)
-                if self.memory:
-                    await self.memory.add_history(
-                        self.session.session_id, {"role": "user", "content": safe_text}
-                    )
-                if self.db:
-                    await self.db.log_turn(self.session.session_id, "user", safe_text)
+            # ── Step 1: Universal Guardrail & Rule Engine check ──
+            await self._log_event("[BRAIN]", "Screening input (Safety & Policy)...", "text-indigo-400")
+            safe_text, block_action = await self.rule_engine.apply_policies(user_text, RuleScope.INPUT)
+            
+            if block_action:
+                logger.warning("🚫 Guardrail BLOCK triggered (bot=%s, rule=%s)", self._bot_id, block_action["rule_id"])
+                # Log the attempted turn for analytics
+                self.session.add_turn(TurnRole.USER, user_text)
+                if self.db: await self.db.log_turn(self.session.session_id, "user", user_text)
                 self._turn_count += 1
-                await self._generate_and_speak(msg)
+                
+                # Speak the rejection message and reset state
+                await self._set_state(BotState.LISTENING)
+                await self._generate_and_speak(block_action["message"])
                 return
+
+            if safe_text != user_text:
+                logger.info("🛡️ Input Sanitized (Guardrail MASK applied)")
+
+            # Use safe_text for all subsequent checks
+            current_text = safe_text
 
             # ── Step 1.4: Injection Detector ──
             if self._injection_detector:
-                inj = self._injection_detector.check(safe_text)
+                inj = self._injection_detector.check(current_text)
                 if inj["detected"] and self._guardrail_policy.get("injection_action", "log") == "block":
                     msg = self._guardrail_policy.get(
                         "injection_block_message",
                         "I can't process that request.",
                     )
                     logger.warning("Injection block (session=%s)", self.session.session_id[:8])
-                    self.session.add_turn(TurnRole.USER, safe_text)
+                    self.session.add_turn(TurnRole.USER, current_text)
                     if self.memory:
                         await self.memory.add_history(
-                            self.session.session_id, {"role": "user", "content": safe_text}
+                            self.session.session_id, {"role": "user", "content": current_text}
                         )
                     if self.db:
-                        await self.db.log_turn(self.session.session_id, "user", safe_text)
+                        await self.db.log_turn(self.session.session_id, "user", current_text)
                     self._turn_count += 1
                     await self._generate_and_speak(msg)
                     return
             
             # ── Step 1.5: Topic Guardrail Check ──
+            _topic_check_task: Optional[asyncio.Task] = None
             if self._topic_restriction and self._refuse_off_topic:
-                await self._log_event("[BRAIN]", f"Verifying topic relevance for '{self._topic_restriction}'...", "text-indigo-400")
-                is_on_topic = await self._check_topic_relevance(safe_text, self._topic_restriction)
-                if not is_on_topic:
-                    msg = f"I am specialized in {self._topic_restriction}. Is there something related to that I can help with?"
-                    logger.warning("Topic guardrail triggered (session=%s)", self.session.session_id[:8])
-                    self.session.add_turn(TurnRole.USER, safe_text)
-                    if self.memory:
-                        await self.memory.add_history(self.session.session_id, {"role": "user", "content": safe_text})
-                    if self.db:
-                        await self.db.log_turn(self.session.session_id, "user", safe_text)
-                    self._turn_count += 1
-                    await self._generate_and_speak(msg)
-                    return
+                if bool(self._conversation_policy.get("topic_check_async", True)):
+                    # 🚀 LOW-LATENCY: Run topic check in parallel with LLM prep
+                    _topic_check_task = asyncio.create_task(
+                        self._background_topic_check(current_text, self._topic_restriction)
+                    )
+                else:
+                    # Legacy blocking path (opt-in via topic_check_async: false)
+                    await self._log_event("[BRAIN]", f"Verifying topic relevance for '{self._topic_restriction}'...", "text-indigo-400")
+                    is_on_topic = await self._check_topic_relevance(current_text, self._topic_restriction)
+                    if not is_on_topic:
+                        msg = f"I am specialized in {self._topic_restriction}. Is there something related to that I can help with?"
+                        logger.warning("Topic guardrail triggered (session=%s)", self.session.session_id[:8])
+                        self.session.add_turn(TurnRole.USER, current_text)
+                        if self.memory:
+                            await self.memory.add_history(self.session.session_id, {"role": "user", "content": current_text})
+                        if self.db:
+                            await self.db.log_turn(self.session.session_id, "user", current_text)
+                        self._turn_count += 1
+                        await self._generate_and_speak(msg)
+                        return
             # ── Step 2: Update conversation history & Workflow Analysis ──
-            _safe_text = safe_text
-            self._last_processed_text = _safe_text
+            self._last_processed_text = current_text
+            self._last_processed_time = time.time()
             self._utterance_buffer = ""
             self._partial_buffer = ""
             
-            self.session.add_turn(TurnRole.USER, _safe_text)
+            self.session.add_turn(TurnRole.USER, current_text)
             if self.memory:
-                await self.memory.add_history(self.session.session_id, {"role": "user", "content": safe_text})
+                await self.memory.add_history(self.session.session_id, {"role": "user", "content": current_text})
             if self.db:
-                await self.db.log_turn(self.session.session_id, "user", safe_text)
+                await self.db.log_turn(self.session.session_id, "user", current_text)
             self._turn_count += 1
-            self._update_task_phase_from_user_text(safe_text)
+            self._update_task_phase_from_user_text(current_text)
 
             # Parallel background tasks
-            asyncio.create_task(self._analyze_and_emit_sentiment(safe_text))
+            asyncio.create_task(self._analyze_and_emit_sentiment(current_text))
             if self.session.user_id or self.session.session_id:
-                asyncio.create_task(self._extract_and_store_entities(safe_text))
+                asyncio.create_task(self._extract_and_store_entities(current_text))
 
             # ── Step 2.1: Dynamic Workflow Execution ──
             if self.workflow_engine:
@@ -1306,9 +1714,11 @@ class AgenticBrain:
 
             # ── Phase 2: Parallel Pre-processing (RAG + Cache) ──
             logger.info("Phase 2: Parallel pre-processing (RAG + Cache)...")
-            
+
+            system_prompt_snapshot = self._build_system_prompt()
+
             async def _get_rag():
-                if hasattr(self, "_vector_memory") and self._vector_memory:
+                if self._enable_rag and hasattr(self, "_vector_memory") and self._vector_memory:
                     try:
                         return await self._vector_memory.retrieve_context(
                             query=safe_text, user_id=self.session.user_id, top_k=3
@@ -1318,16 +1728,17 @@ class AgenticBrain:
                 return None
 
             async def _get_cache():
-                import hashlib
-                system_prompt = self._build_system_prompt()
                 context = self.session.get_context_window(max_turns=10)
                 ctx_serialized = json.dumps(context, sort_keys=True, default=str)
-                cache_key = hashlib.md5(f"{system_prompt}:{ctx_serialized}:{safe_text}".encode()).hexdigest()
+                cache_key_local = hashlib.md5(
+                    f"{system_prompt_snapshot}:{ctx_serialized}:{safe_text}".encode()
+                ).hexdigest()
                 if self.memory:
                     try:
-                        return cache_key, await self.memory.get_cache(cache_key)
-                    except Exception: pass
-                return cache_key, None
+                        return cache_key_local, await self.memory.get_cache(cache_key_local)
+                    except Exception:
+                        pass
+                return cache_key_local, None
 
             rag_task = asyncio.create_task(_get_rag())
             cache_task = asyncio.create_task(_get_cache())
@@ -1348,7 +1759,7 @@ class AgenticBrain:
                     self.session.add_turn(TurnRole.SYSTEM, f"[Relevant past context]\n{rag_snippets}")
 
             # ── Step 2.6: QA cache lookup ──
-            if self._vector_memory and getattr(self._vector_memory, "_available", False):
+            if self._enable_rag and self._vector_memory and getattr(self._vector_memory, "_available", False):
                 try:
                     _qa_hit = await self._vector_memory.lookup_qa(bot_id=str(self._bot_id), question=safe_text)
                     if _qa_hit:
@@ -1360,9 +1771,17 @@ class AgenticBrain:
 
             # ── Step 3: Run the LLM main turn ──
             logger.info("📡 Starting Agentic Turn (session=%s)...", self.session.session_id[:8])
-            await self._run_llm_turn(cache_key=cache_key, _qa_question=safe_text)
+            await self._run_llm_turn(
+                cache_key=cache_key,
+                _qa_question=safe_text,
+                _system_prompt_override=system_prompt_snapshot,
+            )
         except Exception as e:
             await self._handle_fatal_error(e, "user_turn_processing_failed")
+        finally:
+            # 🛡️ CLEANUP: Always cancel the off-critical-path check if it's still running
+            if _topic_check_task and not _topic_check_task.done():
+                _topic_check_task.cancel()
 
     async def _analyze_and_emit_sentiment(self, text: str) -> None:
         """
@@ -1370,10 +1789,11 @@ class AgenticBrain:
 
         Runs as a background task — must NOT block the voice pipeline.
 
-        Resolution order (fastest first, no LLM unless truly needed):
+        Resolution order (fastest first, no main LLM):
           1. Keyword regex — zero cost, handles the majority of clear-cut cases
-          2. Workflow engine's _classify_sentiment (uses cached Groq, not main LLM)
-          3. Main LLM fallback (only when workflow_engine is unavailable)
+          2. Workflow engine's _classify_sentiment (uses classifier LLM, not main voice LLM)
+          3. Small Groq sidecar (llama-3.1-8b-instant) when no workflow engine and GROQ_API_KEY is set
+          4. Neutral if no classifier is available
         """
         if not text.strip():
             return
@@ -1394,26 +1814,9 @@ class AgenticBrain:
                 # Stage 2 — cheap classifier via WorkflowEngine (Groq, not main LLM)
                 if self.workflow_engine:
                     label = await self.workflow_engine._classify_sentiment(text)
-                elif self.llm:
-                    # Stage 3 — last-resort: main LLM (only if no workflow engine)
-                    prompt = (
-                        f'Classify the sentiment of this user utterance with ONE word: '
-                        f'positive, neutral, or negative.\n\nUtterance: "{text[:200]}"'
-                    )
-                    chunks: list[str] = []
-                    async for chunk in self.llm.stream_completion(
-                        system_prompt="You are a sentiment classifier. Reply only: positive, neutral, or negative.",
-                        messages=[{"role": "user", "content": prompt}],
-                    ):
-                        chunks.append(chunk.content or "")
-                    raw = "".join(chunks).strip().lower()
-                    label = "neutral"
-                    if "positive" in raw:
-                        label = "positive"
-                    elif "negative" in raw:
-                        label = "negative"
                 else:
-                    label = "neutral"
+                    # Small Groq sidecar — never contend with the main voice LLM quota.
+                    label = await self._sentiment_classify_with_sidecar(text)
 
             self._sentiment_history.append(label)
             if len(self._sentiment_history) > 10:
@@ -1543,11 +1946,11 @@ class AgenticBrain:
                 "text-blue-400",
             )
 
-    def _guard_tts_segment(self, raw_buffer: str) -> str:
-        """Strip and apply output guard to a TTS phrase."""
+    async def _guard_tts_segment(self, raw_buffer: str) -> tuple[str, Optional[dict]]:
+        """Strip and apply output guard to a TTS phrase. Returns (Masked Text, Block Metadata)"""
         t = (raw_buffer or "").strip()
         if not t:
-            return ""
+            return "", None
             
         # [GEMINI-GRADE] Secondary Tool/JSON Stripping
         # This catches tags that were split across LLM chunks or leaked into the buffer.
@@ -1559,11 +1962,11 @@ class AgenticBrain:
         t = t.strip()
         
         if not t:
-            return ""
+            return "", None
 
-        if self.output_guard:
-            return str(self.output_guard.validate_and_mask(t).get("masked_text") or t).strip()
-        return t
+        # 🛡️ Universal Rule Engine Output Policy
+        sanitized, block = await self.rule_engine.apply_policies(t, RuleScope.OUTPUT)
+        return sanitized, block
 
     async def _emit_tts_audio_stream(self, text: str, turbo: bool = False) -> None:
         """Stream one TTS synthesis to the client; one short log per segment."""
@@ -1600,7 +2003,28 @@ class AgenticBrain:
                 break
             
             if _first_chunk:
-                # Track time-to-first-sound for metrics
+                # 🥇 TRUE TTFS MEASUREMENT (Phase 3)
+                # Compute end-to-end latency from turn start (STT final arrival) 
+                # to first byte of audio output reaching the network buffer.
+                if self._turn_start_ref > 0:
+                    true_ttfs = (time.time() - self._turn_start_ref) * 1000
+                    self.session.first_audio_latency_ms = true_ttfs
+                    _provider_ttfa = (time.time() - _tts_t0) * 1000
+                    
+                    logger.info("⚡ TTFS %.0fms | TTS Provider %.0fms | LLM TTFT %.0fms", 
+                                true_ttfs, _provider_ttfa, self.session.last_llm_latency_ms)
+                    
+                    if self._on_metrics:
+                        # Fire non-blocking metrics event to avoid stalling the audio stream
+                        asyncio.create_task(self._on_metrics({
+                            "type": "ttfs",
+                            "ttfs_ms": round(true_ttfs, 0),
+                            "tts_provider_ms": round(_provider_ttfa, 0),
+                            "llm_ttft_ms": round(self.session.last_llm_latency_ms, 0),
+                        }))
+                    # Reset so subsequent chunks/segments in THIS turn don't re-trigger metrics
+                    self._turn_start_ref = 0
+                
                 self.session.last_tts_latency_ms = (time.time() - _tts_t0) * 1000
                 _first_chunk = False
                 
@@ -1631,37 +2055,39 @@ class AgenticBrain:
         _qa_question: Optional[str] = None,
     ) -> None:
         """Common logic to end a turn: history update, tracking, and cache save."""
-        self.session.add_turn(TurnRole.ASSISTANT, full_response)
+        # Anti-hallucination cleanup: Strip persistent technical artifacts before saving to history.
+        clean_response = self._strip_technical_artifacts(full_response)
+        
+        self.session.add_turn(TurnRole.ASSISTANT, clean_response)
 
         if self.memory:
-            await self.memory.add_history(self.session.session_id, {"role": "assistant", "content": full_response})
+            await self.memory.add_history(self.session.session_id, {"role": "assistant", "content": clean_response})
             if cache_key:
-                await self.memory.set_cache(cache_key, full_response, ttl=cache_ttl_seconds)
+                await self.memory.set_cache(cache_key, clean_response, ttl=cache_ttl_seconds)
 
-        # Store in semantic QA cache for cross-session reuse.
-        # Only cache non-trivial answers (> 10 words) to avoid caching greetings/fillers.
-        if (
-            _qa_question
-            and full_response
-            and len(full_response.split()) > 10
-            and self._vector_memory
-            and getattr(self._vector_memory, "_available", False)
-            and self._bot_id
-        ):
-            try:
-                asyncio.create_task(
-                    self._vector_memory.cache_qa(
-                        bot_id=str(self._bot_id),
-                        question=_qa_question,
-                        answer=full_response,
-                    )
-                )
-            except Exception:
-                pass
+        # Store in semantic QA cache (Disabled per user request)
+        # if (
+        #     _qa_question
+        #     and full_response
+        #     and len(full_response.split()) > 10
+        #     and self._vector_memory
+        #     and getattr(self._vector_memory, "_available", False)
+        #     and self._bot_id
+        # ):
+        #     try:
+        #         asyncio.create_task(
+        #             self._vector_memory.cache_qa(
+        #                 bot_id=str(self._bot_id),
+        #                 question=_qa_question,
+        #                 answer=full_response,
+        #             )
+        #         )
+        #     except Exception:
+        #         pass
 
         # Log to SQLite long-term memory
         if self.db:
-            await self.db.log_turn(self.session.session_id, "assistant", full_response)
+            await self.db.log_turn(self.session.session_id, "assistant", clean_response)
 
         # ── Track total latency ──
         total_latency = (time.time() - turn_start) * 1000
@@ -1721,7 +2147,7 @@ class AgenticBrain:
         self._turn_start_time = 0.0
 
         if self._on_bot_transcript:
-            await self._on_bot_transcript(full_response, True)
+            await self._on_bot_transcript(clean_response, True)
 
         if not self._interrupt_event.is_set():
             if self.session.voice_session_end_requested and self._on_voice_session_end:
@@ -1739,6 +2165,59 @@ class AgenticBrain:
             await self._set_state(BotState.LISTENING)
 
     # ─── Interruption Handling ───────────────────────────────────────────
+
+    def _merge_barge_in_utterance(self) -> str:
+        """Combine finalized barge-in text with the latest partial (avoids dropping in-progress speech)."""
+        b = (self._barge_in_buffer or "").strip()
+        p = (self._partial_buffer or "").strip()
+        if not b:
+            return p
+        if not p:
+            return b
+        bl, pl = b.lower(), p.lower()
+        if pl in bl:
+            return b
+        if bl in pl:
+            return p
+        return f"{b} {p}".strip()
+
+    def _get_sentiment_sidecar_llm(self) -> Any:
+        if self._sentiment_sidecar_llm_loaded:
+            return self._sentiment_sidecar_llm
+        self._sentiment_sidecar_llm_loaded = True
+        if settings.groq_api_key:
+            from voicebot.services.llm.groq_provider import GroqStreamingProvider
+
+            self._sentiment_sidecar_llm = GroqStreamingProvider(
+                model=settings.sentiment_classifier_model,
+            )
+        else:
+            self._sentiment_sidecar_llm = None
+        return self._sentiment_sidecar_llm
+
+    async def _sentiment_classify_with_sidecar(self, text: str) -> str:
+        prov = self._get_sentiment_sidecar_llm()
+        if not prov:
+            return "neutral"
+        prompt = (
+            f'Classify the sentiment of this user utterance with ONE word: '
+            f'positive, neutral, or negative.\n\nUtterance: "{text[:200]}"'
+        )
+        chunks: list[str] = []
+        try:
+            async for chunk in prov.stream_completion(
+                system_prompt="You are a sentiment classifier. Reply only: positive, neutral, or negative.",
+                messages=[{"role": "user", "content": prompt}],
+            ):
+                chunks.append(chunk.content or "")
+        except Exception:
+            return "neutral"
+        raw = "".join(chunks).strip().lower()
+        if "positive" in raw:
+            return "positive"
+        if "negative" in raw:
+            return "negative"
+        return "neutral"
 
     async def handle_interruption(self) -> None:
         """
@@ -1760,7 +2239,16 @@ class AgenticBrain:
         # Signal all streaming loops to stop immediately
         self._interrupt_event.set()
 
+        # Cancel the TTS consumer task immediately — do not wait for the next
+        # chunk boundary inside _emit_tts_audio_stream.  This is the key change
+        # that reduces TTS stop latency from ~200-400ms to <20ms.
+        if self._active_tts_consumer_task and not self._active_tts_consumer_task.done():
+            self._active_tts_consumer_task.cancel()
+
         # Notify the frontend to flush its audio queue right away.
+        # if self._on_bot_transcript:
+        #     await self._on_bot_transcript("Interruption", is_final=True)
+                        
         if self._on_audio_interrupt:
             await self._on_audio_interrupt()
 
@@ -1772,7 +2260,8 @@ class AgenticBrain:
         # Restore any user speech captured during the barge-in debounce window.
         # Without this, short phrases ("stop", "wait", "ok") spoken while the bot
         # was talking are lost and the bot freezes in LISTENING state with no turn to fire.
-        self._utterance_buffer = self._barge_in_buffer
+        # Merge finals (_barge_in_buffer) with the latest partial so mid-utterance text is not dropped.
+        self._utterance_buffer = self._merge_barge_in_utterance()
         self._partial_buffer = ""
         self._barge_in_buffer = ""
 
@@ -1811,27 +2300,43 @@ class AgenticBrain:
     # ─── Tools & Functions ───────────────────────────────────────────────
 
     def _register_tools(self) -> List[ToolDefinition]:
-        """Define available tools. Only register tools enabled for this bot."""
-        enabled = set(self._bot_config.get("tools_enabled") or [
-            "search_knowledge", "book_appointment", "get_appointments",
-            "remember_user_fact", "get_weather"
-        ])
-        scopes = self._data_access_policy.get("enabled_scopes")
-        if scopes and isinstance(scopes, list) and len(scopes) > 0:
-            allowed: set[str] = set()
+        """Define available tools entirely driven by Data Access Scopes."""
+        # 1. Base Core Infrastructure Tools (Always On)
+        enabled = {"end_voice_session"}
+        
+        # 2. Add Scope-Driven Business Tools
+        scopes = self._data_access_policy.get("enabled_scopes", [])
+        has_scopes = bool(scopes and isinstance(scopes, list))
+        if has_scopes:
             for s in scopes:
                 key = str(s).lower()
                 for n in _SCOPE_TOOL_NAMES.get(key, ()):
-                    allowed.add(n)
-            if allowed:
-                enabled = enabled & allowed
+                    enabled.add(n)
+
+        # 3. Optional explicit tool list: when scopes are set, intersect so tools_enabled
+        # cannot grant capabilities outside enabled_scopes (e.g. weather without "weather").
+        manual_tools = self._bot_config.get("tools_enabled")
+        if manual_tools and isinstance(manual_tools, list):
+            manual_set = {str(x) for x in manual_tools}
+            if has_scopes:
+                enabled = (enabled & manual_set) | {"end_voice_session"}
+            else:
+                enabled.update(manual_set)
+            
+        # Fallback default if absolutely nothing was configured
+        if len(enabled) <= 1:
+            enabled.update([
+                "search_knowledge", "book_appointment", "get_appointments", 
+                "remember_user_fact", "get_weather"
+            ])
 
         registered_tools = []
         for name in enabled:
             tool_cls = ToolRegistry.get_tool_class(name)
             if tool_cls:
-                # We instantiate just to get the definition for LLM config
+                # We instantiate to get the definition for LLM config AND safety instructions
                 tool = tool_cls()
+                self._tool_instances[tool.name] = tool
                 registered_tools.append(ToolDefinition(
                     name=tool.name,
                     description=tool.description,
@@ -1842,7 +2347,20 @@ class AgenticBrain:
     async def _execute_tools(self, calls: List[ToolCall]) -> List[ToolResult]:
         """Execute tool calls — backed by real SQLite DB where applicable."""
         results = []
+        # 🛡️ Global Tool Argument Normalization
+        ARG_MAPPINGS = {
+            "date_of_birth": "dob",
+            "last_4_phone_digits": "phone_last_4",
+            "account_id": "account_number",
+            "customer_id": "account_number" 
+        }
         for call in calls:
+            # Normalize arguments before execution
+            if call.arguments:
+                for hallucinated, official in ARG_MAPPINGS.items():
+                    if hallucinated in call.arguments:
+                        call.arguments[official] = call.arguments.pop(hallucinated)
+
             try:
                 logger.info("⚙️  Executing tool: %s with args: %s", call.name, call.arguments)
                 if self._on_tool_call:
@@ -1850,6 +2368,33 @@ class AgenticBrain:
 
                 args = call.arguments
                 
+                # 🛡️ Global Hallucination Interceptor (Generic Dummy Value Check)
+                import re
+                DUMMY_PATTERNS = [
+                    r"^1122$", r"^1234$", r"^0000$", r"dummy", r"test", r"placeholder",
+                    r"DD-MM-YYYY", r"01-01-1990", r"lorem", r"ipsum",
+                    r"account[_ -]number", r"date[_ -]of[_ -]birth", r"phone[_ -]last[_ -]4",
+                    r"last_4_digits", r"awaiting_", r"unknown", r"customer_", r"user_"
+                ]
+                _is_hallucinated = False
+                for key, val in args.items():
+                    val_str = str(val).strip()
+                    if any(re.search(p, val_str, re.IGNORECASE) for p in DUMMY_PATTERNS):
+                        logger.warning("🚫 Blocking hallucinated tool call: %s with dummy arg: %s=%s", call.name, key, val)
+                        results.append(ToolResult(
+                            tool_call_id=call.id,
+                            name=call.name,
+                            content=(
+                                f"TOOL_ERROR: You provided a placeholder/dummy value '{val}' for '{key}'. "
+                                "You MUST NOT guess or use dummy data. Ask the user for the real information instead."
+                            )
+                        ))
+                        _is_hallucinated = True
+                        break # Break inner loop
+                
+                if _is_hallucinated:
+                    continue # Skip execution for this specific tool call
+
                 # Dynamic Tool Loading from Registry
                 tool_instance = ToolRegistry.instantiate_tool(
                     call.name,
@@ -1963,24 +2508,268 @@ class AgenticBrain:
 
         return status
 
-    def _build_system_prompt(self) -> str:
+    def _choose_latency_filler_no_repeat(self, pool: tuple[str, ...]) -> str:
+        choices = list(pool)
+        if not choices:
+            return "One moment."
+        if len(choices) == 1:
+            self._last_latency_filler = choices[0]
+            return choices[0]
+        last = self._last_latency_filler
+        for _ in range(10):
+            pick = random.choice(choices)
+            if pick != last:
+                self._last_latency_filler = pick
+                return pick
+        pick = random.choice(choices)
+        self._last_latency_filler = pick
+        return pick
+
+    def _pick_latency_watchdog_filler(self, lang: str, user_text: str) -> str:
         """
-        Build the system prompt for the LLM.
-        Uses bot config from DB if available, otherwise defaults.
+        Short thinking-bridge line when the LLM is slow. No extra LLM call.
+
+        Override: conversation_policy.latency_fillers or bot_config.latency_fillers
+        as a list of strings, or dict with keys en / hi / default.
         """
-        lang = self.session.detected_language or "en"
-        lang_instruction = ""
-        if lang != "en":
-            lang_instruction = (
-                f"\nIMPORTANT: The user is speaking in '{lang}'. "
-                f"You MUST respond in the SAME language ('{lang}'). "
-                f"Do NOT switch to English unless the user speaks English. "
-                f"Never include technical tags, JSON, or <function> tags in your spoken response. "
-                f"\nTOOL SAFETY: Never call a tool (like 'verify_customer') with placeholder data like 'DD-MM-YYYY' or '1122'. "
-                f"If the user hasn't provided the actual account number or DOB yet, ask them for it explicitly: 'Kripya apna account number batayein?' "
-                f"Do NOT invent or guess data bits."
+        custom = self._conversation_policy.get("latency_fillers")
+        if custom is None:
+            custom = self._bot_config.get("latency_fillers")
+        if isinstance(custom, list):
+            opts = [str(x).strip() for x in custom if str(x).strip()]
+            if opts:
+                return self._choose_latency_filler_no_repeat(tuple(opts))
+        if isinstance(custom, dict):
+            lang_l = (lang or "en").lower()
+            key = "hi" if ("hi" in lang_l or lang_l.startswith("hi")) else "en"
+            raw = custom.get(key) or custom.get("default") or []
+            if isinstance(raw, list):
+                opts = [str(x).strip() for x in raw if str(x).strip()]
+                if opts:
+                    return self._choose_latency_filler_no_repeat(tuple(opts))
+
+        lang_l = (lang or "en").lower()
+        ut = (user_text or "").strip()
+        ut_lower = ut.lower()
+        is_hi_family = (
+            "hi" in lang_l
+            or lang_l.startswith("hi")
+            or self.is_hindi(ut)
+        )
+        has_question = "?" in ut or any(
+            w in ut_lower
+            for w in (
+                "what ",
+                "how ",
+                "when ",
+                "why ",
+                "where ",
+                "which ",
+                "kya ",
+                "kaise ",
+                "kab ",
+                "kahan ",
+                "kitna ",
+            )
+        )
+        words = ut_lower.split()
+        is_ack = bool(ut) and len(words) <= 4 and any(
+            ut_lower == w
+            or ut_lower.startswith(w + " ")
+            or ut_lower.endswith(" " + w)
+            or (len(words) == 1 and words[0].startswith(w))
+            for w in (
+                "yes",
+                "yeah",
+                "yep",
+                "ok",
+                "okay",
+                "sure",
+                "ha",
+                "haan",
+                "han",
+                "ji",
+                "theek",
+                "thik",
+                "sahi",
+            )
+        )
+        is_frustration = any(
+            w in ut_lower
+            for w in (
+                "sorry",
+                "problem",
+                "issue",
+                "frustrat",
+                "angry",
+                "wait",
+                "slow",
+                "samajh",
+                "galat",
+                "galti",
+                "help",
+                "madad",
+            )
+        )
+
+        if is_hi_family:
+            if is_frustration:
+                pool = _LATENCY_FILLERS_HI_FRUSTRATION
+            elif has_question:
+                pool = _LATENCY_FILLERS_HI_QUESTION
+            elif is_ack:
+                pool = _LATENCY_FILLERS_HI_ACK
+            else:
+                pool = _LATENCY_FILLERS_HI_DEFAULT
+        else:
+            if is_frustration:
+                pool = _LATENCY_FILLERS_EN_FRUSTRATION
+            elif has_question:
+                pool = _LATENCY_FILLERS_EN_QUESTION
+            elif is_ack:
+                pool = _LATENCY_FILLERS_EN_ACK
+            else:
+                pool = _LATENCY_FILLERS_EN_DEFAULT
+
+        return self._choose_latency_filler_no_repeat(pool)
+
+    def _register_latency_watchdog_task(self, task: asyncio.Task) -> None:
+        self._pending_latency_watchdogs.append(task)
+
+        def _drop(t: asyncio.Task) -> None:
+            try:
+                self._pending_latency_watchdogs.remove(t)
+            except ValueError:
+                pass
+
+        task.add_done_callback(_drop)
+
+    def _cancel_all_latency_watchdogs(self) -> None:
+        for t in list(self._pending_latency_watchdogs):
+            if not t.done():
+                t.cancel()
+        self._pending_latency_watchdogs.clear()
+
+    def _lang_instruction_block(self, lang: str) -> str:
+        if lang == "en":
+            return ""
+        style = str(
+            self._conversation_policy.get("language_style")
+            or self._bot_config.get("language_style")
+            or ""
+        ).lower().strip()
+        _tail = (
+            "\nDo NOT invent or guess data bits."
+            "\n\n[CRITICAL VERIFICATION RULES]"
+            "\n- You MUST NOT call 'verify_customer' with placeholder values like 'account_number', 'date_of_birth', or 'last_4_digits'."
+            "\n- You MUST collect ALL three pieces of information (16-digit account, DOB in DD-MM-YYYY, and last 4 phone digits) BEFORE calling the verification tool."
+            "\n- If any detail is missing, ask the user for it instead of calling the tool."
+            "\n- NEVER guess or auto-complete an account number. If a user says '1212', do NOT assume it starts with '1234 5678 9012'."
+        )
+        if style == "hinglish":
+            return (
+                "\nIMPORTANT: Speak in natural Hinglish — mix Hindi and English the way many Indian "
+                "customers do on phone calls (Roman Hindi + English product terms is fine). "
+                "Mirror the user's code-switching: more English if they lean English; more Hindi if they lean Hindi. "
+                "Do not force stiff formal textbook Hindi when the user sounds casual or mixed."
+                + _tail
+            )
+        return (
+            f"\nIMPORTANT: The user is speaking in '{lang}'. "
+            f"You MUST respond in the SAME language ('{lang}'). "
+            f"Do NOT switch to English unless the user speaks English. "
+            + _tail
+        )
+
+    def _static_system_prompt_cache_key(self) -> str:
+        spec_block = render_agent_task_spec_appendix(self._agent_task_spec)
+        db_prompt = (self._bot_config.get("system_prompt") or "").strip()
+        if db_prompt:
+            raw = f"db|{db_prompt}|{spec_block}"
+            return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:40]
+        tool_bits: list[str] = []
+        if self._tool_instances:
+            for tool_name in sorted(self._tool_instances.keys()):
+                inst = self._tool_instances[tool_name]
+                if hasattr(inst, "safety_instructions") and inst.safety_instructions:
+                    tool_bits.append(f"{tool_name}:{inst.safety_instructions}")
+        custom_rules = self._bot_config.get("guardrails") or self._bot_config.get("negative_constraints") or ""
+        base = f"default:{self._bot_config.get('name', '')}"
+        raw = f"{base}|{custom_rules}|{spec_block}|{'||'.join(tool_bits)}"
+        return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:40]
+
+    def _compute_static_system_prompt_fragment(self, lang: str) -> str:
+        lang_instruction = self._lang_instruction_block(lang)
+        spec_block = render_agent_task_spec_appendix(self._agent_task_spec)
+
+        tool_safety_block = ""
+        if self._tool_instances:
+            instructions = []
+            for tool_name, tool_instance in self._tool_instances.items():
+                if hasattr(tool_instance, "safety_instructions") and tool_instance.safety_instructions:
+                    instructions.append(f"- {tool_name.upper()}: {tool_instance.safety_instructions}")
+            if instructions:
+                tool_safety_block = "\n\n[CAPABILITY SAFETY RULES]\n" + "\n".join(instructions)
+
+        bot_guardrails = ""
+        custom_rules = self._bot_config.get("guardrails") or self._bot_config.get("negative_constraints")
+        if custom_rules:
+            bot_guardrails = f"\n\n[USER-DEFINED GUARDRAILS]\n{custom_rules}"
+
+        dynamic_safety = f"{tool_safety_block}{bot_guardrails}"
+
+        tool_instruction_block = ""
+        if self._tool_instances:
+            tool_instruction_block = (
+                "\n\n[SYSTEM: TOOL CALLING RULES]\n"
+                "If you need to call a tool, call it first in your response. "
+                "Base your tool parameters only on information the user provided or retrieved in history. "
+                "Do not announce 'I will call the tool' first — just call it."
             )
 
+        # Build full prompt
+        if self._bot_config.get("system_prompt"):
+            return (
+                self._bot_config["system_prompt"] 
+                + lang_instruction 
+                + spec_block 
+                + dynamic_safety 
+                + tool_instruction_block
+            )
+
+        bot_name = self._bot_config.get("name", "Assistant")
+        return (
+            f"You are {bot_name}, a helpful, friendly AI voice assistant. "
+            "You are having a real-time voice conversation with a human.\n\n"
+            "Guidelines:\n"
+            "- Keep responses concise and conversational (1-3 sentences)\n"
+            "- Speak naturally — use contractions, filler words sparingly\n"
+            "- Emotion & Tone: Dynamically adapt your tone based on context. "
+            "If the user is frustrated, be empathetic. If they are happy, be enthusiastic. "
+            "You may use descriptive emotion cues like [excited], [thoughtful], or [concerned] at the start of your turn to help the voice engine adapt.\n"
+            "- Never use markdown, bullet points, or formatting-only tags\n"
+            "\n[SYSTEM NOTE: LATENCY FILLERS]\n"
+            "You may occasionally see '[system_filler]' tokens in history. IGNORE them. Do NOT repeat or acknowledge them.\n"
+            "- Never mention that you are an AI unless directly asked\n"
+            "- If you don't understand, ask for clarification\n"
+            "- Be warm, empathetic, and professional\n"
+            "- Never reveal sensitive information (passwords, OTPs, card numbers)\n"
+            f"{lang_instruction}{spec_block}{dynamic_safety}{tool_instruction_block}"
+        )
+
+
+    def _get_static_system_prompt_fragment(self, lang: str) -> str:
+        _sty = str(
+            self._conversation_policy.get("language_style")
+            or self._bot_config.get("language_style")
+            or ""
+        ).lower().strip()
+        ck = f"{self._static_system_prompt_cache_key()}:{lang}:{_sty}"
+        if ck not in self._llm_static_prompt_cache:
+            self._llm_static_prompt_cache[ck] = self._compute_static_system_prompt_fragment(lang)
+        return self._llm_static_prompt_cache[ck]
+
+    def _build_dynamic_system_suffix(self) -> str:
         extra = ""
         if getattr(self.session, "interrupt_prompt_pending", False):
             extra = "\n\n[Context: The user interrupted your previous spoken reply. Acknowledge briefly and respond to what they say next.]"
@@ -1991,10 +2780,8 @@ class AgenticBrain:
                 "use the search_knowledge tool and base answers on retrieved text; do not invent details."
             )
 
-        spec_block = render_agent_task_spec_appendix(self._agent_task_spec)
         phase_hint = self._format_task_phase_hint()
 
-        # Cross-session memory block: injected when a returning user_id is known
         memory_block = ""
         if self._cross_session_context:
             memory_block = (
@@ -2003,36 +2790,15 @@ class AgenticBrain:
                 + "\n[END CALLER MEMORY]"
             )
 
-        # Use DB-configured system prompt if available
-        if self._bot_config.get("system_prompt"):
-            return (
-                self._bot_config["system_prompt"]
-                + lang_instruction + extra + memory_block + spec_block + phase_hint
-            )
+        return f"{extra}{memory_block}{phase_hint}"
 
-        # Fallback default
-        bot_name = self._bot_config.get("name", "Assistant")
-        return (
-            f"You are {bot_name}, a helpful, friendly AI voice assistant. "
-            "You are having a real-time voice conversation with a human.\n\n"
-            "Guidelines:\n"
-            "- Keep responses concise and conversational (1-3 sentences)\n"
-            "- Speak naturally — use contractions, filler words sparingly\n"
-            "- Emotion & Tone: Dynamically adapt your tone based on context. "
-            "If the user is frustrated, be empathetic. If they are happy, be enthusiastic. "
-            "You may use descriptive emotion cues like [excited], [thoughtful], or [concerned] at the start of your turn to help the voice engine adapt (these tags will be stripped before speaking if needed).\n"
-            "- Never use markdown, bullet points, or formatting-only tags\n"
-            "\n[SYSTEM NOTE: LATENCY FILLERS]\n"
-            "You may occasionally see '[system_filler]' or tokens like 'Hmm', 'One second...', 'Let me check...' in the conversation history. "
-            "These were injected by the system to bridge network latency while you were thinking. "
-            "IGNORE these in your decision-making. Do NOT repeat or acknowledge them. "
-            "If the user responds TO a filler, prioritize their latest request."
-            "- Never mention that you are an AI unless directly asked\n"
-            "- If you don't understand, ask for clarification\n"
-            "- Be warm, empathetic, and professional\n"
-            "- Never reveal sensitive information (passwords, OTPs, card numbers)\n"
-            f"{lang_instruction}{extra}{memory_block}{spec_block}{phase_hint}"
-        )
+    def _build_system_prompt(self) -> str:
+        """
+        Build the system prompt for the LLM.
+        Static portions (persona, tool safety, language rules) are cached per bot revision + language.
+        """
+        lang = self.session.detected_language or "en"
+        return self._get_static_system_prompt_fragment(lang) + self._build_dynamic_system_suffix()
 
     async def switch_bot(self, bot_config: dict) -> None:
         """
@@ -2069,6 +2835,7 @@ class AgenticBrain:
 
         # Reload tools for new bot
         self._tools = self._register_tools()
+        self._llm_static_prompt_cache.clear()
         # Optionally update LLM model
         if bot_config.get("llm_model") and self.llm:
             self.llm.model = bot_config["llm_model"]
@@ -2101,9 +2868,60 @@ class AgenticBrain:
         
         if history:
             logger.info("Loaded %d messages from history", len(history))
+        
+        # 🛡️ Load UI-Defined (No-Code) Tools
+        await self._load_custom_tools()
+
+    async def _load_custom_tools(self) -> None:
+        """Register any custom tools created via the UI."""
+        if not self.db:
+            return
+            
+        try:
+            custom_tools = await self.db.list_custom_tools()
+            if not custom_tools:
+                return
+                
+            from voicebot.shared.models.tools import ToolDefinition
+            from voicebot.core.tools.implementations.configurable import DynamicAPITool
+            
+            for config in custom_tools:
+                # To prevent naming collisions with hardcoded tools,
+                # we only register if not already present.
+                if config["name"] in self._tool_instances:
+                    continue
+                    
+                tool = DynamicAPITool(config=config, session=self.session, db=self.db, brain=self)
+                self._tool_instances[tool.name] = tool
+                
+                # 🛡️ Resiliency Fix: Many custom tools are saved with flat parameter dicts 
+                # (e.g. {"id": "string"}). We MUST wrap these in a proper JSON Schema 
+                # or strict LLM SDKs (like Gemini/Pydantic v2) will crash.
+                tool_params = tool.parameters or {"type": "object", "properties": {}}
+                if isinstance(tool_params, dict) and "properties" not in tool_params and len(tool_params) > 0:
+                    logger.warning("🛡️ Auto-repairing custom tool '%s': wrapping flat params into JSON Schema", tool.name)
+                    tool_params = {
+                        "type": "object",
+                        "properties": {
+                            k: (v if isinstance(v, dict) and "type" in v else {"type": "string", "description": str(v)})
+                            for k, v in tool_params.items()
+                        },
+                        "required": list(tool_params.keys())
+                    }
+
+                # Append to the list of tools presented to the LLM
+                self._tools.append(ToolDefinition(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool_params
+                ))
+            logger.info("🛡️  Registered %d custom (no-code) tools", len(custom_tools))
+        except Exception as e:
+            logger.error("Failed to load custom tools: %s", e)
 
     async def cleanup(self) -> None:
         """Clean up resources when the session ends."""
+        self._cancel_all_latency_watchdogs()
         if self._silence_timer:
             self._silence_timer.cancel()
         if self._proactive_timer:
@@ -2112,6 +2930,12 @@ class AgenticBrain:
             self._inactivity_timer.cancel()
         if self._current_task:
             self._current_task.cancel()
+        if self._current_turn_task:
+            self._current_turn_task.cancel()
+            self._current_turn_task = None
+        if self._active_tts_consumer_task and not self._active_tts_consumer_task.done():
+            self._active_tts_consumer_task.cancel()
+            self._active_tts_consumer_task = None
         self.session.is_active = False
 
         # Mark session as ended in SQLite
@@ -2133,14 +2957,91 @@ class AgenticBrain:
     # ─── Logic Helpers (Delegated to TurnDetector) ───────────────────
 
     def _strip_technical_artifacts(self, text: str) -> str:
-        """Strip technical hallucinations like <function> tags or raw JSON from spoken text."""
+        """Strip technical hallucinations like <function> or (function=...) tags or raw JSON from spoken text."""
         import re
         if not text: return ""
-        # 1. Strip <function> tags and their contents
-        text = re.sub(r'<function.*?>.*?</function>', '', text, flags=re.DOTALL)
-        # 2. Strip leftover JSON-like blocks
-        text = re.sub(r'\{[^{}]*?"[^{}]*?":.*?\}(?!\s*<)', '', text, flags=re.DOTALL | re.MULTILINE)
+        # 1. Strip ALL variations of function tags (handles XML-spec, parenthesis-style, and malformed tags)
+        # Matches: <function=name...>, (function=name...), function=name... (naked), etc.
+        patterns = [
+            r'<[\s/]*?function.*?>.*?</[\s/]*?function>', # <function>...</function>
+            r'\(function=.*?\)<?function>?',             # (function...)<function>
+            r'\(function=.*?\)',                         # (function...)
+            r'<function=.*?>',                            # <function=...>
+            r'function=[a-zA-Z0-9_-]+>.*?<\/function>',   # Naked starting tag: function=name>.../function
+            r'function=[a-zA-Z0-9_-]+>.*?$',              # Partial naked tag at end of stream
+            r'<function=.*?$',                            # Partial XML format at end of stream
+        ]
+        for p in patterns:
+            text = re.sub(p, '', text, flags=re.DOTALL | re.IGNORECASE)
+        
+        # 2. Strip leftover raw JSON-like blocks that aren't inside tags
+        text = re.sub(r'\{[^{}]*?"[^{}]*?":.*?\}(?!\s*<)', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+        # 3. Clean up any leftover boundary characters from technical IDs
+        text = re.sub(r'\[METRIC\].*?$', '', text, flags=re.DOTALL)
+        
         return text.strip()
+
+    def _extract_hallucinated_tool_calls(self, text: str) -> list[ToolCall]:
+        """
+        Recover tool calls from hallucinated XML-style or parenthesis tags in the text.
+        Supports:
+          - <function=name{json}></function>
+          - (function=name>{"arg":"val"}<function>
+        """
+        import re
+        import json
+        from voicebot.shared.models.tools import ToolCall
+        
+        calls = []
+        if not text: return calls
+
+        # Pattern sets to try
+        patterns = [
+            # XML style: <function=name{...}></function>
+            (r'<function=([a-zA-Z0-9_-]+)(.*?)</function>', 1, 2),
+            # Parenthesis-style: (function=name>{"arg":"val"}<function>
+            (r'\(function=([a-zA-Z0-9_-]+)>(.*?)<function>', 1, 2),
+            # Loose Parenthesis: (function=name>{"arg":"val"})
+            (r'\(function=([a-zA-Z0-9_-]+)>(.*?)\)', 1, 2),
+        ]
+
+        for p_regex, name_idx, arg_idx in patterns:
+            for match in re.finditer(p_regex, text, flags=re.DOTALL | re.IGNORECASE):
+                name = match.group(name_idx)
+                raw_args = match.group(arg_idx).strip()
+                
+                # Cleanup common artifacts in the args group
+                clean_args = re.sub(r'^>', '', raw_args).strip()
+                
+                try:
+                    args = {}
+                    if clean_args:
+                        # Attempt to find the JSON-like block within the payload
+                        json_match = re.search(r'(\{.*\})', clean_args, flags=re.DOTALL)
+                        if json_match:
+                            args = json.loads(json_match.group(1))
+                        else:
+                            args = {"query": clean_args}
+                    
+                    # 🛡️ Generic Parameter Normalization (Auto-handled)
+                    ARG_MAPPINGS = {
+                        "date_of_birth": "dob",
+                        "last_4_phone_digits": "phone_last_4",
+                        "account_id": "account_number",
+                        "customer_id": "account_number" # Common fallback
+                    }
+                    for hallucinated, official in ARG_MAPPINGS.items():
+                        if hallucinated in args:
+                            args[official] = args.pop(hallucinated)
+
+                    calls.append(ToolCall(id=f"hallucinated_{name}", name=name, arguments=args))
+                    logger.info("🧠 Recovered hallucinated tool call: %s(%s)", name, args)
+
+                except Exception as e:
+                    logger.warning("Failed to parse hallucinated tool args for %s: %s", name, e)
+
+        return calls
 
     # ─── Inactivity Management ─────────────────────────────────────────
 

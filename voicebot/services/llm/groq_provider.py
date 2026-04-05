@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator, Optional, List
 from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
@@ -49,9 +50,9 @@ class GroqStreamingProvider:
         """Lazy-initialize the async Groq client."""
         if self._client is None:
             from groq import AsyncGroq
-            if not self.api_key:
-                logger.error("Groq API Key missing. Please set GROQ_API_KEY in .env")
-                raise ValueError("GROQ_API_KEY is required")
+            if not is_valid_api_key(self.api_key):
+                logger.error("🚫 Groq API Key is invalid or a placeholder.")
+                raise AuthError(f"Groq API Key is a placeholder or invalid.")
             self._client = AsyncGroq(api_key=self.api_key)
         return self._client
 
@@ -70,7 +71,37 @@ class GroqStreamingProvider:
 
         # Construct message list (merge system prompt)
         full_messages = [{"role": "system", "content": system_prompt}]
-        full_messages.extend(messages)
+        
+        # 🛡️ Message Transformation: Ensure OpenAI/Groq compatibility for tool calls in history
+        import json
+        transformed_messages = []
+        for m in messages:
+            new_msg = m.copy()
+            # 1. Format Assistant Tool Calls
+            if new_msg.get("role") == "assistant" and new_msg.get("tool_calls"):
+                legacy_calls = new_msg.pop("tool_calls")
+                new_calls = []
+                for tc in legacy_calls:
+                    # Map from internal flat model to OpenAI structured model
+                    new_calls.append({
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name"),
+                            "arguments": json.dumps(tc.get("arguments")) if isinstance(tc.get("arguments"), dict) else (tc.get("arguments") or "{}")
+                        }
+                    })
+                new_msg["tool_calls"] = new_calls
+            
+            # 2. Ensure Tool Results have correct fields
+            if new_msg.get("role") == "tool":
+                # OpenAI/Groq expects 'tool_call_id'
+                if "tool_call_id" not in new_msg and "id" in new_msg:
+                    new_msg["tool_call_id"] = new_msg.pop("id")
+            
+            transformed_messages.append(new_msg)
+
+        full_messages.extend(transformed_messages)
 
         start_time = time.time()
         first_token = True
@@ -157,16 +188,35 @@ class GroqStreamingProvider:
                     break
 
         except Exception as e:
-            err_str = str(e).lower()
+            # 🛡️ Groq-Specific Fail-Safe: Detail tool-calling errors (Phase 2)
+            # If the model hallucinations a tool call but messes up the format, Groq
+            # throws an APIError with a 'failed_generation' body.
+            error_details = str(e)
             
-            logger.error("Groq streaming error: %s", e)
+            # Groq SDK errors often store the response body in .body or .response.json()
+            try:
+                if hasattr(e, "body") and isinstance(e.body, dict):
+                    failed_gen = e.body.get("failed_generation")
+                    if failed_gen:
+                        error_details = f"{e} | FAILED GENERATION: {failed_gen}"
+                elif hasattr(e, "response") and hasattr(e.response, "json"):
+                    data = e.response.json()
+                    if isinstance(data, dict) and data.get("error", {}).get("failed_generation"):
+                        error_details = f"{e} | FAILED GENERATION: {data['error']['failed_generation']}"
+            except Exception:
+                pass
             
-            if "401" in err_str or "unauthorized" in err_str:
+            logger.error("Groq streaming error: %s", error_details, exc_info=True)
+            
+            if "404" in error_details or "not exist" in error_details or "not found" in error_details:
+                raise VoiceBotError(f"Groq Model NotFound: The model '{self.model}' is not available on Groq.")
+            if "401" in error_details or "unauthorized" in error_details:
                 raise AuthError(f"Groq API Key invalid: {e}")
-            if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+            if "429" in error_details or "rate limit" in error_details or "quota" in error_details:
                 raise ServiceExhaustedError("Groq rate limit reached or quota exhausted.")
                 
-            raise VoiceBotError(f"Groq error: {str(e)[:100]}")
+            raise VoiceBotError(f"Groq report: {error_details[:200]}")
+
 
     async def disconnect(self) -> None:
         """Clean up the client strictly."""

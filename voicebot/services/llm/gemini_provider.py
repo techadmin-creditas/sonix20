@@ -17,6 +17,7 @@ from google import genai
 from google.genai import types
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
 from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
@@ -49,8 +50,9 @@ class GeminiStreamingProvider:
     def _get_client(self) -> genai.Client:
         """Initialize the genai client if needed."""
         if self._client is None:
-            if not self.api_key:
-                raise AuthError("GEMINI_API_KEY is missing in settings.")
+            if not is_valid_api_key(self.api_key):
+                logger.error("🚫 Gemini API Key is invalid or a placeholder.")
+                raise AuthError("Gemini API Key is a placeholder or invalid.")
             
             self._client = genai.Client(
                 api_key=self.api_key,
@@ -73,29 +75,82 @@ class GeminiStreamingProvider:
         client = self._get_client()
         
         # 1. Construct Contents (History + Latest)
-        # Gemini expects the full history including the "latest" user message
+        # Gemini expects 'user' and 'model' roles.
         contents = []
         
-        # Add system prompt as a user message if it's the beginning? 
-        # Actually Google recommends using 'system_instruction' in config.
-        # But we'll follow our pipeline's pattern:
-        
-        for msg in messages:
-            role = "user" if msg["role"] == "user" else "model"
-            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
+        # 🛡️ Message Transformation: Ensure Gemini compatibility for tool calls in history
+        for msg in (messages or []):
+            role = "user" if msg.get("role") == "user" else "model"
+            parts = []
             
+            # Text part
+            if msg.get("content"):
+                parts.append(types.Part(text=msg.get("content")))
+            
+            # Tool call part (model role)
+            if msg.get("tool_calls") and role == "model":
+                for tc in msg.get("tool_calls"):
+                    parts.append(types.Part(function_call=types.FunctionCall(
+                        name=tc.get("name"),
+                        args=tc.get("arguments") if isinstance(tc.get("arguments"), dict) else json.loads(tc.get("arguments") or "{}")
+                    )))
+            
+            # Tool response part (user role)
+            if msg.get("role") == "tool":
+                role = "user"
+                # Gemini expects a FunctionResponse part
+                parts.append(types.Part(function_response=types.FunctionResponse(
+                    name=msg.get("name") or "unknown",
+                    response={"result": msg.get("content", "")}
+                )))
+            
+            if parts:
+                contents.append(types.Content(role=role, parts=parts))
+
+        # 🛡️ Gemini requires at least one 'user' message.
+        # On the bot greeting, messages is empty — guard against 'contents are required' crash.
+        if not contents:
+            contents = [types.Content(role="user", parts=[types.Part(text="Hello")])]
+        elif contents[-1].role != "user":
+            # Gemini requires the last message to be from 'user' (strict alternation)
+            # Find the last user message and move it to the end, or append a dummy one.
+            contents.append(types.Content(role="user", parts=[types.Part(text="(continue)")]))
+
         # 2. Build Config (System Prompt + Tools + Params)
         gemini_tools = []
         if tools:
             # New SDK tool format
             function_declarations = []
             for t in tools:
-                function_declarations.append(types.FunctionDeclaration(
-                    name=t.name,
-                    description=t.description,
-                    parameters=t.parameters
-                ))
-            gemini_tools = [types.Tool(function_declarations=function_declarations)]
+                # 🛡️ Pydantic v2 / google-genai Resiliency: 
+                # If parameters are malformed (e.g. flat dict like {"account_id": "string"}),
+                # we MUST wrap them in a proper JSON Schema or the SDK will throw a FATAL ValidationError.
+                params = t.parameters or {"type": "object", "properties": {}}
+                
+                # Check if it's missing 'type' or 'properties' despite having keys (the "flat" shorthand)
+                if isinstance(params, dict) and "properties" not in params and len(params) > 0:
+                    logger.warning("🛡️ Auto-repairing malformed tool parameters for '%s': converting flat dict to JSON Schema", t.name)
+                    params = {
+                        "type": "object",
+                        "properties": {
+                            k: (v if isinstance(v, dict) and "type" in v else {"type": "string", "description": str(v)})
+                            for k, v in params.items()
+                        },
+                        "required": list(params.keys())
+                    }
+
+                try:
+                    function_declarations.append(types.FunctionDeclaration(
+                        name=t.name,
+                        description=t.description,
+                        parameters=params
+                    ))
+                except Exception as fd_err:
+                    logger.error("❌ Failed to register tool '%s' with Gemini: %s", t.name, fd_err)
+                    continue # Skip broken tool rather than crashing the whole session
+
+            if function_declarations:
+                gemini_tools = [types.Tool(function_declarations=function_declarations)]
 
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
