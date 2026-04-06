@@ -7,7 +7,7 @@ from typing import Optional
 
 # Mock settings and logger before importing the provider
 class MockSettings:
-    elevenlabs_api_key = "sk_4181b3545e6e60388c3cc9abd3ab45ea48703a336617be8f"
+    elevenlabs_api_key = "sk_8b4936a1b136128dacb7fef49d1dc42a6dbec76cb836a95c"
     elevenlabs_voice_id = "EXAVITQu4vr4xnSDxMaL"
     log_level = "INFO"
     redis_url = "redis://localhost:6379/0"

@@ -2,7 +2,10 @@ import asyncio
 import os
 import sys
 import numpy as np
-import webrtc_audio_processing as wap
+try:
+    import webrtc_audio_processing as wap
+except ImportError:
+    wap = None
 
 # Force path for local modules
 sys.path.append(os.getcwd())
@@ -13,23 +16,25 @@ async def test_webrtc_integration():
     print("🚀 Starting WebRTC Integration Test...")
     
     # 1. Test WebRTC Module Directly
-    try:
-        ap = wap.AudioProcessingModule(enable_ns=True, enable_vad=False)
-        ap.set_ns_level(2)
-        print("✅ WebRTC AudioProcessingModule initialized successfully.")
+    if not wap:
+        print("⚠️ webrtc_audio_processing NOT installed. Skipping basic module test.")
+    else:
+        try:
+            ap = wap.AudioProcessingModule(enable_ns=True, enable_vad=False)
+            ap.set_ns_level(2)
+            print("✅ WebRTC AudioProcessingModule initialized successfully.")
 
-        
-        # Create 10ms of "noise" (random int16)
-        # 16000 Hz * 0.01s = 160 samples
-        noise_samples = np.random.randint(-100, 100, 160, dtype=np.int16)
-        audio_bytes = noise_samples.tobytes()
-        
-        clean_audio = ap.process_stream(audio_bytes)
-        print(f"✅ WebRTC process_stream worked. Input size: {len(audio_bytes)}, Output size: {len(clean_audio)}")
-        
-    except Exception as e:
-        print(f"❌ WebRTC Basic Test Failed: {e}")
-        return
+            
+            # Create 10ms of "noise" (random int16)
+            # 16000 Hz * 0.01s = 160 samples
+            noise_samples = np.random.randint(-100, 100, 160, dtype=np.int16)
+            audio_bytes = noise_samples.tobytes()
+            
+            clean_audio = ap.process_stream(audio_bytes)
+            print(f"✅ WebRTC process_stream worked. Input size: {len(audio_bytes)}, Output size: {len(clean_audio)}")
+        except Exception as e:
+            print(f"❌ WebRTC Basic Test Failed: {e}")
+            return
 
     # 2. Test Provider Logic (Mocking WebSocket)
     try:
