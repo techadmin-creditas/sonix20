@@ -627,9 +627,60 @@ class SQLiteProvider:
             if row:
                 res = dict(row)
                 res["metadata"] = json.loads(res["metadata"]) if res["metadata"] else {}
+                mrow = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS n,
+                        AVG(json_extract(arguments, '$.stt_ms')) AS avg_stt,
+                        AVG(json_extract(arguments, '$.llm_ms')) AS avg_llm,
+                        AVG(json_extract(arguments, '$.tts_ms')) AS avg_tts,
+                        AVG(json_extract(arguments, '$.total_ms')) AS avg_total,
+                        AVG(json_extract(arguments, '$.first_audio_ms')) AS avg_first_audio
+                    FROM tool_logs
+                    WHERE session_id = ? AND tool_name = '__metrics__'
+                    """,
+                    (session_id,),
+                ).fetchone()
+                n = int(mrow["n"] or 0) if mrow else 0
+                metrics_patch: dict = {"metrics_turn_count": n}
+                if n > 0:
+                    metrics_patch.update(
+                        {
+                            "avg_stt_ms": round(mrow["avg_stt"] or 0, 1),
+                            "avg_llm_ms": round(mrow["avg_llm"] or 0, 1),
+                            "avg_tts_ms": round(mrow["avg_tts"] or 0, 1),
+                            "avg_total_ms": round(mrow["avg_total"] or 0, 1),
+                            "avg_first_audio_ms": round(
+                                mrow["avg_first_audio"] or 0, 1
+                            ),
+                        }
+                    )
+                res["metadata"] = {**res["metadata"], **metrics_patch}
                 return res
             return None
         return await self._run(_do)
+
+    async def merge_session_metadata(self, session_id: str, patch: dict) -> None:
+        """Merge ``patch`` into sessions.metadata JSON without changing ended_at / turn_count."""
+        if not patch:
+            return
+
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not row:
+                return
+            existing_meta = json.loads(row[0]) if row[0] else {}
+            existing_meta.update(patch)
+            conn.execute(
+                "UPDATE sessions SET metadata = ? WHERE id = ?",
+                (json.dumps(existing_meta), session_id),
+            )
+            conn.commit()
+
+        await self._run(_do)
 
     async def close_session(self, session_id: str, turn_count: int = 0, metadata: dict = None) -> None:
         """Mark session as ended and optionally append metadata (like generic summaries)."""
@@ -757,6 +808,42 @@ class SQLiteProvider:
             conn.commit()
         await self._run(_do)
         logger.info("User fact saved: %s", fact[:60])
+
+    async def replace_session_extracted_facts(
+        self,
+        session_id: str,
+        user_id: Optional[str],
+        rows: list[tuple[str, str]],
+    ) -> None:
+        """
+        Remove prior LLM-extracted entities for this session (category ``session_extracted.%``)
+        and insert fresh rows. Does not delete facts from ``remember_user_fact`` (other categories).
+        """
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                """
+                DELETE FROM user_facts
+                WHERE session_id = ? AND category LIKE 'session_extracted.%'
+                """,
+                (session_id,),
+            )
+            for fact, category in rows:
+                conn.execute(
+                    """
+                    INSERT INTO user_facts (session_id, user_id, fact, category)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (session_id, user_id, fact, category),
+                )
+            conn.commit()
+
+        await self._run(_do)
+        logger.debug(
+            "Session extracted facts replaced: session=%s count=%d",
+            session_id[:8],
+            len(rows),
+        )
 
     async def get_user_facts(self, user_id: Optional[str] = None, session_id: Optional[str] = None) -> list[dict]:
         """Get stored facts about a user."""

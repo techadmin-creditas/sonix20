@@ -26,43 +26,6 @@ settings = get_settings()
 logger = setup_logger("voicebot-unified", level=settings.log_level)
 
 
-def _make_summariser_llm(bot_config: dict):
-    """
-    Return the right LLM provider for post-call summarisation.
-
-    Priority:
-      1. Bot's own llm_provider + llm_model (same model used during the call)
-      2. OpenRouter default model (if key is configured)
-      3. Groq llama-3.3-70b (last resort)
-    """
-    prov = str(bot_config.get("llm_provider") or "").lower()
-    model = bot_config.get("llm_model") or ""
-
-    if prov == "openrouter" or ("/" in model and prov not in ("gemini", "openai", "groq", "anthropic")):
-        from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
-        return OpenRouterStreamingProvider(model=model or settings.openrouter_default_model)
-
-    if prov == "openai" and model:
-        from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
-        return OpenAIStreamingProvider(model=model)
-
-    if prov == "anthropic" and model:
-        from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
-        return AnthropicStreamingProvider(model=model)
-
-    if prov == "groq" and model:
-        from voicebot.services.llm.groq_provider import GroqStreamingProvider
-        return GroqStreamingProvider(model=model)
-
-    # Fallback: OpenRouter if key present, else Groq
-    if settings.openrouter_api_key:
-        from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
-        return OpenRouterStreamingProvider(model=settings.openrouter_default_model or "meta-llama/llama-3.3-70b-instruct")
-
-    from voicebot.services.llm.groq_provider import GroqStreamingProvider
-    return GroqStreamingProvider(model="llama-3.3-70b-versatile")
-
-
 async def _archive_voice_session(
     session_id: str,
     bot_config: dict,
@@ -77,67 +40,40 @@ async def _archive_voice_session(
     Designed to be run as a background task.
     """
     try:
+        from voicebot.core.session_transcript_analysis import analyze_transcript_with_bot_llm
+
         log_entries = await db.get_session_log(session_id)
-        transcript_text = "\n".join(
-            [f"{e['role']}: {e['content']}" for e in log_entries if e["role"] in ["user", "assistant"]]
+        summary, intent, insights, llm_ran, entity_rows = await analyze_transcript_with_bot_llm(
+            log_entries,
+            bot_config,
+            respect_enable_post_call_flag=True,
         )
 
-        summary = "No meaningful conversation occurred."
-        intent = "Unknown"
-
-        if settings.enable_post_call_summary and len(log_entries) > 1 and transcript_text.strip():
+        meta_patch: dict = {
+            "summary": summary,
+            "intent": intent,
+            "mode": mode,
+            "insights": insights,
+        }
+        if llm_ran:
+            meta_patch["llm_analysis_at"] = int(time.time())
+            meta_patch["session_nlp_version"] = 2
             try:
-                # Use the helper to get the best LLM for summarisation
-                sum_llm = _make_summariser_llm(bot_config)
-                logger.info(
-                    "Post-call archiving (%s) using: provider=%s model=%s",
+                await db.replace_session_extracted_facts(
+                    session_id, user_id, entity_rows
+                )
+            except Exception as _ent_persist:
+                logger.warning(
+                    "Persist extracted entities failed for %s: %s",
                     session_id[:8],
-                    getattr(sum_llm, "provider", type(sum_llm).__name__),
-                    getattr(sum_llm, "model", "?"),
+                    _ent_persist,
                 )
-
-                # Generate Summary
-                sum_prompt = (
-                    "Summarize the following conversation in exactly 1 or 2 concise sentences. "
-                    "Focus solely on the user's primary intent and the resolution. "
-                    "Do not add conversational filler:\n\n" + transcript_text
-                )
-                sum_parts = []
-                async for chunk in sum_llm.stream_completion(
-                    system_prompt="You are a concise summarizer.",
-                    messages=[{"role": "user", "content": sum_prompt}],
-                ):
-                    if chunk.content:
-                        sum_parts.append(chunk.content)
-                if sum_parts:
-                    summary = "".join(sum_parts).strip()
-
-                # Generate Intent Tag
-                intent_prompt = (
-                    "Based on the following conversation, provide a strict 1-3 word noun phrase "
-                    "representing the core operational intent (e.g. 'Password Reset', "
-                    "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n" + transcript_text
-                )
-                intent_parts = []
-                async for chunk in sum_llm.stream_completion(
-                    system_prompt="You are a concise intent classifier.",
-                    messages=[{"role": "user", "content": intent_prompt}],
-                ):
-                    if chunk.content:
-                        intent_parts.append(chunk.content)
-                if intent_parts:
-                    intent = "".join(intent_parts).strip()
-
-            except Exception as llm_err:
-                logger.error("LLM Archiving failed for %s: %s", session_id[:8], llm_err)
-        elif not settings.enable_post_call_summary:
-            logger.info("Skipping post-call LLM analysis as ENABLE_POST_CALL_SUMMARY is False.")
 
         # Update DB
         await db.close_session(
             session_id=session_id,
             turn_count=len(log_entries),
-            metadata={"summary": summary, "intent": intent, "mode": mode},
+            metadata=meta_patch,
         )
         logger.info("Session %s archived with summary (mode=%s).", session_id[:8], mode)
 

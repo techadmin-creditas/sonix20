@@ -19,8 +19,22 @@ import time
 import collections
 import audioop  # Built-in fast math for audio RMS
 import websockets
-import webrtc_audio_processing as wap
 from typing import Any, Callable, Optional
+
+try:
+    import webrtc_audio_processing as wap  # type: ignore
+except ImportError:  # optional native dep (requires swig to build on some platforms)
+    wap = None  # type: ignore
+
+
+class _PassthroughAudioProcessing:
+    """No-op when webrtc_audio_processing is not installed."""
+
+    def set_ns_level(self, _level: int) -> None:
+        pass
+
+    def process_stream(self, chunk: bytes) -> bytes:
+        return chunk
 
 
 from voicebot.shared.config import get_settings
@@ -205,13 +219,15 @@ class DeepgramStreamingProvider:
         self._last_keepalive = 0.0
         self._last_final_transcript = ""
 
-        # 🛠️ 1. Initialize WebRTC Audio Processing
-        self.ap = wap.AudioProcessingModule(
-            enable_ns=True,
-            enable_vad=False
-        )
-        # Set suppression level (0=Low, 1=Moderate, 2=High, 3=VeryHigh)
-        self.ap.set_ns_level(2) 
+        # 🛠️ 1. Initialize WebRTC Audio Processing (optional)
+        if wap is not None:
+            self.ap = wap.AudioProcessingModule(enable_ns=True, enable_vad=False)
+            self.ap.set_ns_level(2)
+        else:
+            logger.warning(
+                "webrtc_audio_processing not installed; STT noise suppression disabled"
+            )
+            self.ap = _PassthroughAudioProcessing()
 
         # 🧠 2. Initialize Adaptive Noise Floor
         self._noise_floor = 0.0

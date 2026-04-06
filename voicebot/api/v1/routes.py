@@ -254,6 +254,56 @@ async def get_session_facts(session_id: str):
     return {"session_id": session_id, "facts": facts, "count": len(facts)}
 
 
+@router.post("/sessions/{session_id}/summarize", tags=["sessions"])
+async def summarize_session(session_id: str):
+    """
+    Generate or refresh conversation summary and intent using this session's bot LLM
+    (same provider/model as configured on the bot).
+    """
+    from voicebot.core.session_transcript_analysis import analyze_transcript_with_bot_llm
+
+    db = await get_db()
+    sess = await db.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    bot_id = sess.get("bot_id")
+    if not bot_id:
+        raise HTTPException(status_code=400, detail="Session has no bot_id")
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found for this session")
+    log_entries = await db.get_session_log(session_id)
+    summary, intent, insights, llm_ran, entity_rows = await analyze_transcript_with_bot_llm(
+        log_entries,
+        bot,
+        respect_enable_post_call_flag=False,
+    )
+    patch: dict = {"summary": summary, "intent": intent, "insights": insights}
+    if llm_ran:
+        patch["llm_analysis_at"] = int(time.time())
+        patch["session_nlp_version"] = 2
+        try:
+            await db.replace_session_extracted_facts(
+                session_id, sess.get("user_id"), entity_rows
+            )
+        except Exception as _ent_persist:
+            logger.warning(
+                "Persist extracted entities failed for %s: %s",
+                session_id[:8],
+                _ent_persist,
+            )
+    await db.merge_session_metadata(session_id, patch)
+    return {
+        "session_id": session_id,
+        "summary": summary,
+        "intent": intent,
+        "insights": insights,
+        "entities_saved": len(entity_rows) if llm_ran else 0,
+        "session_nlp_version": patch.get("session_nlp_version"),
+        "llm_analysis_at": patch.get("llm_analysis_at"),
+    }
+
+
 # ─── Bot Registry CRUD ────────────────────────────────────────────────────────
 
 @router.get("/bots", tags=["bots"])
