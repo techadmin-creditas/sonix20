@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { SESSIONS } from '../constants';
 import { cn } from '../lib/utils';
-import { 
-  Search, Filter, Download, MoreVertical, 
+import {
+  Search, Filter, Download, MoreVertical,
   Play, MessageSquare, Clock, Calendar,
   ChevronRight, Smile, BarChart2, Trash2,
   Loader2, Zap, Terminal,
+  PlusCircle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { api, SessionRecord } from '../lib/api';
@@ -65,55 +66,71 @@ export default function Sessions() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Sessions" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Sessions"
         subtitle="Conversation History & Analytics"
         actions={
-          <div className="flex gap-3">
-            <button 
-              onClick={handleExport}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all"
-            >
-              <Download className="size-4" />
-              Export All
-            </button>
-            <button 
-              onClick={() => navigate('/sessions/live')}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all"
-            >
-              <Play className="size-4" />
-              Live Session
-            </button>
+          <div className="w-full flex flex-col md:flex-row gap-4 justify-between items-center">
+
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+              <input
+                type="text"
+                placeholder="Search by ID, Bot"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+              />
+            </div>
+
+
+            <div className="flex gap-3">
+
+              {filteredSessions?.length > 0 && (
+                <div className="flex gap-2 w-full md:w-auto">
+                  {/* <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
+              <Filter className="size-4" />
+              Filters
+            </button> */}
+                  <select className="flex-1 md:flex-none px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold focus:outline-none">
+                    <option>Last 7 Days</option>
+                    <option>Last 30 Days</option>
+                    <option>All Time</option>
+                  </select>
+                </div>
+              )}
+
+              {filteredSessions?.length > 0 && (
+                <>
+                  <button
+                    onClick={handleExport}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
+                    <Download className="size-4" />
+                    Export All
+                  </button>
+
+                </>
+              )}
+              {sessions?.length > 0 && (
+                <>
+                  <button
+                    onClick={() => navigate('/sessions/live')}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all">
+                    <Play className="size-4" />
+                    Create Session
+                  </button>
+                </>
+              )}
+            </div>
+
           </div>
         }
       />
 
       <div className="p-8 flex flex-col gap-6">
         {/* Filters & Search */}
-        <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full md:w-96">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-            <input 
-              type="text"
-              placeholder="Search by ID, Bot, or Intent..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-            />
-          </div>
-          <div className="flex gap-2 w-full md:w-auto">
-            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
-              <Filter className="size-4" />
-              Filters
-            </button>
-            <select className="flex-1 md:flex-none px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold focus:outline-none">
-              <option>Last 7 Days</option>
-              <option>Last 30 Days</option>
-              <option>All Time</option>
-            </select>
-          </div>
-        </div>
+
 
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 gap-4">
@@ -121,7 +138,7 @@ export default function Sessions() {
             <p className="text-outline text-xs font-bold uppercase tracking-widest">Accessing Neural Logs...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-4" style={{ maxHeight: 'calc(100vh - 210px)', overflowY: 'auto' }}>
             {filteredSessions.map((session, index) => (
               <motion.div
                 key={session.id}
@@ -182,7 +199,7 @@ export default function Sessions() {
                     {session.metadata?.sentiment_score != null ? (
                       <div className="flex items-center gap-2">
                         <div className="w-16 h-1.5 bg-surface-highest rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className="h-full bg-emerald-500"
                             style={{ width: `${Math.round((session.metadata.sentiment_score as number) * 100)}%` }}
                           />
@@ -207,7 +224,7 @@ export default function Sessions() {
                         <span className="text-[10px] font-bold uppercase">Precision</span>
                       </div>
                       <p className={cn(
-                        "text-xs font-bold", 
+                        "text-xs font-bold",
                         session.metadata.tool_performance.success_rate < 90 ? "text-amber-500" : "text-emerald-500"
                       )}>
                         {session.metadata.tool_performance.success_rate}%
@@ -254,6 +271,35 @@ export default function Sessions() {
                 </div>
               </motion.div>
             ))}
+
+            {/* No search results */}
+            {filteredSessions.length === 0 && sessions.length > 0 && (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
+                <Search className="size-10 mb-3 opacity-30" />
+                <p className="font-bold text-sm">No sessions match &ldquo;{searchQuery}&rdquo;</p>
+                <p className="text-xs mt-1 opacity-60">Try searching by bot name or session ID</p>
+              </div>
+            )}
+
+            {/* Truly empty — no sessions at all */}
+            {sessions.length === 0 && !loading && (
+              <div className="flex justify-center">
+                <Link
+                  to="/sessions/live"
+                  className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
+                >
+                  <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
+                    <PlusCircle className="size-8" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-on-surface">Create New Session</p>
+                    <p className="text-xs text-outline mt-1">Start a new conversation</p>
+                  </div>
+                </Link>
+              </div>
+            )}
+
+
           </div>
         )}
       </div>

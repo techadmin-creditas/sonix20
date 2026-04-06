@@ -623,7 +623,7 @@ class WorkflowEngine:
             # 2. Auto-pick: Groq first (fastest + free tier)
             if _s.groq_api_key:
                 from voicebot.services.llm.groq_provider import GroqStreamingProvider
-                self._classifier_llm = GroqStreamingProvider(model=_s.groq_model or "llama-3.3-70b-versatile")
+                self._classifier_llm = GroqStreamingProvider(model=_s.groq_model or "llama-3.1-8b-instant")
                 return self._classifier_llm
 
             # 3. Auto-pick: OpenRouter free models

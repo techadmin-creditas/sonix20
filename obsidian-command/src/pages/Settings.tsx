@@ -32,12 +32,12 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Platform Settings" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Platform Settings"
         actions={
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => {
                 if (confirm('Discard all unsaved changes?')) {
                   window.location.reload();
@@ -47,7 +47,7 @@ export default function SettingsPage() {
             >
               Discard Changes
             </button>
-            <button 
+            <button
               onClick={() => alert('Settings saved successfully!')}
               className="px-6 py-2.5 rounded-lg ember-gradient text-on-primary-fixed text-sm font-bold shadow-lg active:scale-95 transition-all"
             >
@@ -69,9 +69,9 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-6 w-full">
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-outline">Organization Name</label>
-                  <input 
-                    className="w-full bg-surface-highest border-none rounded-lg px-4 py-3 text-on-surface focus:ring-1 focus:ring-primary/50 transition-all" 
-                    type="text" 
+                  <input
+                    className="w-full bg-surface-highest border-none rounded-lg px-4 py-3 text-on-surface focus:ring-1 focus:ring-primary/50 transition-all"
+                    type="text"
                     defaultValue="Sonic Architect"
                   />
                 </div>
@@ -120,24 +120,24 @@ export default function SettingsPage() {
               {healthLoading && <Loader2 className="size-4 animate-spin text-primary" />}
             </div>
             <div className="glass-panel p-8 rounded-2xl flex flex-col gap-6">
-              <DatabaseItem 
-                icon={Database} 
-                name="Redis Cache" 
-                desc="Volatile session memory & TTS audio cache" 
-                status={svcStatus('redis')} 
+              <DatabaseItem
+                icon={Database}
+                name="Redis Cache"
+                desc="Volatile session memory & TTS audio cache"
+                status={svcStatus('redis')}
                 active={svcStatus('redis') === 'online'}
               />
-              <DatabaseItem 
-                icon={HardDrive} 
-                name="SQLite Primary" 
-                desc="Persistent bots, sessions, facts & logs" 
+              <DatabaseItem
+                icon={HardDrive}
+                name="SQLite Primary"
+                desc="Persistent bots, sessions, facts & logs"
                 status="online"
                 active
               />
-              <DatabaseItem 
-                icon={BrainCircuit} 
-                name="ChromaDB Vector Memory" 
-                desc={vectorHealth ? `RAG context store · ${vectorHealth.doc_count} documents` : 'Semantic RAG context store'} 
+              <DatabaseItem
+                icon={BrainCircuit}
+                name="ChromaDB Vector Memory"
+                desc={vectorHealth ? `RAG context store · ${vectorHealth.doc_count} documents` : 'Semantic RAG context store'}
                 status={vectorHealth?.status ?? (healthLoading ? 'checking' : 'unknown')}
                 active={vectorHealth?.status === 'online'}
               />
@@ -172,7 +172,7 @@ export default function SettingsPage() {
               <h3 className="font-headline text-xl font-bold text-on-surface">Teammates</h3>
               <p className="text-sm text-outline">Manage access and permissions for your team.</p>
             </div>
-            <button 
+            <button
               onClick={() => alert('Invite user modal would open here.')}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-high border border-outline-variant/20 text-sm font-bold hover:border-primary/50 transition-all"
             >
@@ -250,7 +250,7 @@ function ProviderCard({ icon: Icon, name, status, apiKey }: any) {
           <p className="text-xs text-outline font-mono mt-1">{apiKey}</p>
         </div>
       </div>
-      <button 
+      <button
         onClick={() => {
           if (confirm(`Are you sure you want to rotate the API key for ${name}? This will invalidate the current key immediately.`)) {
             alert('Key rotated successfully. New key: ' + Math.random().toString(36).substring(7));

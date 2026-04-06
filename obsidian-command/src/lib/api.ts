@@ -83,6 +83,7 @@ export interface Bot {
   greeting?: string;
   tools_enabled: string[];
   llm_model: string;
+  llm_provider?: string;
   voice_id?: string;
   temperature?: number;
   max_tokens?: number;
@@ -163,6 +164,52 @@ export interface SessionRecord {
   ended_at: number | null;
   turn_count: number;
   metadata?: any;
+}
+
+
+
+export interface SandboxStageResult {
+  original: string;
+  sanitized: string;
+  blocked: boolean;
+  block_rule: string | null;
+  block_message: string | null;
+  was_masked: boolean;
+}
+
+export interface RuleOption {
+  id: string;
+  label: string;
+  description: string;
+  requires?: string;
+}
+
+export interface GuardrailMetadata {
+  triggers: RuleOption[];
+  actions: RuleOption[];
+  scopes: RuleOption[];
+}
+
+export interface GuardrailRule {
+  id: string;
+  name: string;
+  description?: string;
+  scope: 'input' | 'output' | 'both';
+  trigger: string;
+  pattern: string;
+  action: string;
+  params: Record<string, any>;
+  is_active?: boolean;
+  priority?: number;
+}
+
+export interface GuardrailPolicy {
+  rules: GuardrailRule[];
+  injection_check_enabled?: boolean;
+  injection_action?: 'log' | 'block';
+  injection_block_message?: string;
+  kb_only_factual?: boolean;
+  semantic_cache_ttl_seconds?: number;
 }
 
 export interface KnowledgeEntry {
@@ -263,21 +310,21 @@ export const api = {
     const data = await res.json();
     return data.bots;
   },
-  
+
   async getBot(id: string): Promise<Bot> {
     const res = await fetch(`${BASE_URL}/bots/${id}`);
     if (!res.ok) throw new Error('Failed to fetch bot');
     return res.json();
   },
 
-  async getModels(): Promise<{id: string, name: string, provider: string}[]> {
+  async getModels(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/models`);
     if (!res.ok) throw new Error('Failed to fetch models');
     const data = await res.json();
     return data.models;
   },
 
-  async getVoices(): Promise<{id: string, name: string, provider: string}[]> {
+  async getVoices(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/voices`);
     if (!res.ok) throw new Error('Failed to fetch voices');
     const data = await res.json();
@@ -412,7 +459,7 @@ export const api = {
     return res.json();
   },
 
-  async saveWorkflow(data: Partial<Workflow>): Promise<{status: string, id: string}> {
+  async saveWorkflow(data: Partial<Workflow>): Promise<{ status: string, id: string }> {
     const res = await fetch(`${BASE_URL}/workflows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -502,5 +549,145 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch QA cache memory');
     const data = await res.json();
     return data.items;
+  },
+
+  async getGuardrailSuggestions(botId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/bots/${botId}/suggest-rules`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to fetch guardrail suggestions');
+    return res.json();
+  },
+
+  async getGuardrailMetadata(): Promise<GuardrailMetadata> {
+    const res = await fetch(`${BASE_URL}/metadata/guardrails`);
+    if (!res.ok) throw new Error('Failed to fetch guardrail metadata');
+    return res.json();
+  },
+
+  async getScopes(): Promise<Record<string, string[]>> {
+    const res = await fetch(`${BASE_URL}/scopes`);
+    if (!res.ok) throw new Error('Failed to fetch scopes');
+    const data = await res.json();
+    return data.scopes;
+  },
+
+  /** STT test: DeepgramStreamingProvider (live WebSocket path), no LLM/TTS. */
+  async sttSandbox(
+    botId: string,
+    audioBlob: Blob,
+    filename = 'capture.pcm',
+    opts?: { rawPcm?: boolean }
+  ): Promise<{
+    transcript: string;
+    confidence: number | null;
+    resolved_stt_language: string;
+    default_language: string;
+    deepgram_query_params: Record<string, string>;
+  }> {
+    const url = new URL(`${BASE_URL}/bots/${botId}/stt-sandbox`);
+    if (opts?.rawPcm) url.searchParams.set('raw_pcm', 'true');
+    const fd = new FormData();
+    fd.append('file', audioBlob, filename);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) {
+      let msg = 'STT sandbox failed';
+      try {
+        const j = await res.json();
+        if (j?.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+      } catch {
+        msg = (await res.text()) || msg;
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+
+  async sandboxTest(payload: {
+    user_input: string;
+    guardrail_policy: Record<string, unknown>;
+    system_prompt: string;
+    llm_model: string;
+    llm_provider?: string;
+    temperature?: number;
+    max_tokens?: number;
+    test_mode: 'guardrail_only' | 'full_pipeline';
+  }): Promise<{
+    input_result: SandboxStageResult;
+    llm_result: { response?: string; error?: string } | null;
+    output_result: SandboxStageResult | null;
+    final_output: string | null;
+  }> {
+    const res = await fetch(`${BASE_URL}/guardrails/sandbox-test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Sandbox test failed');
+    return res.json();
+  },
+
+  async suggestDataAccessPolicy(botContext: {
+    name: string;
+    role: string;
+    system_prompt: string;
+    available_scopes: Record<string, string[]>;
+  }): Promise<{
+    enabled_scopes: string[];
+    appointments_match_session_user: boolean;
+    integrations: Record<string, { url_template: string; method: string }>;
+    reasoning: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/guardrails/suggest-data-access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(botContext),
+    });
+    if (!res.ok) throw new Error('Failed to get data access suggestions');
+    return res.json();
+  },
+
+  // ─── 🛡️ Dynamic Tools ───
+  async getCustomTools(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/tools/custom`);
+    if (!res.ok) throw new Error('Failed to fetch custom tools');
+    const data = await res.json();
+    return data.tools;
+  },
+
+  async createCustomTool(data: any): Promise<any> {
+    const res = await fetch(`${BASE_URL}/tools/custom`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create custom tool');
+    return res.json();
+  },
+
+  // ─── 📚 Knowledge Ingestion ───
+  async ingestUrl(url: string, botId?: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/knowledge/ingest/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, bot_id: botId }),
+    });
+    if (!res.ok) throw new Error('Failed to ingest URL');
+    return res.json();
+  },
+
+  async ingestPdf(file: File, botId?: string): Promise<any> {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (botId) fd.append('bot_id', botId);
+    const res = await fetch(`${BASE_URL}/knowledge/ingest/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) throw new Error('Failed to upload PDF');
+    return res.json();
   },
 };

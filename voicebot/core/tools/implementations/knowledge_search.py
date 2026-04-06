@@ -30,10 +30,17 @@ class SearchKnowledgeTool(BaseTool):
 
         bot_id = kwargs.get("bot_id")
         da = kwargs.get("data_access") or self.data_access_policy
+        
+        import logging as _log
+        _logger = _log.getLogger("knowledge-search")
+        _logger.info("\ud83d\udd0e Knowledge Search initiated: query='%s', bot=%s", query, bot_id)
+        
+        if self.brain and hasattr(self.brain, "_log_event"):
+            await self.brain._log_event("[KNOWLEDGE]", f"Searching for: \"{query}\"", "text-blue-400")
 
-        # ── Redis tool-result cache (24h TTL) ─────────────────────────────────
+        # \u2500\u2500 Redis tool-result cache (24h TTL) \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501
         # FAQ answers (branch hours, interest rates, policies) are stable for
-        # a full day — skip all DB/Chroma/web round-trips on cache hits.
+        # a full day \u2014 skip all DB/Chroma/web round-trips on cache hits.
         _redis = getattr(self.brain, "memory", None) if self.brain else None
         _cache_key = (
             f"knowledge:{bot_id}:{hashlib.md5(query.lower().strip().encode()).hexdigest()}"
@@ -42,27 +49,44 @@ class SearchKnowledgeTool(BaseTool):
             try:
                 _hit = await _redis.get_cache(_cache_key)
                 if _hit:
-                    import logging as _log
-                    _log.getLogger("knowledge-search").debug(
-                        "knowledge_search Redis cache HIT: bot=%s q='%s'", bot_id, query[:60]
-                    )
+                    _logger.info("\u2705 Redis cache HIT: bot=%s query='%s'", bot_id, query[:60])
+                    if self.brain and hasattr(self.brain, "_log_event"):
+                        await self.brain._log_event("[KNOWLEDGE]", "Cache hit \u2014 returning stored answer.", "text-green-400")
                     return _hit
             except Exception:
                 pass
 
-        # 1. Search SQLite Knowledge Base
+        # 1. Search SQLite Knowledge Base (FAQs)
+        _logger.info("\ud83d\udcc1 Searching SQLite FAQ table...")
         hits = await self.db.search_knowledge(query, bot_id=bot_id, data_access=da)
-        local_context = " | ".join(f"{h['topic']}: {h['answer']}" for h in hits) if hits else ""
+        local_context = " | ".join(f"{h['topic']}: {h['answer']} [Source: FAQ]" for h in hits) if hits else ""
+        if hits:
+            _logger.info("  \u2705 Found %d FAQ matches in SQLite", len(hits))
 
-        # 2. Search Vector Memory (ChromaDB)
+        # 2. Search Vector Memory (ChromaDB - PDFs, Web, Learned)
         vector_context = ""
         if self.brain and hasattr(self.brain, "_vector_memory") and self.brain._vector_memory:
+            _logger.info("\ud83e\udde0 Searching Vector Memory (ChromaDB)...")
             v_hits = await self.brain._vector_memory.search_knowledge(query, bot_id=bot_id)
             if v_hits:
-                vector_context = " | ".join(h["content"] for h in v_hits)
-
+                _logger.info("  \u2705 Found %d semantic matches in Vector DB", len(v_hits))
+                # Format: "content [Source: type:filename]"
+                parts = []
+                for h in v_hits:
+                    src = h.get("source", "system")
+                    parts.append(f"{h['content']} [Source: {src}]")
+                vector_context = " | ".join(parts)
+        
         combined_context = f"{local_context} {vector_context}".strip()
+        
         if combined_context:
+            _logger.info("\ud83c\udfaf Knowledge found. Fetching %d chars of context.", len(combined_context))
+            if self.brain and hasattr(self.brain, "_log_event"):
+                sources = []
+                if local_context: sources.append("FAQ")
+                if vector_context: sources.append("Vector DB")
+                await self.brain._log_event("[KNOWLEDGE]", f"Sources: {', '.join(sources)}", "text-cyan-400")
+
             await self.log_call({"query": query}, combined_context[:200])
             # Write to Redis cache (24h) so future sessions skip DB+Chroma queries.
             if _redis:
@@ -75,6 +99,10 @@ class SearchKnowledgeTool(BaseTool):
         # 3. Web Search Fallback (Self-Driving Mode)
         # Only if on-topic and search provider is available
         if self.brain and self.brain._topic_restriction:
+            _logger.info("\ud83c\udf10 No local info found. Falling back to Web Search...")
+            if self.brain and hasattr(self.brain, "_log_event"):
+                await self.brain._log_event("[KNOWLEDGE]", "No local info \u2014 performing web search...", "text-yellow-400")
+
             from voicebot.services.memory.search_provider import SearchProvider
             sp = SearchProvider()
 
@@ -82,6 +110,7 @@ class SearchKnowledgeTool(BaseTool):
             if web_results:
                 summary = await self._summarize_web_results(query, web_results)
                 if summary and "no relevant" not in summary.lower():
+                    _logger.info("\u2705 Web search successful. Storing fact.")
                     # Store for future use in vector memory and Redis cache
                     if self.brain._vector_memory:
                         await self.brain._vector_memory.store_fact(
@@ -98,6 +127,10 @@ class SearchKnowledgeTool(BaseTool):
                             pass
                     await self.log_call({"query": query, "source": "web"}, summary[:200])
                     return web_result
+
+        _logger.warning("\u274c No information found for: %s", query)
+        if self.brain and hasattr(self.brain, "_log_event"):
+            await self.brain._log_event("[KNOWLEDGE]", "No information found.", "text-red-400")
 
         result = "No relevant information found in the knowledge base."
         await self.log_call({"query": query}, result)

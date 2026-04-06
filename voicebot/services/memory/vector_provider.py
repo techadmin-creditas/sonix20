@@ -182,6 +182,9 @@ class VectorMemoryProvider:
         """
         if not self._available or not self._collection or not query.strip():
             return []
+        
+        logger.info("🔍 Vector Search: query='%s', bot_id=%s", query[:60], bot_id)
+        
         try:
             where_filter = {"bot_id": bot_id} if bot_id else None
             results = self._collection.query(
@@ -206,8 +209,11 @@ class VectorMemoryProvider:
                         "score": round(score, 4),
                         "id": meta.get("id", ""),
                     })
+                    logger.debug("  ✅ Match: score=%.4f, content='%s...'", score, doc[:50])
+                else:
+                    logger.debug("  ❌ Low-score skip: score=%.4f < %.2f", score, min_score)
             
-            logger.debug("Search knowledge: '%s' -> %d matches above threshold %.2f", query[:50], len(output), min_score)
+            logger.info("📦 Vector Search COMPLETE: %d results found above threshold %.2f", len(output), min_score)
             return output
         except Exception as e:
             logger.warning("Search knowledge failed: %s", e)

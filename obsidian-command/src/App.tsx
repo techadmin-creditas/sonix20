@@ -15,6 +15,8 @@ import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
+import Profile from './pages/Profile';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -66,40 +68,43 @@ function App() {
   }
 
   return (
-    <Router>
-      <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
-        <Sidebar
-          currentUser={currentUser}
-          onLogout={() => {
-            clearAuthToken();
-            setCurrentUser(null);
-          }}
-        />
-        <main className="flex-1 flex flex-col overflow-x-hidden">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/sessions" element={<Sessions />} />
-            <Route path="/sessions/live" element={<SessionControl />} />
-            <Route path="/sessions/:id" element={<SessionDetail />} />
-            <Route path="/personas" element={<Personas />} />
-            <Route path="/personas/create" element={<BotConfig />} />
-            <Route path="/personas/:id/config" element={<BotConfig />} />
-            <Route path="/knowledge" element={<KnowledgeBase />} />
-            <Route path="/workflows" element={<Workflows />} />
-            <Route path="/workflows/create" element={<WorkflowEditor />} />
-            <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route
-              path="/users"
-              element={currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/" replace />}
-            />
-            <Route path="/login" element={<Navigate to="/" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <NotificationProvider>
+      <Router>
+        <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
+          <Sidebar
+            currentUser={currentUser}
+            onLogout={() => {
+              clearAuthToken();
+              setCurrentUser(null);
+            }}
+          />
+          <main className="flex-1 flex flex-col overflow-x-hidden">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/sessions" element={<Sessions />} />
+              <Route path="/sessions/live" element={<SessionControl />} />
+              <Route path="/sessions/:id" element={<SessionDetail />} />
+              <Route path="/personas" element={<Personas />} />
+              <Route path="/personas/create" element={<BotConfig />} />
+              <Route path="/personas/:id/config" element={<BotConfig />} />
+              <Route path="/knowledge" element={<KnowledgeBase />} />
+              <Route path="/workflows" element={<Workflows />} />
+              <Route path="/workflows/create" element={<WorkflowEditor />} />
+              <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile currentUser={currentUser} />} />
+              <Route
+                path="/users"
+                element={currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/" replace />}
+              />
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
+      </Router>
+    </NotificationProvider>
   );
 }
 

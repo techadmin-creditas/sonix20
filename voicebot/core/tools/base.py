@@ -26,10 +26,18 @@ class BaseTool(ABC):
         pass
 
     @property
-    @abstractmethod
     def parameters(self) -> Dict[str, Any]:
         """JSON Schema for the tool's input parameters."""
         pass
+
+    @property
+    def safety_instructions(self) -> str:
+        """
+        Instructions the Agentic Brain should follow when using this specific tool.
+        Use this to provide negative constraints (e.g. "Do NOT guess the account number")
+        or mandatory behavioral instructions.
+        """
+        return ""
 
     @abstractmethod
     async def execute(self, **kwargs) -> str:

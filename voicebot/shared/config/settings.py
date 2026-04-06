@@ -160,6 +160,11 @@ class AppSettings(BaseSettings):
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct", alias="OPENROUTER_DEFAULT_MODEL")
 
+    # Sentiment: never use the main voice LLM when unset; use small Groq when key present.
+    sentiment_classifier_model: str = Field(
+        default="llama-3.1-8b-instant", alias="SENTIMENT_CLASSIFIER_MODEL"
+    )
+
     # Classifier LLM — used for intent/sentiment/interceptor classification tasks.
     # Override via env vars or per-bot via bot_config["classifier_llm_provider"].
     # Supported: groq | openrouter | anthropic | gemini  (empty = auto-pick)
@@ -169,6 +174,7 @@ class AppSettings(BaseSettings):
     # Session inactivity timeout — how long (seconds) the bot waits in LISTENING
     # state before ending the call. Per-bot override via bot_config.inactivity_timeout_seconds.
     inactivity_timeout_seconds: int = Field(default=60, alias="INACTIVITY_TIMEOUT_SECONDS")
+    enable_post_call_summary: bool = Field(default=False, alias="ENABLE_POST_CALL_SUMMARY")
     serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
 
     tts_provider: str = Field(default="elevenlabs", alias="TTS_PROVIDER")

@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { api, SessionRecord, UserFact, SessionFeedback } from '../lib/api';
 import { cn } from '../lib/utils';
-import { 
-  ArrowLeft, Play, Pause, Download, Share2, 
+import {
+  ArrowLeft, Play, Pause, Download, Share2,
   MessageSquare, BarChart3, FileText, Lightbulb,
   Clock, Timer, Zap, ShieldCheck, Cpu,
   User, Bot, Calendar, Smile, Loader2, Tags,
@@ -32,7 +32,7 @@ export default function SessionDetail() {
     csat_score: 5,
     notes: '',
   });
-  
+
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'insights' | 'stats' | 'entities'>('transcript');
@@ -67,29 +67,29 @@ export default function SessionDetail() {
         const sttLatency = Math.round(meta.avg_stt_ms ?? meta.stt_ms ?? 0);
         const llmLatency = Math.round(meta.avg_llm_ms ?? meta.llm_ms ?? 0);
         const ttsLatency = Math.round(meta.avg_tts_ms ?? meta.tts_ms ?? 0);
-        const totalRtt   = Math.round(meta.avg_total_ms ?? meta.total_ms ?? 0);
+        const totalRtt = Math.round(meta.avg_total_ms ?? meta.total_ms ?? 0);
 
         const sentimentScore = meta.sentiment_score ?? null;
 
         const stData = {
-           id: details.id,
-           user_id: details.user_id,
-           bot: details.bot_name || 'System',
-           date: new Date(details.started_at * 1000).toLocaleDateString(),
-           time: new Date(details.started_at * 1000).toLocaleTimeString(),
-           duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
-           transcript: transcript.map((msg: any) => ({
-             role: msg.role === 'assistant' ? 'bot' : msg.role,
-             content: msg.content,
-             timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-             sentiment: (msg.metadata as any)?.sentiment as string | undefined,
-           })),
-           summary: meta.summary || 'No summary generated for this session.',
-           intent: meta.intent || 'Unknown Intent',
-           insights: [],
-           turns: details.turn_count || 0,
-           sentimentScore,
-           metrics: { sttLatency, llmLatency, ttsLatency, totalRtt }
+          id: details.id,
+          user_id: details.user_id,
+          bot: details.bot_name || 'System',
+          date: new Date(details.started_at * 1000).toLocaleDateString(),
+          time: new Date(details.started_at * 1000).toLocaleTimeString(),
+          duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
+          transcript: transcript.map((msg: any) => ({
+            role: msg.role === 'assistant' ? 'bot' : msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            sentiment: (msg.metadata as any)?.sentiment as string | undefined,
+          })),
+          summary: meta.summary || 'No summary generated for this session.',
+          intent: meta.intent || 'Unknown Intent',
+          insights: [],
+          turns: details.turn_count || 0,
+          sentimentScore,
+          metrics: { sttLatency, llmLatency, ttsLatency, totalRtt }
         };
         setSession(stData);
       } catch (e) {
@@ -149,7 +149,7 @@ export default function SessionDetail() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col ">
         <Header title="Loading Session..." subtitle="Please wait" />
         <div className="flex items-center justify-center p-20 flex-col gap-4">
           <Loader2 className="size-8 text-primary animate-spin" />
@@ -161,7 +161,7 @@ export default function SessionDetail() {
 
   if (!session) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col ">
         <Header title="404" subtitle="Session not found" />
         <div className="p-8">Session not found.</div>
       </div>
@@ -169,20 +169,20 @@ export default function SessionDetail() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title={`Session ${session.id}`} 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title={`Session ${session.id}`}
         subtitle={`Conversation with ${session.bot}`}
         actions={
           <div className="flex gap-3">
-            <button 
+            <button
               onClick={() => navigate('/sessions')}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all"
             >
               <ArrowLeft className="size-4" />
               Back to List
             </button>
-            <button 
+            <button
               onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all"
             >
@@ -210,13 +210,13 @@ export default function SessionDetail() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button 
+                <button
                   onClick={handleShare}
                   className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
                 >
                   <Share2 className="size-5" />
                 </button>
-                <button 
+                <button
                   onClick={handleExport}
                   className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
                 >
@@ -226,7 +226,7 @@ export default function SessionDetail() {
             </div>
 
             <div className="relative z-10 flex items-center gap-6 bg-surface-high/50 p-6 rounded-2xl">
-              <button 
+              <button
                 onClick={togglePlayback}
                 className="size-14 rounded-full ember-gradient flex items-center justify-center text-on-primary-fixed shadow-xl shadow-primary/20 active:scale-95 transition-all"
               >
@@ -260,8 +260,8 @@ export default function SessionDetail() {
                 onClick={() => setActiveTab(tab.id as any)}
                 className={cn(
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all",
-                  activeTab === tab.id 
-                    ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20" 
+                  activeTab === tab.id
+                    ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20"
                     : "text-outline hover:bg-surface-highest"
                 )}
               >
@@ -457,7 +457,7 @@ export default function SessionDetail() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-outline uppercase tracking-widest">CSAT Score:</span>
                           <div className="flex gap-1">
-                            {[1,2,3,4,5].map(n => (
+                            {[1, 2, 3, 4, 5].map(n => (
                               <Star key={n} className={cn("size-4", n <= (existingFeedback?.csat_score ?? 0) ? "text-amber-400 fill-amber-400" : "text-outline")} />
                             ))}
                           </div>
@@ -475,12 +475,12 @@ export default function SessionDetail() {
                         <div className="flex flex-col gap-2">
                           <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Rating</label>
                           <div className="flex gap-2">
-                            {([1,2,3,4,5] as const).map(n => (
+                            {([1, 2, 3, 4, 5] as const).map(n => (
                               <button
                                 key={n}
                                 onClick={() => setFeedbackData(p => ({ ...p, csat_score: n }))}
-                                className={cn("size-10 rounded-xl flex items-center justify-center transition-all border", 
-                                  feedbackData.csat_score >= n 
+                                className={cn("size-10 rounded-xl flex items-center justify-center transition-all border",
+                                  feedbackData.csat_score >= n
                                     ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
                                     : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/30"
                                 )}
@@ -532,14 +532,14 @@ export default function SessionDetail() {
         <div className="flex flex-col gap-8">
           <div className="bg-surface-low p-8 rounded-3xl ghost-border flex flex-col gap-8">
             <h4 className="font-headline font-bold text-lg">Session Metadata</h4>
-            
+
             <div className="flex flex-col gap-6">
               <MetaItem icon={Calendar} label="Date" value={session.date} />
               <MetaItem icon={Clock} label="Time" value={session.time} />
               <MetaItem icon={Timer} label="Duration" value={session.duration} />
               <MetaItem icon={MessageSquare} label="Total Turns" value={session.turns.toString()} />
               <MetaItem icon={Smile} label="Sentiment" value={
-                session.sentimentScore != null 
+                session.sentimentScore != null
                   ? `${(session.sentimentScore * 100).toFixed(0)}% Positive`
                   : '—'
               } />
@@ -564,19 +564,19 @@ export default function SessionDetail() {
             </div>
           </div>
 
-          <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
+          {/* <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
             <div className="size-12 rounded-2xl bg-white/20 flex items-center justify-center">
               <Zap className="size-6" />
             </div>
             <h4 className="font-headline font-bold text-xl">Action Required?</h4>
             <p className="text-sm opacity-80 leading-relaxed">This session had high sentiment but unresolved intent. Would you like to escalate this to a human agent for follow-up?</p>
-            <button 
+            <button
               onClick={handleEscalate}
               className="mt-4 w-full py-3 rounded-xl bg-white text-primary font-bold text-sm hover:bg-opacity-90 transition-all active:scale-95"
             >
               Escalate to Human
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
@@ -611,8 +611,8 @@ function LatencyCard({ label, value, icon: Icon, color }: any) {
         <h3 className="text-2xl font-headline font-extrabold mt-1">{value}</h3>
       </div>
       <div className="w-full h-1 bg-surface-highest rounded-full overflow-hidden">
-        <div 
-          className={cn("h-full", color.replace('text-', 'bg-'))} 
+        <div
+          className={cn("h-full", color.replace('text-', 'bg-'))}
           style={{ width: `${Math.min(100, (value / 1000) * 100)}%` }}
         ></div>
       </div>
