@@ -105,4 +105,45 @@
   .ghost-border {
     @apply border border-outline-variant/15;
   }
+
+  /* Marketing: voice equalizer bars (respects reduced motion via media query) */
+  .marketing-eq-bar {
+    transform-origin: bottom center;
+    transform: scaleY(0.4);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes marketing-eq-pulse {
+      0%,
+      100% {
+        transform: scaleY(0.35);
+      }
+      50% {
+        transform: scaleY(1);
+      }
+    }
+
+    .marketing-eq-bar {
+      animation: marketing-eq-pulse 0.75s ease-in-out infinite;
+    }
+
+    .marketing-eq-bar:nth-child(1) {
+      animation-delay: 0s;
+    }
+    .marketing-eq-bar:nth-child(2) {
+      animation-delay: 0.12s;
+    }
+    .marketing-eq-bar:nth-child(3) {
+      animation-delay: 0.24s;
+    }
+    .marketing-eq-bar:nth-child(4) {
+      animation-delay: 0.08s;
+    }
+    .marketing-eq-bar:nth-child(5) {
+      animation-delay: 0.2s;
+    }
+    .marketing-eq-bar:nth-child(6) {
+      animation-delay: 0.16s;
+    }
+  }
 }

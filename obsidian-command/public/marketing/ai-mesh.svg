@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" fill="none" aria-hidden="true">
+  <defs>
+    <radialGradient id="orb" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" style="stop-color:#fb8c00;stop-opacity:0.45"/>
+      <stop offset="70%" style="stop-color:#fb8c00;stop-opacity:0.08"/>
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0"/>
+    </radialGradient>
+    <linearGradient id="ln" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fb8c00;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#827568;stop-opacity:0.15"/>
+    </linearGradient>
+  </defs>
+  <circle cx="160" cy="140" r="90" fill="url(#orb)"/>
+  <g stroke="url(#ln)" stroke-width="1" opacity="0.6">
+    <line x1="80" y1="100" x2="200" y2="80"/>
+    <line x1="200" y1="80" x2="240" y2="180"/>
+    <line x1="240" y1="180" x2="120" y2="220"/>
+    <line x1="120" y1="220" x2="80" y2="100"/>
+    <line x1="160" y1="60" x2="160" y2="200"/>
+    <line x1="60" y1="160" x2="260" y2="140"/>
+    <circle cx="80" cy="100" r="5" fill="#fb8c00" fill-opacity="0.6"/>
+    <circle cx="200" cy="80" r="5" fill="#fb8c00" fill-opacity="0.5"/>
+    <circle cx="240" cy="180" r="5" fill="#dcc1ae" fill-opacity="0.5"/>
+    <circle cx="120" cy="220" r="5" fill="#fb8c00" fill-opacity="0.45"/>
+  </g>
+  <circle cx="160" cy="140" r="28" stroke="#fb8c00" stroke-width="1.5" fill="none" opacity="0.35"/>
+  <circle cx="160" cy="140" r="14" fill="#fb8c00" fill-opacity="0.25"/>
+</svg>

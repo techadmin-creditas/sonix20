@@ -184,16 +184,17 @@ export default function Workflows() {
               : "flex flex-col gap-4"
           )}>
             {filtered.map((flow) => (
-              <WorkflowCard
-                key={flow.id}
-                flow={flow}
-                view={view}
-                isConfirming={deletingId === flow.id}
-                isDeleting={deleteLoadingId === flow.id}
-                onDeleteRequest={() => setDeletingId(flow.id)}
-                onDeleteCancel={() => setDeletingId(null)}
-                onDeleteConfirm={() => handleDelete(flow.id)}
-              />
+              <React.Fragment key={flow.id}>
+                <WorkflowCard
+                  flow={flow}
+                  view={view}
+                  isConfirming={deletingId === flow.id}
+                  isDeleting={deleteLoadingId === flow.id}
+                  onDeleteRequest={() => setDeletingId(flow.id)}
+                  onDeleteCancel={() => setDeletingId(null)}
+                  onDeleteConfirm={() => handleDelete(flow.id)}
+                />
+              </React.Fragment>
             ))}
 
             {/* Create New Card — only show in grid view */}

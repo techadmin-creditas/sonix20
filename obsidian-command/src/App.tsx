@@ -15,6 +15,7 @@ import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
+import Home from './pages/Home';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -49,6 +50,7 @@ function App() {
     return (
       <Router>
         <Routes>
+          <Route path="/" element={<Home />} />
           <Route
             path="/login"
             element={
@@ -59,7 +61,7 @@ function App() {
               />
             }
           />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     );
@@ -77,7 +79,8 @@ function App() {
         />
         <main className="flex-1 flex flex-col overflow-x-hidden">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/sessions/live" element={<SessionControl />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
@@ -92,10 +95,12 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route
               path="/users"
-              element={currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/" replace />}
+              element={
+                currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/dashboard" replace />
+              }
             />
-            <Route path="/login" element={<Navigate to="/" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>
