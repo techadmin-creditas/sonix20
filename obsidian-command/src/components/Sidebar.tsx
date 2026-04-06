@@ -13,9 +13,11 @@ import {
   PlusCircle,
   Sun,
   Moon,
-  GitBranch
+  GitBranch,
+  Users
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AuthUser } from '../lib/api';
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -27,7 +29,13 @@ const NAV_ITEMS = [
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  currentUser,
+  onLogout,
+}: {
+  currentUser: AuthUser;
+  onLogout: () => void;
+}) {
   const [isDark, setIsDark] = React.useState(true);
 
   const toggleTheme = () => {
@@ -71,6 +79,24 @@ export function Sidebar() {
               )}
             </NavLink>
           ))}
+          {currentUser.role === 'admin' && (
+            <NavLink
+              to="/users"
+              className={({ isActive }) => cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
+                isActive
+                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
+                  : "text-on-surface-variant hover:bg-surface-high/50"
+              )}
+            >
+              {({ isActive }) => (
+                <>
+                  <Users className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
+                  <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>Users</span>
+                </>
+              )}
+            </NavLink>
+          )}
         </nav>
 
         <div className="mt-4">
@@ -100,9 +126,16 @@ export function Sidebar() {
             AR
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Alex Rivera</span>
-            <span className="text-[10px] uppercase tracking-tighter text-outline">Organization Owner</span>
+            <span className="text-sm font-semibold">{currentUser.username}</span>
+            <span className="text-[10px] uppercase tracking-tighter text-outline">{currentUser.role}</span>
           </div>
+          <button
+            onClick={onLogout}
+            className="ml-auto p-2 rounded-lg bg-surface-low hover:bg-surface-high border border-outline-variant/20"
+            title="Logout"
+          >
+            <LogOut className="size-4" />
+          </button>
         </div>
       </div>
     </aside>

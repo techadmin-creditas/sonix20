@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
+from voicebot.api.middleware.auth import JWTAuthMiddleware
 
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger, correlation_id_var, session_id_var, generate_correlation_id
@@ -137,6 +138,7 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=False,
 )
+app.add_middleware(JWTAuthMiddleware)
 
 # Mount REST API
 app.include_router(gateway_v1_router, prefix="/api/v1")

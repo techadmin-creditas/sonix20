@@ -25,6 +25,11 @@ from voicebot.shared.logging.logger import setup_logger, correlation_id_var, ses
 from voicebot.shared.logging.logger import generate_correlation_id
 from voicebot.services.memory.sqlite_provider import SQLiteProvider
 from voicebot.shared.livekit_util import normalize_livekit_client_url
+from voicebot.services.auth.auth_service import (
+    hash_password,
+    issue_access_token,
+    verify_password,
+)
 
 settings = get_settings()
 logger = setup_logger("gateway-routes", level=settings.log_level)
@@ -41,6 +46,28 @@ async def get_db() -> SQLiteProvider:
         _db = SQLiteProvider()
         await _db.initialize()
     return _db
+
+
+def _actor(request: Request) -> tuple[str, str]:
+    user_id = str(getattr(request.state, "user_id", "") or "")
+    roles = getattr(request.state, "roles", []) or []
+    role = "admin" if "admin" in roles else "user"
+    return user_id, role
+
+
+def _require_admin(request: Request) -> str:
+    user_id, role = _actor(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user_id
+
+
+def _can_access_owner(owner_user_id: Optional[str], actor_user_id: str, actor_role: str) -> bool:
+    if actor_role == "admin":
+        return True
+    return bool(owner_user_id) and owner_user_id == actor_user_id
 
 
 def _livekit_keys_configured() -> bool:
@@ -103,6 +130,109 @@ def _livekit_join_bundle(session_id: str, user_id: Optional[str]) -> tuple[Optio
         return None, f"LiveKit token build failed: {e}"
 
 
+# ─── Auth + User Management ───────────────────────────────────────────────────
+
+@router.post("/auth/login", tags=["auth"])
+async def login(data: dict):
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    if not username or not password:
+        raise HTTPException(status_code=422, detail="'username' and 'password' are required")
+    db = await get_db()
+    user = await db.get_user_by_username(username)
+    if not user or int(user.get("is_active", 0)) != 1:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(password, str(user.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = issue_access_token(
+        user_id=str(user["id"]),
+        username=str(user["username"]),
+        role=str(user["role"]),
+    )
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "role": user["role"],
+        },
+    }
+
+
+@router.get("/auth/me", tags=["auth"])
+async def me(request: Request):
+    user_id, _ = _actor(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    user = await db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "is_active": user["is_active"],
+    }
+
+
+@router.get("/admin/users", tags=["admin"])
+async def list_users(request: Request):
+    _require_admin(request)
+    db = await get_db()
+    users = await db.list_users()
+    return {"users": users, "count": len(users)}
+
+
+@router.post("/admin/users", tags=["admin"])
+async def create_user(request: Request, data: dict):
+    _require_admin(request)
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    role = str(data.get("role") or "user").lower()
+    if role not in ("admin", "user"):
+        raise HTTPException(status_code=422, detail="role must be admin|user")
+    if not username or not password:
+        raise HTTPException(status_code=422, detail="'username' and 'password' are required")
+    db = await get_db()
+    existing = await db.get_user_by_username(username)
+    if existing:
+        raise HTTPException(status_code=409, detail="username already exists")
+    user = await db.create_user(username=username, password_hash=hash_password(password), role=role)
+    return {"status": "created", "user": user}
+
+
+@router.patch("/admin/users/{user_id}", tags=["admin"])
+async def patch_user(user_id: str, request: Request, data: dict):
+    _require_admin(request)
+    db = await get_db()
+    target = await db.get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    ok = await db.update_user(
+        user_id,
+        username=data.get("username"),
+        role=data.get("role"),
+        is_active=data.get("is_active"),
+    )
+    return {"status": "updated" if ok else "noop", "user_id": user_id}
+
+
+@router.patch("/admin/users/{user_id}/password", tags=["admin"])
+async def patch_user_password(user_id: str, request: Request, data: dict):
+    _require_admin(request)
+    password = str(data.get("password") or "")
+    if not password:
+        raise HTTPException(status_code=422, detail="'password' is required")
+    db = await get_db()
+    target = await db.get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    ok = await db.change_password(user_id, hash_password(password))
+    return {"status": "updated" if ok else "noop", "user_id": user_id}
+
+
 # ─── Session Endpoints ────────────────────────────────────────────────────────
 
 @router.post("/sessions", tags=["sessions"])
@@ -122,10 +252,20 @@ async def create_session(
     import uuid
     session_id = str(uuid.uuid4())
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    owner_user_id = actor_user_id
+    if actor_role == "admin" and user_id:
+        owner_user_id = str(user_id)
     language_explicit = "language" in request.query_params
     session_language = (language or "hi").strip().lower() or "hi"
     if bot_id and not language_explicit:
         bot = await db.get_bot(bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
+            raise HTTPException(status_code=404, detail="Bot not found")
         bot_lang = str((bot or {}).get("default_language") or "").strip().lower()
         if bot_lang:
             session_language = bot_lang
@@ -133,10 +273,10 @@ async def create_session(
     await db.create_session(
         session_id,
         bot_id=bot_id,
-        user_id=user_id,
+        user_id=owner_user_id,
         language=session_language,
     )
-    logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], user_id, bot_id, transport)
+    logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], owner_user_id, bot_id, transport)
 
     ws_url = f"/ws/voice/{session_id}"
     if bot_id:
@@ -154,7 +294,7 @@ async def create_session(
     }
     tnorm = (transport or "websocket").lower()
     if tnorm in ("webrtc", "livekit"):
-        lk, lk_err = _livekit_join_bundle(session_id, user_id)
+        lk, lk_err = _livekit_join_bundle(session_id, owner_user_id)
         out["livekit"] = lk
         if lk:
             # Automate: Trigger the LiveKit Voice Agent in the background
@@ -172,37 +312,54 @@ async def create_session(
 
 
 @router.get("/sessions", tags=["sessions"])
-async def list_sessions(limit: int = 50):
+async def list_sessions(request: Request, limit: int = 50):
     """List recent voice sessions with metadata."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     sessions = await db.list_sessions(limit=limit)
+    if actor_role != "admin":
+        sessions = [s for s in sessions if str(s.get("user_id") or "") == actor_user_id]
     return {"sessions": sessions, "count": len(sessions)}
 
 
 @router.get("/sessions/{session_id}", tags=["sessions"])
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
     """Get metadata details for a specific voice session."""
     db = await get_db()
     session_data = await db.get_session(session_id)
     if not session_data:
         raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session_data.get("user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Session not found")
     return session_data
 
 
 @router.get("/sessions/{session_id}/log", tags=["sessions"])
-async def get_session_log(session_id: str):
+async def get_session_log(session_id: str, request: Request):
     """Get full conversation transcript for a session."""
     db = await get_db()
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Session not found")
     log = await db.get_session_log(session_id)
     return {"session_id": session_id, "turns": log, "count": len(log)}
 
 
 @router.post("/sessions/{session_id}/feedback", tags=["sessions"])
-async def submit_session_feedback(session_id: str, data: dict):
+async def submit_session_feedback(session_id: str, data: dict, request: Request):
     """Submit CSAT feedback for a completed session."""
     db = await get_db()
     session = await db.get_session(session_id)
     if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     outcome = data.get("outcome", "resolved")
     csat_score = int(data.get("csat_score", 5))
@@ -216,17 +373,29 @@ async def submit_session_feedback(session_id: str, data: dict):
 
 
 @router.get("/sessions/{session_id}/feedback", tags=["sessions"])
-async def get_session_feedback(session_id: str):
+async def get_session_feedback(session_id: str, request: Request):
     """Get stored CSAT feedback for a session."""
     db = await get_db()
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Session not found")
     feedback = await db.get_session_feedback(session_id)
     return {"session_id": session_id, "feedback": feedback}
 
 
 @router.get("/sessions/{session_id}/facts", tags=["sessions"])
-async def get_session_facts(session_id: str):
+async def get_session_facts(session_id: str, request: Request):
     """Return user facts extracted during a session."""
     db = await get_db()
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Session not found")
     facts = await db.get_session_facts(session_id)
     return {"session_id": session_id, "facts": facts, "count": len(facts)}
 
@@ -234,10 +403,13 @@ async def get_session_facts(session_id: str):
 # ─── Bot Registry CRUD ────────────────────────────────────────────────────────
 
 @router.get("/bots", tags=["bots"])
-async def list_bots():
+async def list_bots(request: Request):
     """List all active bot configurations with aggregate usage."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
     bots = await db.list_bots()
+    if actor_role != "admin":
+        bots = [b for b in bots if str(b.get("owner_user_id") or "") == actor_user_id]
     
     # Enrich with lifetime usage
     enriched = []
@@ -249,11 +421,14 @@ async def list_bots():
 
 
 @router.get("/bots/{bot_id}", tags=["bots"])
-async def get_bot(bot_id: str):
+async def get_bot(bot_id: str, request: Request):
     """Get a specific bot configuration by ID with usage stats."""
     db = await get_db()
     bot = await db.get_bot(bot_id)
     if not bot:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     
     usage = await db.get_bot_usage(bot_id)
@@ -261,7 +436,10 @@ async def get_bot(bot_id: str):
 
 
 @router.post("/bots", tags=["bots"])
-async def create_bot(data: dict):
+async def create_bot(data: dict, request: Request):
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     """
     Create a new bot persona.
     
@@ -293,6 +471,7 @@ async def create_bot(data: dict):
             tts_provider=data.get("tts_provider", "deepgram_ws"),
             default_language=data.get("default_language", "hi"),
             proactive_prompts=data.get("proactive_prompts", []),
+            owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id),
         )
         bid = result.get("id")
         if bid:
@@ -318,41 +497,56 @@ async def create_bot(data: dict):
 
 
 @router.patch("/bots/{bot_id}", tags=["bots"])
-async def update_bot(bot_id: str, data: dict):
+async def update_bot(bot_id: str, data: dict, request: Request):
     """Update a bot's configuration fields."""
     db = await get_db()
     bot = await db.get_bot(bot_id)
     if not bot:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     await db.update_bot(bot_id, **data)
     return {"status": "updated", "bot_id": bot_id}
 
 
 @router.delete("/bots/{bot_id}", tags=["bots"])
-async def delete_bot(bot_id: str):
+async def delete_bot(bot_id: str, request: Request):
     """Soft-delete a bot (marks as inactive)."""
     db = await get_db()
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     await db.delete_bot(bot_id)
     return {"status": "deleted", "bot_id": bot_id}
 
 
 @router.delete("/workflows/{workflow_id}", tags=["workflows"])
-async def delete_workflow(workflow_id: str):
+async def delete_workflow(workflow_id: str, request: Request):
     """Hard-delete a workflow by ID."""
     db = await get_db()
     wf = await db.get_workflow(workflow_id)
     if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(wf.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Workflow not found")
     await db.delete_workflow(workflow_id)
     return {"status": "deleted", "workflow_id": workflow_id}
 
 
 @router.delete("/sessions/{session_id}", tags=["sessions"])
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, request: Request):
     """Hard-delete a session and all associated logs/facts/feedback."""
     db = await get_db()
     session = await db.get_session(session_id)
     if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     await db.delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
@@ -410,9 +604,12 @@ def _enrich_workflow(wf: dict) -> dict:
 
 
 @router.get("/workflows", tags=["workflows"])
-async def list_workflows():
+async def list_workflows(request: Request):
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
     workflows = await db.list_workflows()
+    if actor_role != "admin":
+        workflows = [w for w in workflows if str(w.get("owner_user_id") or "") == actor_user_id]
     enriched = [_enrich_workflow(wf) for wf in workflows]
     return {"workflows": enriched, "count": len(enriched)}
 
@@ -471,25 +668,39 @@ async def test_workflow(data: dict):
 
 
 @router.get("/workflows/{workflow_id}", tags=["workflows"])
-async def get_workflow(workflow_id: str):
+async def get_workflow(workflow_id: str, request: Request):
     db = await get_db()
     wf = await db.get_workflow(workflow_id)
     if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    actor_user_id, actor_role = _actor(request)
+    if not _can_access_owner(wf.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Workflow not found")
     return _enrich_workflow(wf)
 
 
 @router.post("/workflows", tags=["workflows"])
-async def save_workflow(data: dict):
+async def save_workflow(data: dict, request: Request):
     import uuid
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     workflow_id = data.get("id") or str(uuid.uuid4())
     name = data.get("name", "Untitled Workflow")
     description = data.get("description", "")
     nodes = data.get("nodes", [])
     edges = data.get("edges", [])
 
-    await db.save_workflow(workflow_id, name, description, nodes, edges)
+    if data.get("id"):
+        existing = await db.get_workflow(workflow_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        if not _can_access_owner(existing.get("owner_user_id"), actor_user_id, actor_role):
+            raise HTTPException(status_code=404, detail="Workflow not found")
+    await db.save_workflow(
+        workflow_id, name, description, nodes, edges, owner_user_id=actor_user_id
+    )
     wf = await db.get_workflow(workflow_id)
     return _enrich_workflow(wf) if wf else {"status": "saved", "id": workflow_id}
 
@@ -523,25 +734,45 @@ async def create_appointment(data: dict):
 # ─── Knowledge Base Endpoints ─────────────────────────────────────────────────
 
 @router.get("/knowledge/search", tags=["data"])
-async def search_knowledge(q: str, bot_id: Optional[str] = None):
+async def search_knowledge(request: Request, q: str, bot_id: Optional[str] = None):
     """Search the knowledge base (useful for testing retrieval)."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    if actor_role != "admin" and bot_id:
+        bot = await db.get_bot(bot_id)
+        if not bot or str(bot.get("owner_user_id") or "") != actor_user_id:
+            raise HTTPException(status_code=404, detail="Bot not found")
     results = await db.search_knowledge(q, bot_id=bot_id)
+    if actor_role != "admin":
+        results = [r for r in results if str(r.get("owner_user_id") or actor_user_id) == actor_user_id or r.get("bot_id") is None]
     return {"query": q, "results": results, "count": len(results)}
 
 
 @router.get("/knowledge", tags=["data"])
-async def list_knowledge(limit: int = 100):
+async def list_knowledge(request: Request, limit: int = 100):
     """List all knowledge base entries."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
     entries = await db.list_knowledge(limit=limit)
+    if actor_role != "admin":
+        entries = [e for e in entries if str(e.get("owner_user_id") or "") == actor_user_id]
     return {"entries": entries, "count": len(entries)}
 
 
 @router.post("/knowledge", tags=["data"])
-async def add_knowledge(data: dict):
+async def add_knowledge(data: dict, request: Request):
     """Add a knowledge base entry."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    bot_id = data.get("bot_id")
+    if bot_id:
+        bot = await db.get_bot(bot_id)
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
+            raise HTTPException(status_code=404, detail="Bot not found")
     if not data.get("question") or not data.get("answer"):
         raise HTTPException(status_code=422, detail="Question and Answer are required")
     await db.add_knowledge(
@@ -549,16 +780,24 @@ async def add_knowledge(data: dict):
         question=data["question"],
         answer=data["answer"],
         keywords=data.get("keywords", []),
-        bot_id=data.get("bot_id"),
+        bot_id=bot_id,
         priority=data.get("priority", 0),
+        owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id),
     )
     return {"status": "added"}
 
 
 @router.delete("/knowledge/{entry_id}", tags=["data"])
-async def delete_knowledge(entry_id: int):
+async def delete_knowledge(entry_id: int, request: Request):
     """Delete a knowledge base entry."""
     db = await get_db()
+    actor_user_id, actor_role = _actor(request)
+    entries = await db.list_knowledge(limit=100000)
+    ent = next((e for e in entries if int(e.get("id", -1)) == entry_id), None)
+    if not ent:
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    if not _can_access_owner(ent.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Knowledge entry not found")
     await db.delete_knowledge(entry_id)
     return {"status": "deleted", "id": entry_id}
 
@@ -743,26 +982,37 @@ async def test_llm(data: dict):
 
 # ─── Analytics Endpoints ───────────────────────────────────────────────────────
 @router.get("/analytics/dashboard", tags=["analytics"])
-async def get_dashboard_analytics():
+async def get_dashboard_analytics(request: Request):
     """Get aggregated metrics for the dashboard overview."""
     db = await get_db()
-    stats = await db.get_dashboard_analytics()
+    actor_user_id, actor_role = _actor(request)
+    stats = await db.get_dashboard_analytics(
+        owner_user_id=None if actor_role == "admin" else actor_user_id
+    )
     return stats
 
 
 @router.get("/analytics/latency", tags=["analytics"])
-async def get_latency_analytics(limit: int = 30):
+async def get_latency_analytics(request: Request, limit: int = 30):
     """Return per-session average latency metrics (STT/LLM/TTS/total) for the last N sessions."""
     db = await get_db()
-    records = await db.get_latency_analytics(limit=limit)
+    actor_user_id, actor_role = _actor(request)
+    records = await db.get_latency_analytics(
+        limit=limit,
+        owner_user_id=None if actor_role == "admin" else actor_user_id,
+    )
     return {"records": records, "count": len(records)}
 
 
 @router.get("/analytics/intents", tags=["analytics"])
-async def get_intent_analytics(limit: int = 100):
+async def get_intent_analytics(request: Request, limit: int = 100):
     """Return intent distribution grouped by intent label from recent sessions."""
     db = await get_db()
-    intents = await db.get_intent_analytics(limit=limit)
+    actor_user_id, actor_role = _actor(request)
+    intents = await db.get_intent_analytics(
+        limit=limit,
+        owner_user_id=None if actor_role == "admin" else actor_user_id,
+    )
     return {"intents": intents, "count": len(intents)}
 
 
