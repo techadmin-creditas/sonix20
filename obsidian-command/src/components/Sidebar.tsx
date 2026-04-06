@@ -8,20 +8,18 @@ import {
   Settings,
   Database,
   Bot,
-  Layers,
   LogOut,
   PlusCircle,
-  Sun,
-  Moon,
   GitBranch,
   Users,
   User
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AuthUser } from '../lib/api';
+import { ThemeToggle } from './ThemeToggle';
 
 const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
   { icon: GitBranch, label: 'Workflows', path: '/workflows' },
@@ -38,13 +36,6 @@ export function Sidebar({
   currentUser: AuthUser;
   onLogout: () => void;
 }) {
-  const [isDark, setIsDark] = React.useState(true);
-
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-  };
-
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0">
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
@@ -53,12 +44,7 @@ export function Sidebar({
             <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.0</h1>
             {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg bg-surface-low hover:bg-surface-high transition-all border border-outline-variant/10 text-outline hover:text-primary"
-          >
-            {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </button>
+          <ThemeToggle />
         </div>
 
         <nav className="flex flex-col gap-2">

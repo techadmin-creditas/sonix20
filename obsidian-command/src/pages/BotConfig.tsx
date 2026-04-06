@@ -138,11 +138,11 @@ export default function BotConfig() {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [saveSuccess, setSaveSuccess] = React.useState(false);
-  
-  const [models, setModels] = React.useState<{id: string, name: string, provider: string}[]>([]);
+
+  const [models, setModels] = React.useState<{ id: string, name: string, provider: string }[]>([]);
   const [voices, setVoices] = React.useState<{ id: string, name: string, provider: string }[]>([]);
-  const [workflows, setWorkflows] = React.useState<{id: string, name: string}[]>([]);
-  
+  const [workflows, setWorkflows] = React.useState<{ id: string, name: string }[]>([]);
+
   const [formData, setFormData] = React.useState<Partial<Bot>>({
     name: '',
     role: '',
@@ -341,8 +341,8 @@ export default function BotConfig() {
         } else {
           // Set sensible defaults for Create Mode 
           if (modelsData.length > 0) {
-            setFormData(prev => ({ 
-              ...prev, 
+            setFormData(prev => ({
+              ...prev,
               llm_model: modelsData[0].id,
               llm_provider: modelsData[0].provider
             }));
@@ -447,12 +447,12 @@ export default function BotConfig() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button
+          {/* <button
             onClick={() => navigate('/personas')}
             className="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:text-on-surface ghost-border transition-all"
           >
             {isCreateMode ? 'Cancel' : 'Back'}
-          </button>
+          </button> */}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -541,8 +541,8 @@ export default function BotConfig() {
                 <span className="text-[10px] text-on-surface-variant/60 font-mono uppercase tracking-tighter">Safety Layer 1</span>
               </div>
               <div className="relative">
-                <textarea 
-                  className="w-full h-32 bg-error/5 border border-error/10 font-mono text-sm leading-relaxed p-4 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/20 transition-all hover:bg-error/10" 
+                <textarea
+                  className="w-full h-32 bg-error/5 border border-error/10 font-mono text-sm leading-relaxed p-4 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/20 transition-all hover:bg-error/10"
                   placeholder="e.g. Never ask for account numbers. Do not mention OTPs under any circumstances. Reply in Hindi only."
                   spellCheck="false"
                   value={formData.guardrails}
@@ -606,8 +606,8 @@ export default function BotConfig() {
                     onChange={e => {
                       const modelId = e.target.value;
                       const modelObj = models.find(m => m.id === modelId);
-                      setFormData(prev => ({ 
-                        ...prev, 
+                      setFormData(prev => ({
+                        ...prev,
                         llm_model: modelId,
                         llm_provider: modelObj?.provider || ''
                       }));
@@ -834,14 +834,14 @@ export default function BotConfig() {
             </p>
             <div className="space-y-4">
               <label className="text-[10px] font-bold uppercase text-on-surface-variant">guardrail_policy</label>
-              <GuardrailManager 
-                policy={policyDraft.guardrail} 
+              <GuardrailManager
+                policy={policyDraft.guardrail}
                 onChange={(val) => setPolicyDraft(p => ({ ...p, guardrail: val }))}
                 botId={id}
                 botPersona={formData.persona}
                 botInstructions={formData.system_prompt}
               />
-              
+
               <DataAccessPolicyManager
                 value={policyDraft.data_access}
                 botContext={{ name: formData.name, role: formData.role, system_prompt: formData.system_prompt }}
@@ -1459,7 +1459,7 @@ function DataAccessPolicyManager({ value, botContext, onChange }: {
                   <input
                     type="checkbox"
                     checked={isEnabled}
-                    onChange={() => {}}
+                    onChange={() => { }}
                     className="rounded border-outline-variant size-4 text-primary focus:ring-primary/20 pointer-events-none"
                   />
                 </div>
@@ -1608,11 +1608,11 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
     try {
       const res = await api.getGuardrailSuggestions(botId);
       const allSuggestions = [...res.suggested_rules, ...res.library_rules];
-      
+
       // Filter out suggestions that are already in the list
       const existingIds = new Set((policyData.rules || []).map((r: any) => r.id));
       const filtered = allSuggestions.filter((r: any) => !existingIds.has(r.id));
-      
+
       if (filtered.length === 0) {
         alert("No new suggestions found.");
         return;
@@ -1647,14 +1647,14 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
             </div>
             <span className="text-[9px] text-on-surface-variant">Block prompt attacks</span>
           </div>
-          <input 
-            checked={policyData.injection_check_enabled || false} 
-            onChange={e => updatePolicy({ 
+          <input
+            checked={policyData.injection_check_enabled || false}
+            onChange={e => updatePolicy({
               injection_check_enabled: e.target.checked,
               injection_action: e.target.checked ? "block" : "log"
             })}
-            className="rounded border-outline-variant bg-surface-variant text-primary size-5" 
-            type="checkbox" 
+            className="rounded border-outline-variant bg-surface-variant text-primary size-5"
+            type="checkbox"
           />
         </label>
         <label className="flex items-center justify-between p-3 rounded-xl bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors group relative">
@@ -1670,11 +1670,11 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
             </div>
             <span className="text-[9px] text-on-surface-variant">Don't hallucinate basics</span>
           </div>
-          <input 
-            checked={policyData.kb_only_factual || false} 
+          <input
+            checked={policyData.kb_only_factual || false}
             onChange={e => updatePolicy({ kb_only_factual: e.target.checked })}
-            className="rounded border-outline-variant bg-surface-variant text-primary size-5" 
-            type="checkbox" 
+            className="rounded border-outline-variant bg-surface-variant text-primary size-5"
+            type="checkbox"
           />
         </label>
         <div className="flex flex-col justify-center p-3 rounded-xl bg-surface-container-low relative">
@@ -1690,7 +1690,7 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
             </div>
             <span className="text-[10px] font-mono text-primary">{policyData.semantic_cache_ttl_seconds || 3600}s</span>
           </div>
-          <input 
+          <input
             type="range" min="60" max="86400" step="60"
             className="w-full custom-range cursor-pointer"
             value={policyData.semantic_cache_ttl_seconds || 3600}
@@ -1737,18 +1737,18 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
               </div>
             </div>
             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-               <button 
+              <button
                 onClick={() => { setEditingIndex(idx); setShowAddModal(true); }}
                 className="size-8 flex items-center justify-center rounded-lg hover:bg-surface-container-high text-on-surface-variant"
-               >
-                 <Settings2 className="size-4" />
-               </button>
-               <button 
+              >
+                <Settings2 className="size-4" />
+              </button>
+              <button
                 onClick={() => removeRule(idx)}
                 className="size-8 flex items-center justify-center rounded-lg hover:bg-red-500/10 text-red-400"
-               >
-                 <Trash2 className="size-4" />
-               </button>
+              >
+                <Trash2 className="size-4" />
+              </button>
             </div>
           </div>
         ))}
@@ -1770,10 +1770,10 @@ function GuardrailManager({ policy, onChange, botId, botPersona, botInstructions
               <ShieldCheck className="size-5 text-primary" />
               {editingIndex !== null ? 'Update' : 'Add New'} Guardrail Rule
             </h3>
-            <RuleEditorForm 
+            <RuleEditorForm
               initialData={editingIndex !== null ? policyData.rules[editingIndex] : null}
               metadata={metadata}
-              onSave={addOrUpdateRule} 
+              onSave={addOrUpdateRule}
               onCancel={() => { setShowAddModal(false); setEditingIndex(null); }}
             />
           </div>
@@ -1813,16 +1813,16 @@ function RuleEditorForm({ initialData, metadata, onSave, onCancel }: any) {
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
           <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest px-1">Name</label>
-          <input 
-            className="bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-primary h-12 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high" 
-            placeholder="e.g. Reject PII" 
+          <input
+            className="bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-primary h-12 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+            placeholder="e.g. Reject PII"
             value={data.name}
             onChange={e => setData((p: any) => ({ ...p, name: e.target.value }))}
           />
         </div>
         <div className="flex flex-col gap-2">
           <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest px-1">Scope</label>
-          <select 
+          <select
             className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-on-surface h-12 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all opacity-90"
             value={data.scope}
             onChange={e => setData((p: any) => ({ ...p, scope: e.target.value as any }))}
@@ -1837,10 +1837,10 @@ function RuleEditorForm({ initialData, metadata, onSave, onCancel }: any) {
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
-             <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest">Detection Logic</label>
-             <span className="text-[9px] text-primary/60 italic font-medium">Trigger</span>
+            <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest">Detection Logic</label>
+            <span className="text-[9px] text-primary/60 italic font-medium">Trigger</span>
           </div>
-          <select 
+          <select
             className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-on-surface h-12 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all"
             value={data.trigger}
             onChange={e => setData((p: any) => ({ ...p, trigger: e.target.value }))}
@@ -1855,10 +1855,10 @@ function RuleEditorForm({ initialData, metadata, onSave, onCancel }: any) {
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
-             <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest">Bot Reaction</label>
-             <span className="text-[9px] text-primary/60 italic font-medium">Action</span>
+            <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest">Bot Reaction</label>
+            <span className="text-[9px] text-primary/60 italic font-medium">Action</span>
           </div>
-          <select 
+          <select
             className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-on-surface h-12 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all"
             value={data.action}
             onChange={e => setData((p: any) => ({ ...p, action: e.target.value }))}
@@ -1875,8 +1875,8 @@ function RuleEditorForm({ initialData, metadata, onSave, onCancel }: any) {
 
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest px-1">Match Value / Training phrase</label>
-        <textarea 
-          className="bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-20 transition-all" 
+        <textarea
+          className="bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-primary w-full focus:ring-1 focus:ring-primary/30 min-h-20 transition-all"
           placeholder={data.trigger === 'regex' ? "\\b(?:\\d[ -]?){13,16}\\b" : "Enter phrase or keywords..."}
           value={data.pattern}
           onChange={e => setData((p: any) => ({ ...p, pattern: e.target.value }))}
@@ -1884,30 +1884,30 @@ function RuleEditorForm({ initialData, metadata, onSave, onCancel }: any) {
       </div>
       {selectedAction?.requires && (
         <div className="flex flex-col gap-2 animate-in slide-in-from-top-2">
-           <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest px-1">
-             Action Parameter: {selectedAction.requires.replace('_', ' ')}
-           </label>
-           <input 
+          <label className="text-[10px] font-bold uppercase text-on-surface-variant tracking-widest px-1">
+            Action Parameter: {selectedAction.requires.replace('_', ' ')}
+          </label>
+          <input
             className="bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-sm font-medium text-primary h-12 w-full focus:ring-1 focus:ring-primary/30 transition-all"
             placeholder={`Enter ${selectedAction.requires.replace('_', ' ')}...`}
             value={data.params[selectedAction.requires] || ''}
-            onChange={e => setData((p: any) => ({ 
-              ...p, 
-              params: { ...p.params, [selectedAction.requires!]: e.target.value } 
+            onChange={e => setData((p: any) => ({
+              ...p,
+              params: { ...p.params, [selectedAction.requires!]: e.target.value }
             }))}
           />
         </div>
       )}
 
       <div className="flex justify-end gap-4 mt-4">
-        <button 
-          type="button" 
+        <button
+          type="button"
           onClick={onCancel}
           className="px-6 py-2.5 rounded-xl text-sm font-bold text-on-surface-variant hover:text-on-surface transition-colors"
         >
           Cancel
         </button>
-        <button 
+        <button
           type="submit"
           className="px-8 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-bold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
         >

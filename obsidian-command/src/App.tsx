@@ -17,6 +17,7 @@ import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
+import Home from './pages/Home';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -51,6 +52,7 @@ function App() {
     return (
       <Router>
         <Routes>
+          <Route path="/" element={<Home />} />
           <Route
             path="/login"
             element={
@@ -61,7 +63,7 @@ function App() {
               />
             }
           />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     );
@@ -69,6 +71,7 @@ function App() {
 
   return (
     <NotificationProvider>
+
       <Router>
         <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
           <Sidebar
@@ -78,9 +81,10 @@ function App() {
               setCurrentUser(null);
             }}
           />
-          <main className="flex-1 flex flex-col">
+          <main className="flex-1 flex flex-col overflow-x-hidden">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/sessions/live" element={<SessionControl />} />
               <Route path="/sessions/:id" element={<SessionDetail />} />
@@ -94,12 +98,15 @@ function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile currentUser={currentUser} />} />
+
               <Route
                 path="/users"
-                element={currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/" replace />}
+                element={
+                  currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/dashboard" replace />
+                }
               />
-              <Route path="/login" element={<Navigate to="/" replace />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </main>
         </div>
