@@ -13,6 +13,10 @@ from voicebot.api.middleware.auth import JWTAuthMiddleware
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger, correlation_id_var, session_id_var, generate_correlation_id
 from voicebot.shared.models.session import SessionState
+from voicebot.core.session_disposition import (
+    DISPOSITION_LLM_INSTRUCTION,
+    normalize_disposition,
+)
 
 # --- Import Routers from sub-packages ---
 from voicebot.api.v1.routes import router as gateway_v1_router
@@ -742,6 +746,7 @@ async def voice_websocket(
             
             summary = "No meaningful conversation occurred."
             intent = "Unknown"
+            disposition = "unknown"
             
             if len(log_entries) > 1 and transcript_text.strip():
                 try:
@@ -772,13 +777,28 @@ async def voice_websocket(
                     if intent_parts:
                         intent = "".join(intent_parts).strip()
 
+                    # Generate session disposition (operational outcome)
+                    disposition_parts = []
+                    async for chunk in sum_llm.stream_completion(
+                        DISPOSITION_LLM_INSTRUCTION,
+                        [{"role": "user", "content": transcript_text}],
+                    ):
+                        if chunk.content:
+                            disposition_parts.append(chunk.content)
+                    if disposition_parts:
+                        disposition = normalize_disposition("".join(disposition_parts))
+
                 except Exception as llm_err:
                     logger.error("LLM Summarization failed: %s", llm_err)
             
             await db.close_session(
                 session_id=session_id, 
                 turn_count=len(log_entries), 
-                metadata={'summary': summary, 'intent': intent}
+                metadata={
+                    'summary': summary,
+                    'intent': intent,
+                    'disposition': disposition,
+                }
             )
             logger.info("Session %s archived with summary.", session_id[:8])
 
@@ -805,6 +825,7 @@ async def voice_websocket(
                             "bot_id": bot_config.get("id"),
                             "summary": summary,
                             "intent": intent,
+                            "disposition": disposition,
                             "turn_count": len(log_entries),
                         })
                     logger.info("Post-call webhook fired for session %s", session_id[:8])
@@ -937,6 +958,7 @@ async def _handle_gemini_s2s_session(
 
             summary = "No meaningful conversation occurred."
             intent = "Unknown"
+            disposition = "unknown"
 
             if len(log_entries) > 1 and transcript_text.strip():
                 try:
@@ -977,13 +999,33 @@ async def _handle_gemini_s2s_session(
                             iparts.append(chunk.content)
                     if iparts:
                         intent = "".join(iparts).strip()
+
+                    disposition_prompt = (
+                        DISPOSITION_LLM_INSTRUCTION
+                        + "\nConversation:\n"
+                        + transcript_text
+                    )
+                    dparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a strict post-call outcome classifier.",
+                        messages=[{"role": "user", "content": disposition_prompt}],
+                    ):
+                        if chunk.content:
+                            dparts.append(chunk.content)
+                    if dparts:
+                        disposition = normalize_disposition("".join(dparts))
                 except Exception as llm_err:
                     logger.error("S2S (gemini) post-call LLM summarisation failed: %s", llm_err)
 
             await db.close_session(
                 session_id=session_id,
                 turn_count=len(log_entries),
-                metadata={"summary": summary, "intent": intent, "mode": "gemini_s2s"},
+                metadata={
+                    "summary": summary,
+                    "intent": intent,
+                    "disposition": disposition,
+                    "mode": "gemini_s2s",
+                },
             )
             logger.info("S2S (gemini) session %s archived.", session_id[:8])
 
@@ -998,6 +1040,7 @@ async def _handle_gemini_s2s_session(
                             "user_id": language,
                             "summary": summary,
                             "intent": intent,
+                            "disposition": disposition,
                             "mode": "gemini_s2s",
                         })
                 except Exception as _wh_err:
@@ -1126,6 +1169,7 @@ async def _handle_speech_speech_session(
 
             summary = "No meaningful conversation occurred."
             intent  = "Unknown"
+            disposition = "unknown"
 
             if len(log_entries) > 1 and transcript_text.strip():
                 try:
@@ -1167,13 +1211,33 @@ async def _handle_speech_speech_session(
                     if iparts:
                         intent = "".join(iparts).strip()
 
+                    disposition_prompt = (
+                        DISPOSITION_LLM_INSTRUCTION
+                        + "\nConversation:\n"
+                        + transcript_text
+                    )
+                    dparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a strict post-call outcome classifier.",
+                        messages=[{"role": "user", "content": disposition_prompt}],
+                    ):
+                        if chunk.content:
+                            dparts.append(chunk.content)
+                    if dparts:
+                        disposition = normalize_disposition("".join(dparts))
+
                 except Exception as llm_err:
                     logger.error("S2S post-call LLM summarisation failed: %s", llm_err)
 
             await db.close_session(
                 session_id=session_id,
                 turn_count=len(log_entries),
-                metadata={"summary": summary, "intent": intent, "mode": "speech_speech"},
+                metadata={
+                    "summary": summary,
+                    "intent": intent,
+                    "disposition": disposition,
+                    "mode": "speech_speech",
+                },
             )
             logger.info("S2S session %s archived.", session_id[:8])
 
@@ -1188,6 +1252,7 @@ async def _handle_speech_speech_session(
                             "user_id": language,  # language is in scope from outer
                             "summary": summary,
                             "intent": intent,
+                            "disposition": disposition,
                             "mode": "speech_speech",
                         })
                 except Exception as _wh_err:
