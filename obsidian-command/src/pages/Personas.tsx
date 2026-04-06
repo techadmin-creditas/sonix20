@@ -19,6 +19,7 @@ import {
   Calendar,
   Landmark,
   Trash2,
+  GitBranch,
 } from 'lucide-react';
 
 export default function Personas() {
@@ -87,50 +88,36 @@ export default function Personas() {
     <div className="flex-1 flex flex-col ">
       <Header
         title="Bot Factory"
-        subtitle="Agent Personas"
+        subtitle="Bot Personas"
         actions={
-          // <Link
-          //   to="/personas/create"
-          //   className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-          // >
-          //   <PlusCircle className="size-5" />
-          //   Create Bot
-          // </Link>
 
           <div className="w-full flex justify-between items-center">
-            {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
-            <button className="p-2 rounded-lg bg-surface-highest text-primary"><LayoutGrid className="size-5" /></button>
-            <button className="p-2 rounded-lg text-outline hover:text-on-surface"><List className="size-5" /></button>
-          </div> */}
-
-
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input
-                type="text"
-                placeholder="Search by agents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-              />
-            </div>
-
             {personas?.length > 0 && (
-              <Link
-                to="/personas/create"
-                className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-              >
-                <PlusCircle className="size-5" />
-                Create Bot
-              </Link>
+              <>
+                <div className="relative w-full md:w-96">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+                  <input
+                    type="text"
+                    placeholder="Search by bot..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+                  />
+                </div>
+                <Link
+                  to="/personas/create"
+                  className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+                >
+                  <PlusCircle className="size-5" />
+                  Create Bot
+                </Link>
+              </>
             )}
           </div>
         }
       />
 
       <div className="p-10 flex flex-col gap-10">
-
-
         {loading && (
           <div className="flex-1 flex flex-col items-center justify-center py-20">
             <Loader2 className="size-12 text-primary animate-spin" />
@@ -153,15 +140,45 @@ export default function Personas() {
         )}
 
 
+        {!loading && !error && filteredPersonas.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 gap-6">
+            <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
+              <BotIcon type="memory" />
+            </div>
+            <div className="text-center">
+              {!searchQuery && (
+                <p className="font-bold text-on-surface text-lg">No Bots yet</p>
+              )}
+              <p className="text-sm text-outline mt-1">
+                {searchQuery ? (
+                  <>
+                    <p className="font-bold text-sm">No Bot match &ldquo;{searchQuery}&rdquo;</p>
+                    <p className="text-xs mt-1 opacity-60">Try searching by another Bot </p>
+                  </>
+                ) : 'Create your first Bot.'}
+              </p>
+            </div>
+            {!searchQuery && (
+              <Link to="/personas/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
+                Create Your First Bot
+              </Link>
+            )}
+          </div>
+        )}
+
+
+
+
+
         {!loading && !error && (
           <>
             <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredPersonas.length === 0 && !loading && (
+              {/* {filteredPersonas.length === 0 && !loading && (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
                   <Search className="size-10 mb-3 opacity-30" />
                   <p className="font-bold text-sm">No agents match &ldquo;{searchQuery}&rdquo;</p>
                 </div>
-              )}
+              )} */}
               {filteredPersonas.map((persona) => (
                 <div key={persona.id} className="glass-panel rounded-3xl p-8 flex flex-col gap-6 group hover:border-primary/30 transition-all">
                   <div className="flex justify-between items-start">
@@ -255,22 +272,6 @@ export default function Personas() {
                 </div>
               ))}
             </div>
-            {personas?.length === 0 && (
-              <div className="flex justify-center">
-                <Link
-                  to="/personas/create"
-                  className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
-                >
-                  <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
-                    <PlusCircle className="size-8" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-bold text-on-surface">Add New Persona</p>
-                    <p className="text-xs text-outline mt-1">Define capabilities and tone</p>
-                  </div>
-                </Link>
-              </div>
-            )}
           </>
         )}
       </div>

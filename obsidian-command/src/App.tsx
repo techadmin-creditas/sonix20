@@ -78,7 +78,7 @@ function App() {
               setCurrentUser(null);
             }}
           />
-          <main className="flex-1 flex flex-col overflow-x-hidden">
+          <main className="flex-1 flex flex-col">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/sessions" element={<Sessions />} />

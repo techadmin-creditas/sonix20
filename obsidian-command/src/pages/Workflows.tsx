@@ -95,42 +95,28 @@ export default function Workflows() {
         subtitle="Conversational Logic"
         actions={
           <div className="w-full flex justify-between items-center">
-            {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
-            <button
-              onClick={() => setView('grid')}
-              className={cn("p-2 rounded-lg transition-all", view === 'grid' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
-            >
-              <LayoutGrid className="size-5" />
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={cn("p-2 rounded-lg transition-all", view === 'list' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
-            >
-              <List className="size-5" />
-            </button>
-          </div> */}
+            {workflows && workflows?.length > 0 && (
+              <>
+                <div className="relative w-full md:w-96">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+                  <input
+                    type="text"
+                    placeholder="Search workflows..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+                  />
+                </div>
+                <Link
+                  to="/workflows/create"
+                  className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+                >
+                  <PlusCircle className="size-5" />
+                  Create Workflow
+                </Link>
+              </>
 
-
-
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input
-                type="text"
-                placeholder="Search workflows..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-              />
-            </div>
-
-
-            <Link
-              to="/workflows/create"
-              className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-            >
-              <PlusCircle className="size-5" />
-              Create Workflow
-            </Link>
+            )}
           </div>
         }
       />
@@ -157,21 +143,31 @@ export default function Workflows() {
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && !error && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 gap-6">
-            <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
-              <GitBranch className="size-10" />
-            </div>
+            {search ? (
+              <Search className="size-10 opacity-30" />
+            ) : (
+              <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
+                <GitBranch className="size-10" />
+              </div>
+            )}
             <div className="text-center">
-              <p className="font-bold text-on-surface text-lg">No workflows yet</p>
-              <p className="text-sm text-outline mt-1">
-                {search ? 'No workflows match your search.' : 'Create your first conversational logic flow.'}
+              {!search && (
+                <p className="font-bold text-on-surface text-lg">No Workflows yet</p>
+              )}
+              <p className="text-sm text-outline mt-1 max-w-xs mx-auto">
+                {search ? (
+                  <>
+                    <p className="font-bold text-sm">No Workflows match &ldquo;{search}&rdquo;</p>
+                    <p className="text-xs mt-1 opacity-60">Try searching by another Workflow </p>
+                  </>
+                ) : 'Create your first Workflow.'}
               </p>
             </div>
             {!search && (
-              <Link to="/workflows/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
-                Create Your First Flow
+              <Link to="/workflows/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg active:scale-95 transition-all">
+                Create Your First Workflow
               </Link>
             )}
           </div>
@@ -197,21 +193,7 @@ export default function Workflows() {
               />
             ))}
 
-            {/* Create New Card — only show in grid view */}
-            {filtered?.length === 0 && view === 'grid' && (
-              <Link
-                to="/workflows/create"
-                className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
-              >
-                <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
-                  <PlusCircle className="size-8" />
-                </div>
-                <div className="text-center">
-                  <p className="font-bold text-on-surface">Add New Workflow</p>
-                  <p className="text-xs text-outline mt-1">Design conversational paths</p>
-                </div>
-              </Link>
-            )}
+            {/* Workflow cards mapped here */}
           </div>
         )}
       </div>

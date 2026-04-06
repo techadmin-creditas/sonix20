@@ -38,7 +38,7 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
     const body = await res.json();
     const detail = body?.detail;
     if (typeof detail === 'string' && detail.trim()) return detail;
-  } catch {}
+  } catch { }
   return fallback;
 }
 
@@ -301,6 +301,13 @@ export const api = {
       body: JSON.stringify({ password }),
     });
     if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to change password'));
+    return res.json();
+  },
+  async deleteUser(userId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'));
     return res.json();
   },
 

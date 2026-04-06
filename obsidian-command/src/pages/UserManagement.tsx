@@ -2,7 +2,7 @@ import React from 'react';
 import { Header } from '../components/Header';
 import { api, AuthUser } from '../lib/api';
 import {
-  User, Shield, Key, Verified, Users, Loader2, ChevronDown
+  User, Shield, Key, Verified, Users, Loader2, ChevronDown, Trash2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -13,6 +13,8 @@ export default function UserManagement() {
   const [newPassword, setNewPassword] = React.useState('');
   const [newRole, setNewRole] = React.useState<'admin' | 'user'>('user');
   const [userError, setUserError] = React.useState('');
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
 
   async function loadUsers() {
     setUsersLoading(true);
@@ -59,6 +61,19 @@ export default function UserManagement() {
     }
   }
 
+  async function handleDeleteUser(userId: string) {
+    setDeleteLoadingId(userId);
+    try {
+      await api.deleteUser(userId);
+      await loadUsers();
+    } catch (e: any) {
+      setUserError(e?.message || 'Failed to delete user');
+    } finally {
+      setDeleteLoadingId(null);
+      setDeletingId(null);
+    }
+  }
+
   async function handleChangePassword(userId: string) {
     const next = window.prompt('Set new password');
     if (!next) return;
@@ -77,7 +92,7 @@ export default function UserManagement() {
         subtitle="System Administration Hub"
       />
 
-      <main className="p-6 sm:p-10 lg:p-12 max-w-7xl mx-auto w-full">
+      <main className="lg:py-12 max-w-7xl mx-auto w-full">
         <section className="glass-panel rounded-3xl p-8 lg:p-12 space-y-10 border border-primary/10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
@@ -184,23 +199,52 @@ export default function UserManagement() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="relative group/role">
-                          <select
-                            value={u.role}
-                            onChange={(e) => handleUpdateRole(u.id, e.target.value as 'admin' | 'user')}
-                            className="pl-3 pr-8 py-2 rounded-xl bg-surface-highest/50 border border-white/5 text-[9px] font-black uppercase tracking-widest text-outline hover:text-primary hover:border-primary/50 transition-all shadow-sm appearance-none cursor-pointer outline-none"
-                          >
-                            <option value="user">User</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-outline pointer-events-none opacity-40 group-hover/role:opacity-100 transition-opacity" />
-                        </div>
-                        <button
-                          onClick={() => handleChangePassword(u.id)}
-                          className="px-4 py-2 rounded-xl bg-surface-highest border border-white/10 text-[9px] font-black uppercase tracking-widest text-outline hover:text-primary hover:border-primary/50 active:scale-95 transition-all shadow-sm"
-                        >
-                          Update Password
-                        </button>
+                        {deletingId === u.id ? (
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20">
+                            <span className="text-[10px] font-black uppercase text-red-400">Confirm Delete?</span>
+                            <button
+                              onClick={() => setDeletingId(null)}
+                              className="px-2 py-1 rounded text-[9px] font-black uppercase text-outline hover:bg-white/5 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUser(u.id)}
+                              disabled={deleteLoadingId === u.id}
+                              className="px-2 py-1 rounded text-[9px] font-black uppercase bg-red-500 text-white hover:bg-red-600 transition-all flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {deleteLoadingId === u.id ? <Loader2 className="size-2 animate-spin" /> : null}
+                              Delete
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="relative group/role">
+                              <select
+                                value={u.role}
+                                onChange={(e) => handleUpdateRole(u.id, e.target.value as 'admin' | 'user')}
+                                className="pl-3 pr-8 py-2 rounded-xl bg-surface-highest/50 border border-white/5 text-[9px] font-black uppercase tracking-widest text-outline hover:text-primary hover:border-primary/50 transition-all shadow-sm appearance-none cursor-pointer outline-none"
+                              >
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-outline pointer-events-none opacity-40 group-hover/role:opacity-100 transition-opacity" />
+                            </div>
+                            <button
+                              onClick={() => handleChangePassword(u.id)}
+                              className="px-4 py-2 rounded-xl bg-surface-highest border border-white/10 text-[9px] font-black uppercase tracking-widest text-outline hover:text-primary hover:border-primary/50 active:scale-95 transition-all shadow-sm"
+                            >
+                              Password
+                            </button>
+                            <button
+                              onClick={() => setDeletingId(u.id)}
+                              className="p-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-500 transition-all border border-transparent hover:border-red-500/30 active:scale-90"
+                              title="Delete Identity"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
