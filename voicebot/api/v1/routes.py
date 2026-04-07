@@ -537,6 +537,7 @@ async def test_workflow(data: dict):
     workflow_data = data.get("workflow_data", {})
     user_input = data.get("user_input", "")
     current_node_id = data.get("current_node_id")
+    node_visit_counts = data.get("node_visit_counts", {})
 
     if current_node_id:
         workflow_data["start_node_id"] = current_node_id
@@ -558,6 +559,9 @@ async def test_workflow(data: dict):
     brain._log_event = AsyncMock()
 
     workflow_engine = WorkflowEngine(brain, workflow_data)
+    # Inject persistent visit counts for simulator turns
+    workflow_engine.node_visit_counts = node_visit_counts
+    
     yield_to_llm = await workflow_engine.evaluate(user_input)
 
     return {
@@ -565,6 +569,7 @@ async def test_workflow(data: dict):
         "speak_responses": speak_responses,
         "yield_to_llm": yield_to_llm,
         "next_node_id": workflow_engine.current_node_id,
+        "node_visit_counts": workflow_engine.node_visit_counts,
         "is_disconnected": bool(
             getattr(session, "voice_session_end_requested", False)
             or getattr(session, "_force_disconnect", False)
@@ -594,6 +599,274 @@ async def save_workflow(data: dict):
     await db.save_workflow(workflow_id, name, description, nodes, edges)
     wf = await db.get_workflow(workflow_id)
     return _enrich_workflow(wf) if wf else {"status": "saved", "id": workflow_id}
+
+
+@router.post("/workflows/ai-suggest", tags=["workflows"])
+async def ai_suggest_node_content(data: dict):
+    """
+    Generate professional/friendly suggestions for speech nodes
+    or intent lists for user input nodes.
+    """
+    node_type = data.get("node_type", "speech")
+    current_text = data.get("current_text", "")
+    tone = data.get("tone", "professional")
+    context = data.get("context", "")
+
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.shared.config import get_settings
+    
+    _settings = get_settings()
+    llm = GroqStreamingProvider(model=_settings.groq_model or "llama-3.3-70b-versatile")
+    
+    if node_type == "speech":
+        system_prompt = "You are a professional copywriter for a voice AI assistant."
+        user_prompt = (
+            f"Rewrite the following bot response to be more {tone}.\n\n"
+            f"Original: \"{current_text}\"\n"
+            f"Context (what was said before): \"{context}\"\n\n"
+            "Provide ONLY the rewritten text. No quotes, no preamble, no explanations."
+        )
+    else:
+        # Default to suggesting intents/labels for logic/userInput nodes
+        system_prompt = "You are a workflow designer for a conversational bot."
+        user_prompt = (
+            f"Suggest 3 common user responses or button labels for the following bot message context: \"{context}\".\n"
+            "Return them as a simple comma-separated list. No preamble."
+        )
+
+    chunks = []
+    async for chunk in llm.stream_completion(
+        system_prompt=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}]
+    ):
+        chunks.append(chunk.content or "")
+    
+    suggestion = "".join(chunks).strip()
+    # Clean up quotes if LLM hallucinated them
+    suggestion = suggestion.strip('"').strip("'")
+    
+    return {"suggestion": suggestion}
+
+
+@router.post("/workflows/ai-node-architect", tags=["workflows"])
+async def ai_node_architect(data: dict):
+    """
+    Bidirectional AI Node Optimization & Generation.
+    Supports contextual refactoring and 'Next Step' generation using the graph neighborhood.
+    """
+    op = data.get("operation_type", "REFACTOR")
+    current_node = data.get("current_node", {})
+    predecessors = data.get("predecessors", [])
+    successors = data.get("successors", [])
+    strategy_prompt = data.get("strategy_prompt", "")
+    tone = data.get("tone", "professional")
+    workflow_goal = data.get("workflow_goal", "Collect overdue payments or assist user")
+
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.shared.config import get_settings
+    _settings = get_settings()
+    llm = GroqStreamingProvider(model=_settings.groq_model or "llama-3.3-70b-versatile")
+
+    # Context formatting
+    context_str = ""
+    if predecessors:
+        context_str += "PREDECESSORS (Who spoke before):\n"
+        for p in predecessors:
+            context_str += f"- Node '{p.get('id')}': {p.get('data', {}).get('speech', p.get('data', {}).get('label'))}\n"
+    if successors:
+        context_str += "SUCCESSORS (Where we are going next):\n"
+        for s in successors:
+            context_str += f"- Node '{s.get('id')}': {s.get('data', {}).get('speech', s.get('data', {}).get('label'))}\n"
+
+    if op == "REFACTOR":
+        system_prompt = "You are an expert conversational designer and copywriter."
+        user_prompt = (
+            f"Optimize the content of the current node to better fit its logical neighborhood. Goal: {workflow_goal}.\n\n"
+            f"CURRENT NODE: {current_node.get('data', {}).get('speech', current_node.get('data', {}).get('label'))}\n"
+            f"{context_str}\n"
+            f"STRATEGY INSTRUCTION: {strategy_prompt or 'Make it fit naturally in the flow.'}\n\n"
+            "Respond with the optimized text ONLY. Do not include labels, quotes or meta-text."
+        )
+    elif op == "SUGGEST_NEXT":
+        system_prompt = "You are an expert AI workflow architect. You generate new ReactFlow nodes as JSON."
+        user_prompt = (
+            f"Based on the current node and its neighborhood, suggest the most logical NEXT step in the workflow.\n\n"
+            f"CURRENT NODE: {json.dumps(current_node)}\n"
+            f"{context_str}\n"
+            f"GOAL: {workflow_goal}\n"
+            f"STRATEGY: {strategy_prompt or 'Continue the logical path.'}\n\n"
+            "Return a JSON object with 'type' (speech, logic, action, userInput), 'label' (short title), and 'speech' (if applicable).\n"
+            "Example: {\"type\": \"logic\", \"label\": \"Confirm Intent\", \"speech\": \"\"}"
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid operation_type")
+
+    chunks = []
+    async for chunk in llm.stream_completion(
+        system_prompt=system_prompt,
+        messages=[{"role": "user", "content": user_prompt}]
+    ):
+        chunks.append(chunk.content or "")
+    
+    result = "".join(chunks).strip()
+    
+    if op == "SUGGEST_NEXT":
+        try:
+            # Extract JSON if LLM added preamble
+            start = result.find("{")
+            end = result.rfind("}")
+            if start != -1 and end != -1:
+                return {"suggestion": json.loads(result[start:end+1])}
+        except: pass
+    
+    return {"suggestion": result}
+
+
+@router.post("/workflows/generate-from-prompt", tags=["workflows"])
+async def generate_workflow_from_prompt(data: dict):
+    """
+    Advanced Two-Stage AI Workflow Generation.
+    Stage 1: Architect a conversational strategy (Blueprint).
+    Stage 2: Build the deterministic node-edge graph (JSON).
+    """
+    user_prompt = data.get("prompt", "")
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.shared.config import get_settings
+    import uuid
+    import json
+
+    _settings = get_settings()
+    llm = GroqStreamingProvider(
+        model=_settings.groq_model or "llama-3.3-70b-versatile",
+        max_tokens=4096
+    )
+
+    # --- STAGE 1: THE STRATEGIST ---
+    # Goal: Think about the conversation structure before writing code/JSON.
+    strategist_prompt = (
+        "You are a Senior Voice UX Strategist. Analyze the following request and create a detailed conversation 'Blueprint'.\n"
+        "Your blueprint must outline:\n"
+        "1. The Happy Path (Goal Achievement).\n"
+        "2. The Persistence Strategy: For high-stakes goals (e.g. Payment), plan a 3-tier persuasion strategy:\n"
+        "   - Tier 1: Empathy (Acknowledge and Softly Persuade).\n"
+        "   - Tier 2: Benefit/Value (Explain the 'Why' and 'Opportunity').\n"
+        "   - Tier 3: Consequence/Risk (Final warning before escalation).\n"
+        "3. Semantic Intent Anchors: Identify key topics and give them descriptive labels (e.g. 'Payment_Date', 'Address_Update').\n"
+        "4. Interaction Engagement: Every bot turn MUST end with a clear question or call-to-action (CTA). NO MONOLOGUES.\n"
+        "5. Emotional Logic: Identify where a user might get angry and plan a 'Fast-Exit' (Escalation) for negative sentiment.\n"
+        "\nOutput the Blueprint in structured text (bullet points)."
+    )
+    
+    blueprint_chunks = []
+    async for chunk in llm.stream_completion(
+        system_prompt=strategist_prompt,
+        messages=[{"role": "user", "content": f"Create a strategy for: {user_prompt}"}]
+    ):
+        blueprint_chunks.append(chunk.content or "")
+    blueprint = "".join(blueprint_chunks)
+
+    # --- STAGE 2: THE ARCHITECT ---
+    # Goal: Convert the strategy into precise JSON.
+    architect_system = (
+        "You are an expert AI Voice Workflow Architect. Convert the provided Blueprint into a complete React Flow graph in JSON format.\n\n"
+        "STRICT CONSTRAINTS:\n"
+        "1. Output ONLY a valid JSON object. No preamble, no markdown formatting.\n"
+        "2. Structure: { \"name\": string, \"description\": string, \"nodes\": [...], \"edges\": [...] }\n"
+        "3. Nodes must include: { \"id\": string, \"type\": \"speech\"|\"userInput\"|\"logic\"|\"action\"|\"knowledge\"|\"backtrack\"|\"sentiment\"|\"llm_fallback\", \"position\": {\"x\": number, \"y\": number}, \"data\": { \"label\": string, \"speech\": string, \"intents\": string[], \"retry_limit\": number } }\n"
+        "4. INTENT BRANCHING & PERSISTENCE:\n"
+        "   - Every 'userInput' that requires a decision MUST be followed by a 'logic' node.\n"
+        "   - Standardize Intent Labels: Use 'confirmed', 'denied', 'unclear', 'payment_chosen', 'reschedule'.\n"
+        "   - BRANCHING LOGIC: Differentiate SUCCESS and FAILURE paths. NEVER link a 'denied' or 'failure' edge to a 'Success/Conclusion' node. Create separate nodes for 'Escalation' or 'Terminal_Exit_Denied'.\n"
+        "   - PERSISTENCE LOOPS: For high-stakes topics (Overdue, ID Confirmation), use a looping retry strategy:\n"
+        "     * Logic nodes MUST have 'retry_1', 'retry_2', 'retry_3' edges reaching 'Tier' nodes (Empathy, Benefit, Risk).\n"
+        "     * IMPORTANT: Every 'speech' node MUST terminate with an engaging question that moves toward the primary task goal.\n"
+        "     * These 'Tier' (Speech) nodes MUST link back to the preceding 'userInput' node to create a loop, allowing multiple attempts.\n"
+        "     * If a user speaks about payment during Identity confirmation, create a 'retry_1' loop to a 'Reprompt' node.\n"
+        "   - For 'logic' nodes, use `\"retry_limit\": 3`.\n"
+        "5. SINK NODE PROTECTION:\n"
+        "   - Every 'sentiment' node MUST have an outgoing edge to an 'llm_fallback' node. DO NOT leave them isolated.\n"
+        "   - Every 'action' or 'terminal' node that doesn't end the call should either link forward or to a 'Conclusion' node.\n"
+        "6. ISLAND NODES: 'knowledge' and 'backtrack' nodes can remain unlinked (Islands).\n"
+        "7. LAYOUT: Distribute nodes in a top-down tree. Place Islands (KB/Sentiment) to the far right (X > 1400)."
+    )
+
+    graph_chunks = []
+    async for chunk in llm.stream_completion(
+        system_prompt=architect_system,
+        messages=[{"role": "user", "content": f"Architect the following Blueprint into JSON:\n\n{blueprint}"}]
+    ):
+        graph_chunks.append(chunk.content or "")
+    
+    raw_json = "".join(graph_chunks).strip()
+    # Use robust extraction
+    try:
+        wf_data = _extract_json_object(raw_json)
+        
+        # --- Normalization ---
+        if "edges" in wf_data:
+            normalized_edges = []
+            for edge in wf_data["edges"]:
+                source = edge.get("source") or edge.get("from")
+                target = edge.get("target") or edge.get("to")
+                if not source or not target: continue
+                normalized_edges.append({
+                    "id": edge.get("id") or str(uuid.uuid4()),
+                    "source": source, "target": target,
+                    "label": edge.get("label", ""), "animated": True
+                })
+            wf_data["edges"] = normalized_edges
+            
+        wf_data["name"] = wf_data.get("name") or "Advanced AI Workflow"
+        wf_data["description"] = wf_data.get("description") or f"Strategy: {blueprint[:200]}..."
+        wf_data["id"] = str(uuid.uuid4())
+        
+        # --- Auto-Layout Engine ---
+        _apply_auto_layout(wf_data)
+        
+        return wf_data
+        
+    except Exception as e:
+        logger.error("[WorkflowGenerator] Failed to parse: %s", e)
+        # Attempt repair
+        try:
+            last_brace = raw_json.rfind("}")
+            if last_brace != -1:
+                wf_data = json.loads(raw_json[:last_brace+1])
+                wf_data["id"] = str(uuid.uuid4())
+                return wf_data
+        except: pass
+        raise HTTPException(status_code=500, detail=f"Drafting logic failed: {str(e)}")
+        wf_data["id"] = str(uuid.uuid4())
+        
+        return wf_data
+    except Exception as e:
+        logger.error("[WorkflowGenerator] Failed to parse AI JSON: %s", e)
+        logger.debug("[WorkflowGenerator] Raw Response: %s", raw_json)
+        # Attempt simple repair: if it ends with "}" but has trailing garbage
+        try:
+            last_brace = raw_json.rfind("}")
+            if last_brace != -1:
+                repaired = raw_json[:last_brace+1]
+                wf_data = json.loads(repaired)
+                # Apply normalization even to repaired JSON
+                if "edges" in wf_data:
+                    wf_data["edges"] = [
+                        {
+                            "id": e.get("id") or str(uuid.uuid4()),
+                            "source": e.get("source") or e.get("from"),
+                            "target": e.get("target") or e.get("to"),
+                            "label": e.get("label", ""),
+                            "animated": True
+                        } for e in wf_data["edges"] if (e.get("source") or e.get("from")) and (e.get("target") or e.get("to"))
+                    ]
+                wf_data["id"] = str(uuid.uuid4())
+                return wf_data
+        except: pass
+        
+        raise HTTPException(status_code=500, detail=f"AI generated invalid workflow structure: {str(e)}")
 
 # ─── Appointments Endpoints ───────────────────────────────────────────────────
 
@@ -927,6 +1200,71 @@ def _extract_json_object(text: str) -> dict:
         pass
     raise ValueError(f"No valid JSON object found in LLM response. Raw: {text[:200]}")
 
+
+def _apply_auto_layout(wf_data: dict):
+    """
+    Deterministic hierarchical layout algorithm.
+    Organizes nodes into a top-down tree with centering and 'Island Node' side-tracking.
+    """
+    nodes = wf_data.get("nodes", [])
+    edges = wf_data.get("edges", [])
+    if not nodes: return
+
+    adj = {n["id"]: [] for n in nodes}
+    in_degree = {n["id"]: 0 for n in nodes}
+    for e in edges:
+        source, target = e.get("source"), e.get("target")
+        if source in adj and target in adj:
+            adj[source].append(target)
+            in_degree[target] += 1
+
+    # Constants
+    DY = 250
+    DX = 600
+    ISLAND_X = 1400
+    CENTER_X = 600
+
+    # 1. Identify Islands vs Tree Nodes
+    island_types = ["knowledge", "backtrack", "sentiment", "llm_fallback"]
+    islands = [n for n in nodes if n.get("type") in island_types or (in_degree[n["id"]] == 0 and not adj[n["id"]])]
+    tree_node_ids = [n["id"] for n in nodes if n not in islands]
+    
+    # 2. Assign positions to Islands
+    for i, n in enumerate(islands):
+        n["position"] = {"x": ISLAND_X, "y": i * 150 + 50}
+
+    # 3. Perform BFS on the main tree(s)
+    roots = [n_id for n_id in tree_node_ids if in_degree[n_id] == 0]
+    if not roots and tree_node_ids: roots = [tree_node_ids[0]] # Circle fallback
+    
+    levels = {} # depth -> [node_ids]
+    visited = set()
+    queue = [(r_id, 0) for r_id in roots]
+    
+    while queue:
+        n_id, depth = queue.pop(0)
+        if n_id in visited: continue
+        visited.add(n_id)
+        
+        if depth not in levels: levels[depth] = []
+        levels[depth].append(n_id)
+        
+        for child_id in adj.get(n_id, []):
+            if child_id not in visited:
+                queue.append((child_id, depth + 1))
+
+    # 4. Final Position mapping
+    node_map = {n["id"]: n for n in nodes if n["id"] in visited}
+    for depth, level_nodes in levels.items():
+        count = len(level_nodes)
+        row_width = (count - 1) * DX
+        start_x = CENTER_X - (row_width / 2)
+        
+        for i, n_id in enumerate(level_nodes):
+            node_map[n_id]["position"] = {
+                "x": start_x + (i * DX),
+                "y": depth * DY + 50
+            }
 
 def _repair_truncated_json(text: str) -> dict:
     """Close an unclosed JSON object caused by mid-stream safety truncation."""

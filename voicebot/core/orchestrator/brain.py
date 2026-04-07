@@ -27,6 +27,24 @@ from enum import Enum
 from typing import Any, Awaitable, Callable, List, Optional
 
 # ─── Constants ────────────────────────────────────────────────────────
+
+# Ordered from longest to shortest so longer prefixes are matched first.
+# These are suspicious suffixes that may be the start of a hallucination tag.
+_SUSPICIOUS_PREFIXES: tuple[str, ...] = (
+    "<function=", "(function=",
+    "```json", "```", "[TOOL:",
+    "<function", "<functio", "<functi", "<funct", "<func", "<fun", "<fu", "<f", "<",
+)
+
+
+def _suspicious_prefix_length(text: str) -> int:
+    """Return the length of a suspicious suffix at the end of `text`, or 0 if clean."""
+    for prefix in _SUSPICIOUS_PREFIXES:
+        for length in range(len(prefix), 0, -1):
+            if text.endswith(prefix[:length]):
+                return length
+    return 0
+
 # ─── End Constants ───────────────────────────────────────────────────
 
 from voicebot.shared.config import get_settings
@@ -1228,6 +1246,11 @@ class AgenticBrain:
                     # Ultra-flush fires exactly ONCE per turn — initialize here,
                     # never reset inside the token loop.
                     _ultra_flush_done = False
+                    # Suspicious-prefix hold: accumulate partial hallucination tags
+                    # before they reach TTS. Released on next token or after timeout.
+                    _held_prefix: str = ""
+                    _hold_start_time: float = 0.0
+                    _HOLD_TIMEOUT_SEC: float = 0.5
                     _first_seg_cap = int(
                         self._bot_config.get("first_segment_chars")
                         or self._conversation_policy.get("first_segment_chars")
@@ -1326,6 +1349,35 @@ class AgenticBrain:
                                     text_accumulated_whole_turn += chunk.content
                                     tts_buffer += chunk.content
 
+                                    # 🛡️ SUSPICIOUS-PREFIX HOLD (Layer 1 real-time detection)
+                                    # Hold TTS flush when tts_buffer tail looks like a partial hallucination tag.
+                                    # This prevents "<function=verify_cu" from being spoken before the tag is complete.
+                                    if not whole_turn and self.tts:
+                                        # Step 1: Resolve any held prefix from the previous token
+                                        if _held_prefix:
+                                            if (time.time() - _hold_start_time) >= _HOLD_TIMEOUT_SEC:
+                                                # Timeout: strip whatever we accumulated and release
+                                                tts_buffer = self._strip_technical_artifacts(_held_prefix + tts_buffer)
+                                                _held_prefix = ""
+                                            else:
+                                                combined = _held_prefix + tts_buffer
+                                                stripped = self._strip_technical_artifacts(combined)
+                                                if stripped != combined or not _suspicious_prefix_length(combined):
+                                                    # Resolved: tag completed and stripped, or proven clean
+                                                    tts_buffer = stripped
+                                                    _held_prefix = ""
+                                                else:
+                                                    # Still suspicious: keep accumulating, suppress tts_buffer
+                                                    _held_prefix = combined
+                                                    tts_buffer = ""
+                                        # Step 2: Check if current buffer tail is now suspicious
+                                        if not _held_prefix:
+                                            suspicious_len = _suspicious_prefix_length(tts_buffer)
+                                            if suspicious_len > 0:
+                                                _held_prefix = tts_buffer[-suspicious_len:]
+                                                tts_buffer = tts_buffer[:-suspicious_len]
+                                                _hold_start_time = time.time()
+
                                     if not whole_turn and self.tts:
                                         # 🏁 ULTRA-FLUSH (Phase 3): Fire TTS after first ~2 words (on word boundary)
                                         # to achieve <300ms time-to-first-speech, beating sentence completion.
@@ -1370,6 +1422,11 @@ class AgenticBrain:
                                     for tc in chunk.tool_calls:
                                         await self._log_event("[PLAN]", f"LLM requested tool: {tc.name}", "text-purple-400")
 
+                        # 🛡️ End-of-stream: release any held prefix (strip tags, then flush)
+                        if _held_prefix:
+                            tts_buffer = self._strip_technical_artifacts(_held_prefix + tts_buffer)
+                            _held_prefix = ""
+
                         if self._interrupt_event.is_set():
                             pass
                         elif whole_turn and tts_buffer.strip() and self.tts:
@@ -1413,11 +1470,19 @@ class AgenticBrain:
                     # 🛡️ RESILIENCE: Hallucination Recovery
                     # If LLM didn't use native tool-calls API, but wrote <function> tags in text,
                     # recover them and trigger the execution pipeline manually.
-                    if not tool_calls_this_turn and full_response:
-                        extracted = self._extract_hallucinated_tool_calls(full_response)
+                    if not tool_calls_this_turn and text_accumulated_whole_turn:
+                        extracted = self._extract_hallucinated_tool_calls(text_accumulated_whole_turn)
                         if extracted:
                             tool_calls_this_turn.extend(extracted)
-                            await self._log_event("[PLAN]", f"Recovered {len(extracted)} hallucinated tool calls from text", "text-yellow-400")
+                            logger.warning("🧠 [HALLUCINATION] Recovered %d call(s) (session=%s)", len(extracted), self.session.session_id[:8])
+                            await self._log_event("[PLAN]", f"Recovered {len(extracted)} hallucinated tool calls", "text-yellow-400")
+                            self._hallucination_count_this_session = getattr(self, "_hallucination_count_this_session", 0) + len(extracted)
+                            if self._on_metrics:
+                                asyncio.create_task(self._on_metrics({
+                                    "type": "hallucination_recovered",
+                                    "count": len(extracted),
+                                    "session_total": self._hallucination_count_this_session,
+                                }))
 
                     if self._interrupt_event.is_set():
                         break
@@ -1457,6 +1522,24 @@ class AgenticBrain:
                             )
                             continue 
                         self._last_call_sig = call_sig
+
+                        # 🔄 Cross-turn loop detection (A→B→A cycle across user turns)
+                        if iteration == 1:
+                            if not hasattr(self, "_cross_turn_call_history"):
+                                self._cross_turn_call_history: list[str] = []
+                            self._cross_turn_call_history.append(call_sig)
+                            if len(self._cross_turn_call_history) > 6:
+                                self._cross_turn_call_history.pop(0)
+                            if len(self._cross_turn_call_history) >= 3:
+                                if self._cross_turn_call_history[-1] == self._cross_turn_call_history[-3]:
+                                    logger.warning("🔄 [HALLUCINATION] Cross-turn tool loop detected — forcing no-tools recovery")
+                                    self._force_no_tools_this_turn = True
+                                    self._last_call_sig = None
+                                    self.session.add_turn(TurnRole.SYSTEM,
+                                        "CROSS_TURN_LOOP: You are cycling through the same tool calls across turns. "
+                                        "Stop calling tools and respond directly to the user."
+                                    )
+                                    continue
 
                         # 2. Execute and Record Results
                         tool_results = await self._execute_tools(tool_calls_this_turn)
@@ -2379,19 +2462,49 @@ class AgenticBrain:
                 _is_hallucinated = False
                 for key, val in args.items():
                     val_str = str(val).strip()
+                    _tool_error_msg: str | None = None
+
+                    # 5a — String dummy patterns
                     if any(re.search(p, val_str, re.IGNORECASE) for p in DUMMY_PATTERNS):
+                        _tool_error_msg = f"You provided a placeholder/dummy value '{val}' for '{key}'. You MUST NOT guess or use dummy data. Ask the user for the real information instead."
+
+                    # 5b — Numeric dummy values (0, common test numbers)
+                    elif isinstance(val, int) and val in {0, 1111, 1122, 1234, 4321, 9999}:
+                        _tool_error_msg = f"You provided a placeholder numeric value '{val}' for '{key}'. Ask the user for the real value."
+
+                    # 5c — Account number plausibility (must be 5–20 digits)
+                    elif key in ("account_number", "account_id"):
+                        acc_digits = re.sub(r'\D', '', str(val))
+                        if not (5 <= len(acc_digits) <= 20):
+                            _tool_error_msg = f"The account number '{val}' is not valid (must be 5–20 digits). Ask the user to confirm their account number."
+
+                    # 5d — Date validity (reject future dates, pre-1900, or unparseable)
+                    elif key in ("dob", "date_of_birth", "date"):
+                        from datetime import datetime as _dt
+                        _parsed_date = None
+                        for _fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+                            try:
+                                _parsed_date = _dt.strptime(str(val), _fmt)
+                                break
+                            except ValueError:
+                                continue
+                        if _parsed_date is None:
+                            _tool_error_msg = f"'{val}' for '{key}' is not a recognizable date. Ask the user for their date in DD-MM-YYYY format."
+                        elif _parsed_date.year < 1900:
+                            _tool_error_msg = f"The date '{val}' for '{key}' has an invalid year. Ask the user for the correct date."
+                        elif key != "date" and _parsed_date > _dt.now():
+                            _tool_error_msg = f"The date '{val}' for '{key}' is in the future, which is not valid. Ask the user for the correct date."
+
+                    if _tool_error_msg:
                         logger.warning("🚫 Blocking hallucinated tool call: %s with dummy arg: %s=%s", call.name, key, val)
                         results.append(ToolResult(
                             tool_call_id=call.id,
                             name=call.name,
-                            content=(
-                                f"TOOL_ERROR: You provided a placeholder/dummy value '{val}' for '{key}'. "
-                                "You MUST NOT guess or use dummy data. Ask the user for the real information instead."
-                            )
+                            content=f"TOOL_ERROR: {_tool_error_msg}"
                         ))
                         _is_hallucinated = True
-                        break # Break inner loop
-                
+                        break  # Break inner loop
+
                 if _is_hallucinated:
                     continue # Skip execution for this specific tool call
 
@@ -2721,10 +2834,15 @@ class AgenticBrain:
         tool_instruction_block = ""
         if self._tool_instances:
             tool_instruction_block = (
-                "\n\n[SYSTEM: TOOL CALLING RULES]\n"
-                "If you need to call a tool, call it first in your response. "
-                "Base your tool parameters only on information the user provided or retrieved in history. "
-                "Do not announce 'I will call the tool' first — just call it."
+                "\n\n[SYSTEM: TOOL CALLING RULES — MANDATORY]\n"
+                "When you need to call a tool, use ONLY the native tool_calls API. NEVER write tool calls as text. This means:\n"
+                "  - NEVER write XML tags like <function=tool_name>...</function>\n"
+                "  - NEVER write JSON code blocks like ```json {\"name\": \"tool_name\"} ```\n"
+                "  - NEVER write Python-style calls like tool_name(arg1='val1')\n"
+                "  - NEVER say 'I will call X' — just call it silently via the API\n"
+                "  - NEVER write bracket annotations like [TOOL: tool_name] {args}\n"
+                "Base tool parameters ONLY on information the user has explicitly provided. "
+                "Never guess, invent, or use placeholder values for tool arguments."
             )
 
         # Build full prompt
@@ -2947,6 +3065,7 @@ class AgenticBrain:
                     "tokens_output": getattr(self, "_session_tokens_output", 0),
                     "tokens_total": getattr(self, "_session_tokens_total", 0),
                     "tool_success_rate": self._calculate_tool_success_rate(),
+                    "hallucinations_recovered": getattr(self, "_hallucination_count_this_session", 0),
                 }
                 await self.db.close_session(self.session.session_id, turn_count=self._turn_count, metadata=stats)
             except Exception:
@@ -2984,62 +3103,142 @@ class AgenticBrain:
 
     def _extract_hallucinated_tool_calls(self, text: str) -> list[ToolCall]:
         """
-        Recover tool calls from hallucinated XML-style or parenthesis tags in the text.
-        Supports:
-          - <function=name{json}></function>
-          - (function=name>{"arg":"val"}<function>
+        Recover tool calls from hallucinated text in 8 known LLM formats:
+          1. XML:        <function=name>{"arg":"val"}</function>
+          2. Paren+end:  (function=name>{"arg":"val"}<function>
+          3. Loose paren:(function=name>{"arg":"val"})
+          4. MD block:   ```json {"name":"tool","arguments":{}} ```
+          5. Raw JSON:   {"name":"tool","arguments":{...}}
+          6. Python call: tool_name(arg1="val1") — known tools only
+          7. Bracket:    [TOOL: tool_name] {"arg":"val"}
+          8. Natural lang: "I'll call tool_name" → empty args → dummy guard fires TOOL_ERROR
         """
         import re
         import json
         from voicebot.shared.models.tools import ToolCall
-        
-        calls = []
-        if not text: return calls
 
-        # Pattern sets to try
-        patterns = [
-            # XML style: <function=name{...}></function>
-            (r'<function=([a-zA-Z0-9_-]+)(.*?)</function>', 1, 2),
-            # Parenthesis-style: (function=name>{"arg":"val"}<function>
-            (r'\(function=([a-zA-Z0-9_-]+)>(.*?)<function>', 1, 2),
-            # Loose Parenthesis: (function=name>{"arg":"val"})
-            (r'\(function=([a-zA-Z0-9_-]+)>(.*?)\)', 1, 2),
-        ]
+        # Balanced JSON extractor (avoids catastrophic backtracking from greedy .*)
+        _BALANCED_JSON = r'(\{(?:[^{}]|\{[^{}]*\})*\})'
 
-        for p_regex, name_idx, arg_idx in patterns:
-            for match in re.finditer(p_regex, text, flags=re.DOTALL | re.IGNORECASE):
-                name = match.group(name_idx)
-                raw_args = match.group(arg_idx).strip()
-                
-                # Cleanup common artifacts in the args group
-                clean_args = re.sub(r'^>', '', raw_args).strip()
-                
+        def _try_parse_json(raw: str) -> dict | None:
+            """Find and parse first balanced JSON object in raw string."""
+            for m in re.finditer(_BALANCED_JSON, raw, flags=re.DOTALL):
                 try:
-                    args = {}
-                    if clean_args:
-                        # Attempt to find the JSON-like block within the payload
-                        json_match = re.search(r'(\{.*\})', clean_args, flags=re.DOTALL)
-                        if json_match:
-                            args = json.loads(json_match.group(1))
-                        else:
-                            args = {"query": clean_args}
-                    
-                    # 🛡️ Generic Parameter Normalization (Auto-handled)
-                    ARG_MAPPINGS = {
-                        "date_of_birth": "dob",
-                        "last_4_phone_digits": "phone_last_4",
-                        "account_id": "account_number",
-                        "customer_id": "account_number" # Common fallback
-                    }
-                    for hallucinated, official in ARG_MAPPINGS.items():
-                        if hallucinated in args:
-                            args[official] = args.pop(hallucinated)
+                    return json.loads(m.group(1))
+                except Exception:
+                    continue
+            return None
 
-                    calls.append(ToolCall(id=f"hallucinated_{name}", name=name, arguments=args))
-                    logger.info("🧠 Recovered hallucinated tool call: %s(%s)", name, args)
+        def _validate_tool(name: str) -> bool:
+            if name not in self._tool_instances:
+                logger.warning("🚫 [HALLUCINATION] Extracted tool '%s' not in _tool_instances", name)
+                return False
+            return True
 
-                except Exception as e:
-                    logger.warning("Failed to parse hallucinated tool args for %s: %s", name, e)
+        def _normalize_args(args: dict) -> dict:
+            """Normalize hallucinated parameter names to official names."""
+            ARG_MAPPINGS = {
+                "date_of_birth": "dob",
+                "last_4_phone_digits": "phone_last_4",
+                "account_id": "account_number",
+                "customer_id": "account_number",
+            }
+            for hallucinated, official in ARG_MAPPINGS.items():
+                if hallucinated in args:
+                    args[official] = args.pop(hallucinated)
+            return args
+
+        calls: list[ToolCall] = []
+        seen: set[str] = set()
+        if not text:
+            return calls
+
+        def _add_call(name: str, args: dict) -> None:
+            args = _normalize_args(args)
+            key = f"{name}:{json.dumps(args, sort_keys=True)}"
+            if key not in seen:
+                seen.add(key)
+                calls.append(ToolCall(id=f"hallucinated_{name}_{len(calls)}", name=name, arguments=args))
+                logger.info("🧠 Recovered hallucinated tool call: %s(%s)", name, args)
+
+        # ── Pattern 1: XML <function=name>args</function> ──────────────────────
+        for m in re.finditer(r'<function=([a-zA-Z0-9_-]+)(.*?)</function>', text, flags=re.DOTALL | re.IGNORECASE):
+            name = m.group(1)
+            if not _validate_tool(name):
+                continue
+            raw = re.sub(r'^>', '', m.group(2).strip())
+            args = _try_parse_json(raw) or ({"query": raw} if raw else {})
+            _add_call(name, args)
+
+        # ── Pattern 2: Paren+trailing (function=name>args<function> ────────────
+        for m in re.finditer(r'\(function=([a-zA-Z0-9_-]+)>(.*?)<function>', text, flags=re.DOTALL | re.IGNORECASE):
+            name = m.group(1)
+            if not _validate_tool(name):
+                continue
+            raw = m.group(2).strip()
+            args = _try_parse_json(raw) or ({"query": raw} if raw else {})
+            _add_call(name, args)
+
+        # ── Pattern 3: Loose paren (function=name>args) ────────────────────────
+        for m in re.finditer(r'\(function=([a-zA-Z0-9_-]+)>(.*?)\)', text, flags=re.DOTALL | re.IGNORECASE):
+            name = m.group(1)
+            if not _validate_tool(name):
+                continue
+            raw = m.group(2).strip()
+            args = _try_parse_json(raw) or ({"query": raw} if raw else {})
+            _add_call(name, args)
+
+        # ── Pattern 4: Markdown code block ```json {"name":"tool",...} ``` ──────
+        for m in re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, flags=re.DOTALL | re.IGNORECASE):
+            try:
+                obj = json.loads(m.group(1))
+                name = obj.get("name") or obj.get("tool") or obj.get("function")
+                if name and _validate_tool(name):
+                    args = obj.get("arguments") or obj.get("args") or obj.get("parameters") or {}
+                    _add_call(name, args)
+            except Exception:
+                pass
+
+        # ── Pattern 5: Raw JSON {"name":"tool","arguments":{...}} ──────────────
+        for m in re.finditer(_BALANCED_JSON, text, flags=re.DOTALL):
+            try:
+                obj = json.loads(m.group(1))
+                name = obj.get("name") or obj.get("tool") or obj.get("function")
+                if name and isinstance(name, str) and _validate_tool(name):
+                    args = obj.get("arguments") or obj.get("args") or obj.get("parameters") or {}
+                    if isinstance(args, dict):
+                        _add_call(name, args)
+            except Exception:
+                pass
+
+        # ── Pattern 6: Python-style call tool_name(key="val") — known tools only
+        for tool_name in self._tool_instances:
+            escaped = re.escape(tool_name)
+            for m in re.finditer(rf'\b{escaped}\s*\(([^)]*)\)', text, flags=re.DOTALL):
+                raw_kwargs = m.group(1).strip()
+                args: dict = {}
+                if raw_kwargs:
+                    for kv in re.finditer(r'(\w+)\s*=\s*["\']?([^,"\']+)["\']?', raw_kwargs):
+                        args[kv.group(1)] = kv.group(2).strip()
+                _add_call(tool_name, args)
+
+        # ── Pattern 7: Bracket annotation [TOOL: tool_name] {args} ────────────
+        for m in re.finditer(r'\[TOOL:\s*([a-zA-Z0-9_-]+)\]\s*' + _BALANCED_JSON, text, flags=re.DOTALL | re.IGNORECASE):
+            name = m.group(1)
+            if not _validate_tool(name):
+                continue
+            args = _try_parse_json(m.group(2)) or {}
+            _add_call(name, args)
+
+        # ── Pattern 8: Natural language "I'll call verify_customer" ────────────
+        # Recover with empty args so dummy guard fires TOOL_ERROR and asks user
+        for tool_name in self._tool_instances:
+            escaped = re.escape(tool_name)
+            if re.search(rf"(?:call|invoke|use|run|execute)\s+{escaped}\b", text, flags=re.IGNORECASE):
+                # Only add if not already captured by a more specific pattern
+                key = f"{tool_name}:{{}}"
+                if key not in seen:
+                    _add_call(tool_name, {})
 
         return calls
 

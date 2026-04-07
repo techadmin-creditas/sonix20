@@ -338,13 +338,19 @@ class SQLiteProvider:
         """)
         conn.commit()
 
-        # 3b. Migrate legacy workflows rows missing columns (table exists from CREATE above)
-        existing_workflow_cols = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
-        if "is_active" not in existing_workflow_cols:
+        # 3b. Migrate legacy rows missing columns
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
+        if "is_active" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
-        if "updated_at" not in existing_workflow_cols:
+        if "updated_at" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
-            conn.execute("UPDATE workflows SET updated_at = created_at WHERE updated_at = 0")
+        
+        # Knowledge Base Source Column Support
+        existing_kb_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_base)").fetchall()}
+        if "source" not in existing_kb_cols:
+            conn.execute("ALTER TABLE knowledge_base ADD COLUMN source TEXT")
+            logger.info("KB Migration: Added 'source' column for filename-based filtering.")
+        
         conn.commit()
 
         self._seed_default_bots()
@@ -840,7 +846,7 @@ class SQLiteProvider:
         """
         Full-text search in the knowledge base.
         Searches across topic, question, answer, and keywords.
-        Optional data_access: max_kb_hits/max_rows, knowledge_topic_allowlist.
+        Optional data_access: max_kb_hits, knowledge_topic_allowlist, knowledge_source_allowlist.
         """
         da = data_access or {}
         try:
@@ -848,51 +854,68 @@ class SQLiteProvider:
             limit = max(1, min(limit, cap))
         except (TypeError, ValueError):
             pass
+            
         topic_allow = da.get("knowledge_topic_allowlist")
         if isinstance(topic_allow, list) and topic_allow:
             topic_allow = [str(t) for t in topic_allow if t]
         else:
             topic_allow = None
 
+        source_allow = da.get("knowledge_source_allowlist")
+        if isinstance(source_allow, list) and source_allow:
+            source_allow = [str(s) for s in source_allow if s]
+        else:
+            source_allow = None
+
         def _do():
             conn = self._get_conn()
             q = f"%{query.lower()}%"
+            
+            # Base conditions
+            conditions = ["(lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)"]
+            params = [q, q, q, q]
+            
+            # Bot ID grouping
             if bot_id:
-                if topic_allow:
-                    ph = ",".join("?" * len(topic_allow))
-                    rows = conn.execute(f"""
-                        SELECT topic, question, answer, priority FROM knowledge_base
-                        WHERE (bot_id = ? OR bot_id IS NULL)
-                        AND topic IN ({ph})
-                        AND (lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)
-                        ORDER BY priority DESC, id LIMIT ?
-                    """, (bot_id, *topic_allow, q, q, q, q, limit)).fetchall()
-                else:
-                    rows = conn.execute("""
-                        SELECT topic, question, answer, priority FROM knowledge_base
-                        WHERE (bot_id = ? OR bot_id IS NULL)
-                        AND (lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)
-                        ORDER BY priority DESC, id LIMIT ?
-                    """, (bot_id, q, q, q, q, limit)).fetchall()
-            else:
-                rows = conn.execute("""
-                    SELECT topic, question, answer, priority FROM knowledge_base
-                    WHERE lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?
-                    ORDER BY priority DESC, id LIMIT ?
-                """, (q, q, q, q, limit)).fetchall()
+                conditions.append("(bot_id = ? OR bot_id IS NULL)")
+                params.append(bot_id)
+            
+            # Topic Filter
+            if topic_allow:
+                ph = ",".join("?" * len(topic_allow))
+                conditions.append(f"topic IN ({ph})")
+                params.extend(topic_allow)
+                
+            # Source (Filename) Filter
+            if source_allow:
+                ph = ",".join("?" * len(source_allow))
+                conditions.append(f"source IN ({ph})")
+                params.extend(source_allow)
+                
+            where_clause = " AND ".join(conditions)
+            sql = f"""
+                SELECT topic, source, question, answer, priority 
+                FROM knowledge_base
+                WHERE {where_clause}
+                ORDER BY priority DESC, id LIMIT ?
+            """
+            params.append(limit)
+            
+            rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
+            
         return await self._run(_do)
 
     async def add_knowledge(self, topic: str, question: str, answer: str,
                              keywords: Optional[list] = None, bot_id: Optional[str] = None,
-                             priority: int = 0) -> None:
+                             priority: int = 0, source: Optional[str] = None) -> None:
         """Add a knowledge base entry."""
         def _do():
             conn = self._get_conn()
             conn.execute("""
-                INSERT INTO knowledge_base (bot_id, topic, question, answer, keywords, priority)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (bot_id, topic, question, answer, json.dumps(keywords or []), priority))
+                INSERT INTO knowledge_base (bot_id, topic, source, question, answer, keywords, priority)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, topic, source, question, answer, json.dumps(keywords or []), priority))
             conn.commit()
         await self._run(_do)
 

@@ -373,14 +373,56 @@ export const api = {
     return res.json();
   },
 
-  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string): Promise<any> {
+  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>): Promise<any> {
     const res = await fetch(`${BASE_URL}/workflows/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflow_data, user_input, current_node_id }),
+      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts }),
     });
     if (!res.ok) throw new Error('Failed to test workflow');
     return res.json();
+  },
+
+  /** AI-powered suggestions for node content tone/intents */
+  async suggestAIContent(nodeType: string, currentText: string, tone: string, context?: string): Promise<string> {
+    const res = await fetch(`${BASE_URL}/workflows/ai-suggest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_type: nodeType, current_text: currentText, tone, context }),
+    });
+    if (!res.ok) throw new Error('AI suggestion failed');
+    const data = await res.json();
+    return data.suggestion;
+  },
+
+  /** Generate an entire bot workflow graph from a single prompt */
+  async generateWorkflowFromPrompt(prompt: string): Promise<Workflow> {
+    const res = await fetch(`${BASE_URL}/workflows/generate-from-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) throw new Error('Failed to generate magic workflow');
+    return res.json();
+  },
+
+  async architectAI(payload: {
+    operation_type: string;
+    current_node: any;
+    predecessors: any[];
+    successors: any[];
+    strategy_prompt?: string;
+    tone?: string;
+    workflow_goal?: string;
+  }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/workflows/ai-node-architect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('AI Architect failed');
+    const data = await res.json();
+    return data.suggestion;
   },
 
   async submitFeedback(sessionId: string, data: SessionFeedback): Promise<any> {
