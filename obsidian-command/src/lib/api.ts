@@ -325,6 +325,20 @@ export const api = {
     return data.turns;
   },
 
+  /** Summary, intent, insights, and extracted entities via the session bot's configured LLM. */
+  async summarizeSession(id: string): Promise<{
+    summary: string;
+    intent: string;
+    insights: string[];
+    entities_saved?: number;
+    session_nlp_version?: number;
+    llm_analysis_at?: number;
+  }> {
+    const res = await fetch(`${BASE_URL}/sessions/${id}/summarize`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to generate session summary');
+    return res.json();
+  },
+
   async getKnowledgeEntries(limit = 100): Promise<KnowledgeEntry[]> {
     const res = await fetch(`${BASE_URL}/knowledge?limit=${limit}`);
     if (!res.ok) throw new Error('Failed to fetch knowledge base');

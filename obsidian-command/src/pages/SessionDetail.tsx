@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { api, SessionRecord, UserFact, SessionFeedback } from '../lib/api';
+import { api, UserFact } from '../lib/api';
 import { cn } from '../lib/utils';
 import {
-  ArrowLeft, Play, Pause, Download, Share2,
+  ArrowLeft, Play, Pause, Download,
   MessageSquare, BarChart3, FileText, Lightbulb,
   Clock, Timer, Zap, ShieldCheck, Cpu,
   User, Bot, Calendar, Smile, Loader2, Tags,
-  Star, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -18,57 +17,138 @@ const SENTIMENT_COLOR: Record<string, string> = {
   negative: 'bg-red-400',
 };
 
+/** Stored when no LLM summary exists yet — triggers bind to bot LLM via POST /summarize */
+const SUMMARY_PLACEHOLDERS = new Set([
+  'No summary generated for this session.',
+  'No meaningful conversation occurred.',
+]);
+
+function needsGeneratedSummary(summary: string | undefined): boolean {
+  const t = (summary ?? '').trim();
+  return !t || SUMMARY_PLACEHOLDERS.has(t);
+}
+
+function normalizeInsights(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (x): x is string => typeof x === 'string' && x.trim().length > 0
+  );
+}
+
+/** UI label for user_facts.category (hides internal session_extracted.* prefix). */
+function formatEntityCategory(category: string | undefined): string {
+  if (!category) return '';
+  if (category.startsWith('session_extracted.')) {
+    return category.slice('session_extracted.'.length);
+  }
+  return category;
+}
+
+type LatencyMetrics = {
+  sttLatency: number | null;
+  llmLatency: number | null;
+  ttsLatency: number | null;
+  totalRtt: number | null;
+  metricsSampleCount: number;
+};
+
+/** Maps API session metadata (including tool_logs aggregates from GET /sessions/:id) to UI metrics. */
+function buildLatencyMetrics(meta: Record<string, unknown>): LatencyMetrics {
+  const countRaw = meta.metrics_turn_count;
+  const count = typeof countRaw === 'number' ? countRaw : null;
+
+  if (count === 0) {
+    return {
+      sttLatency: null,
+      llmLatency: null,
+      ttsLatency: null,
+      totalRtt: null,
+      metricsSampleCount: 0,
+    };
+  }
+
+  const pick = (avgKey: string, legacyKey: string): number | null => {
+    const v = (meta[avgKey] ?? meta[legacyKey]) as unknown;
+    if (v == null || v === '') return null;
+    return Math.round(Number(v));
+  };
+
+  if (count !== null && count > 0) {
+    return {
+      sttLatency: pick('avg_stt_ms', 'stt_ms'),
+      llmLatency: pick('avg_llm_ms', 'llm_ms'),
+      ttsLatency: pick('avg_tts_ms', 'tts_ms'),
+      totalRtt: pick('avg_total_ms', 'total_ms'),
+      metricsSampleCount: count,
+    };
+  }
+
+  const stt = pick('avg_stt_ms', 'stt_ms');
+  const llm = pick('avg_llm_ms', 'llm_ms');
+  const tts = pick('avg_tts_ms', 'tts_ms');
+  const total = pick('avg_total_ms', 'total_ms');
+  const any = [stt, llm, tts, total].some((x) => x != null);
+  if (!any) {
+    return {
+      sttLatency: null,
+      llmLatency: null,
+      ttsLatency: null,
+      totalRtt: null,
+      metricsSampleCount: 0,
+    };
+  }
+  return {
+    sttLatency: stt,
+    llmLatency: llm,
+    ttsLatency: tts,
+    totalRtt: total,
+    metricsSampleCount: 0,
+  };
+}
+
 export default function SessionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [facts, setFacts] = useState<UserFact[]>([]);
-  const [existingFeedback, setExistingFeedback] = useState<SessionFeedback | null>(null);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [feedbackSaving, setFeedbackSaving] = useState(false);
-  const [feedbackData, setFeedbackData] = useState<SessionFeedback>({
-    outcome: 'resolved',
-    csat_score: 5,
-    notes: '',
-  });
 
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'insights' | 'stats' | 'entities'>('transcript');
+  const [sessionAnalysisBinding, setSessionAnalysisBinding] = useState(false);
+  const routeSessionIdRef = useRef<string | undefined>(undefined);
+  routeSessionIdRef.current = id;
 
   useEffect(() => {
-    async function loadData() {
-      if (!id) return;
-      try {
-        const [details, transcript, factsData] = await Promise.all([
-          api.getSessionDetails(id),
-          api.getSessionTranscript(id),
-          api.getSessionFacts(id).catch(() => [] as UserFact[]),
-        ]);
+    let cancelled = false;
+    const routeId = id;
+    if (!routeId) return;
 
-        // Try to get stored feedback without breaking on 404
-        const feedbackRes = await api.getSessionFacts(id).catch(() => null);
-        try {
-          const fbRaw = await fetch(`/api/v1/sessions/${id}/feedback`);
-          if (fbRaw.ok) {
-            const fbJson = await fbRaw.json();
-            if (fbJson.feedback) {
-              setExistingFeedback(fbJson.feedback);
-              setFeedbackSubmitted(true);
-            }
-          }
-        } catch { /* ignore */ }
+    setLoading(true);
+    setSession(null);
+
+    async function loadData() {
+      let details: Awaited<ReturnType<typeof api.getSessionDetails>> | null = null;
+      try {
+        const [d, transcript, factsData] = await Promise.all([
+          api.getSessionDetails(routeId),
+          api.getSessionTranscript(routeId),
+          api.getSessionFacts(routeId).catch(() => [] as UserFact[]),
+        ]);
+        if (
+          cancelled ||
+          routeSessionIdRef.current !== routeId ||
+          d.id !== routeId
+        ) {
+          return;
+        }
+        details = d;
 
         setFacts(factsData);
 
-        // Parse latency from session metadata (populated by log_turn_metrics)
         const meta = details.metadata || {};
-        const sttLatency = Math.round(meta.avg_stt_ms ?? meta.stt_ms ?? 0);
-        const llmLatency = Math.round(meta.avg_llm_ms ?? meta.llm_ms ?? 0);
-        const ttsLatency = Math.round(meta.avg_tts_ms ?? meta.tts_ms ?? 0);
-        const totalRtt = Math.round(meta.avg_total_ms ?? meta.total_ms ?? 0);
-
+        const metrics = buildLatencyMetrics(meta);
         const sentimentScore = meta.sentiment_score ?? null;
 
         const stData = {
@@ -86,34 +166,111 @@ export default function SessionDetail() {
           })),
           summary: meta.summary || 'No summary generated for this session.',
           intent: meta.intent || 'Unknown Intent',
-          insights: [],
+          insights: normalizeInsights(meta.insights),
           turns: details.turn_count || 0,
           sentimentScore,
-          metrics: { sttLatency, llmLatency, ttsLatency, totalRtt }
+          metrics,
         };
         setSession(stData);
       } catch (e) {
         console.error("Failed to load session details", e);
+        details = null;
+        if (routeSessionIdRef.current === routeId) {
+          setSession(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled && routeSessionIdRef.current === routeId) {
+          setLoading(false);
+        }
+      }
+
+      if (cancelled || !details || routeSessionIdRef.current !== routeId) return;
+
+      const metaAfter = details.metadata || {};
+      const hasLlmAnalysis = typeof metaAfter.llm_analysis_at === 'number';
+      const needSummary = needsGeneratedSummary(metaAfter.summary as string | undefined);
+      const nlpVersion =
+        typeof metaAfter.session_nlp_version === 'number'
+          ? metaAfter.session_nlp_version
+          : 0;
+      const shouldRunSessionNlp =
+        (details.turn_count || 0) > 1 &&
+        (!hasLlmAnalysis || needSummary || nlpVersion < 2);
+
+      if (shouldRunSessionNlp) {
+        setSessionAnalysisBinding(true);
+        try {
+          const out = await api.summarizeSession(routeId);
+          if (
+            !cancelled &&
+            routeSessionIdRef.current === routeId
+          ) {
+            setSession((prev) =>
+              prev && prev.id === routeId
+                ? {
+                    ...prev,
+                    summary: out.summary,
+                    intent: out.intent || prev.intent,
+                    insights: normalizeInsights(out.insights),
+                  }
+                : prev
+            );
+            try {
+              const refreshedFacts = await api.getSessionFacts(routeId);
+              if (!cancelled && routeSessionIdRef.current === routeId) {
+                setFacts(refreshedFacts);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch (e) {
+          console.error('Failed to generate session analysis with bot LLM', e);
+        } finally {
+          if (!cancelled && routeSessionIdRef.current === routeId) {
+            setSessionAnalysisBinding(false);
+          }
+        }
       }
     }
-    loadData();
+    void loadData();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  const handleSubmitFeedback = async () => {
-    if (!id) return;
-    setFeedbackSaving(true);
-    try {
-      await api.submitFeedback(id, feedbackData);
-      setFeedbackSubmitted(true);
-      setExistingFeedback(feedbackData);
-    } catch (e) {
-      console.error('Failed to submit feedback', e);
-    } finally {
-      setFeedbackSaving(false);
-    }
-  };
+  // Live refresh Latency & Performance while the session is still active and the stats tab is open.
+  useEffect(() => {
+    if (!id || activeTab !== 'stats') return;
+    const isActive = session?.duration === 'Active';
+    if (!isActive) return;
+
+    const tick = async () => {
+      try {
+        const details = await api.getSessionDetails(id);
+        const meta = details.metadata || {};
+        const metrics = buildLatencyMetrics(meta);
+        setSession((prev: Record<string, unknown> | null) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            duration: details.ended_at
+              ? `${Math.round(details.ended_at - details.started_at)}s`
+              : 'Active',
+            turns: details.turn_count ?? (prev.turns as number),
+            metrics,
+            sentimentScore: meta.sentiment_score ?? (prev.sentimentScore as number | null),
+          };
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const t = window.setInterval(tick, 4000);
+    void tick();
+    return () => window.clearInterval(t);
+  }, [id, activeTab, session?.duration]);
 
   const togglePlayback = () => {
     if (audioRef.current) {
@@ -134,11 +291,6 @@ export default function SessionDetail() {
     a.href = url;
     a.download = `session-${session.id}-log.json`;
     a.click();
-  };
-
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert('Session link copied to clipboard!');
   };
 
   const handleEscalate = () => {
@@ -210,12 +362,6 @@ export default function SessionDetail() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={handleShare}
-                  className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
-                >
-                  <Share2 className="size-5" />
-                </button>
                 <button
                   onClick={handleExport}
                   className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
@@ -325,9 +471,17 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <FileText className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Conversation Summary</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <FileText className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Conversation Summary</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Summary and intent are produced with the same LLM provider and model configured for &quot;{session.bot}&quot;.
+                    </p>
                   </div>
                   <div className="p-8 rounded-2xl bg-surface-high/50 border border-outline-variant/10 text-on-surface-variant leading-loose text-lg font-medium italic">
                     "{session.summary}"
@@ -353,20 +507,39 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <Lightbulb className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">AI-Generated Insights</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <Lightbulb className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">AI-Generated Insights</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Generated with the same LLM as &quot;{session.bot}&quot; (one pass after summary and intent).
+                    </p>
                   </div>
-                  <div className="flex flex-col gap-4">
-                    {session.insights.map((insight, i) => (
-                      <div key={i} className="flex gap-4 p-6 rounded-2xl bg-surface-high/50 border border-outline-variant/10 group hover:border-primary/30 transition-all">
-                        <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0 group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
-                          <Zap className="size-5" />
+                  {session.insights.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 opacity-40">
+                      <Lightbulb className="size-10 text-outline mb-4" />
+                      <p className="text-sm font-medium text-center max-w-sm">
+                        {sessionAnalysisBinding
+                          ? 'Generating insights…'
+                          : 'No insights yet. Open a session with at least two transcript turns.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {session.insights.map((insight: string, i: number) => (
+                        <div key={i} className="flex gap-4 p-6 rounded-2xl bg-surface-high/50 border border-outline-variant/10 group hover:border-primary/30 transition-all">
+                          <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0 group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
+                            <Zap className="size-5" />
+                          </div>
+                          <p className="text-on-surface-variant font-medium leading-relaxed">{insight}</p>
                         </div>
-                        <p className="text-on-surface-variant font-medium leading-relaxed">{insight}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -378,14 +551,26 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <Tags className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Extracted Entities</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <Tags className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Extracted Entities</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Includes facts from the live <code className="text-primary/80">remember_user_fact</code> tool plus entities inferred from the transcript with the same LLM as &quot;{session.bot}&quot; (saved when you open this page or after a call ends).
+                    </p>
                   </div>
                   {facts.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 opacity-40">
                       <Tags className="size-10 text-outline mb-4" />
-                      <p className="text-sm font-medium">No entities extracted for this session.</p>
+                      <p className="text-sm font-medium text-center max-w-sm">
+                        {sessionAnalysisBinding
+                          ? 'Extracting entities…'
+                          : 'No entities for this session yet.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -394,7 +579,7 @@ export default function SessionDetail() {
                           <div className="flex items-center justify-between">
                             {fact.category && (
                               <span className="text-[9px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-2 py-0.5 rounded">
-                                {fact.category}
+                                {formatEntityCategory(fact.category)}
                               </span>
                             )}
                             <span className="text-[9px] text-outline font-mono ml-auto">
@@ -417,9 +602,29 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-8"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <BarChart3 className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Latency & Performance</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <BarChart3 className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Latency & Performance</h4>
+                    </div>
+                    <p className="text-outline text-xs font-medium leading-relaxed max-w-xl">
+                      {(() => {
+                        const m = session.metrics;
+                        const hasNumbers = [m.sttLatency, m.llmLatency, m.ttsLatency, m.totalRtt].some(
+                          (x) => x != null && !Number.isNaN(x)
+                        );
+                        if (m.metricsSampleCount > 0) {
+                          return `Averages over ${m.metricsSampleCount} completed turn${m.metricsSampleCount === 1 ? '' : 's'} (STT → LLM → TTS pipeline).`;
+                        }
+                        if (hasNumbers) {
+                          return 'Pipeline averages from stored session data.';
+                        }
+                        if (session.duration === 'Active') {
+                          return 'Waiting for completed turns. Values refresh every few seconds while the call is live.';
+                        }
+                        return 'No per-turn latency samples were recorded for this session.';
+                      })()}
+                    </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <LatencyCard label="Avg STT" value={session.metrics.sttLatency} icon={Clock} color="text-indigo-500" />
@@ -438,89 +643,6 @@ export default function SessionDetail() {
                       </div>
                     </div>
                     <span className="text-emerald-500 font-bold text-sm">99.9% Uptime</span>
-                  </div>
-
-                  {/* CSAT Feedback Form */}
-                  <div className="p-8 rounded-2xl bg-surface-high/50 border border-outline-variant/10 flex flex-col gap-6">
-                    <div className="flex items-center gap-3">
-                      <Star className="size-5 text-primary" />
-                      <h5 className="font-headline font-bold text-lg">Session Feedback</h5>
-                      {feedbackSubmitted && (
-                        <span className="ml-auto flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                          <CheckCircle2 className="size-4" /> Feedback saved
-                        </span>
-                      )}
-                    </div>
-
-                    {feedbackSubmitted ? (
-                      <div className="flex flex-col gap-4 opacity-70">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-outline uppercase tracking-widest">CSAT Score:</span>
-                          <div className="flex gap-1">
-                            {[1, 2, 3, 4, 5].map(n => (
-                              <Star key={n} className={cn("size-4", n <= (existingFeedback?.csat_score ?? 0) ? "text-amber-400 fill-amber-400" : "text-outline")} />
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-outline uppercase tracking-widest">Outcome:</span>
-                          <span className="text-sm font-bold capitalize">{existingFeedback?.outcome}</span>
-                        </div>
-                        {existingFeedback?.notes && (
-                          <p className="text-xs text-on-surface-variant italic">"{existingFeedback.notes}"</p>
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Rating</label>
-                          <div className="flex gap-2">
-                            {([1, 2, 3, 4, 5] as const).map(n => (
-                              <button
-                                key={n}
-                                onClick={() => setFeedbackData(p => ({ ...p, csat_score: n }))}
-                                className={cn("size-10 rounded-xl flex items-center justify-center transition-all border",
-                                  feedbackData.csat_score >= n
-                                    ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
-                                    : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/30"
-                                )}
-                              >
-                                <Star className={cn("size-4", feedbackData.csat_score >= n && "fill-amber-400")} />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Outcome</label>
-                          <select
-                            value={feedbackData.outcome}
-                            onChange={e => setFeedbackData(p => ({ ...p, outcome: e.target.value as any }))}
-                            className="bg-surface-container-highest border-none rounded-xl p-3 text-sm font-medium text-on-surface focus:ring-1 focus:ring-primary/30"
-                          >
-                            <option value="resolved">Resolved</option>
-                            <option value="escalated">Escalated</option>
-                            <option value="abandoned">Abandoned</option>
-                          </select>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Notes (optional)</label>
-                          <textarea
-                            value={feedbackData.notes}
-                            onChange={e => setFeedbackData(p => ({ ...p, notes: e.target.value }))}
-                            placeholder="Any additional comments about this session..."
-                            className="bg-surface-container-highest border-none rounded-xl p-3 text-sm text-on-surface resize-none h-20 focus:ring-1 focus:ring-primary/30"
-                          />
-                        </div>
-                        <button
-                          onClick={handleSubmitFeedback}
-                          disabled={feedbackSaving}
-                          className="self-start px-8 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg shadow-primary/10 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
-                        >
-                          {feedbackSaving ? <Loader2 className="size-4 animate-spin" /> : <Star className="size-4" />}
-                          {feedbackSaving ? 'Saving...' : 'Submit Feedback'}
-                        </button>
-                      </>
-                    )}
                   </div>
                 </motion.div>
               )}
@@ -597,7 +719,20 @@ function MetaItem({ icon: Icon, label, value }: any) {
   );
 }
 
-function LatencyCard({ label, value, icon: Icon, color }: any) {
+function LatencyCard({
+  label,
+  value,
+  icon: Icon,
+  color,
+}: {
+  label: string;
+  value: number | null;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  const display = value == null || Number.isNaN(value) ? '—' : String(value);
+  const barPct =
+    value != null && !Number.isNaN(value) ? Math.min(100, (value / 1000) * 100) : 0;
   return (
     <div className="p-6 rounded-2xl bg-surface-low ghost-border flex flex-col gap-4">
       <div className="flex justify-between items-start">
@@ -608,12 +743,12 @@ function LatencyCard({ label, value, icon: Icon, color }: any) {
       </div>
       <div>
         <p className="text-[10px] font-bold text-outline uppercase tracking-widest">{label}</p>
-        <h3 className="text-2xl font-headline font-extrabold mt-1">{value}</h3>
+        <h3 className="text-2xl font-headline font-extrabold mt-1 tabular-nums">{display}</h3>
       </div>
       <div className="w-full h-1 bg-surface-highest rounded-full overflow-hidden">
         <div
-          className={cn("h-full", color.replace('text-', 'bg-'))}
-          style={{ width: `${Math.min(100, (value / 1000) * 100)}%` }}
+          className={cn("h-full transition-[width] duration-500", color.replace('text-', 'bg-'))}
+          style={{ width: `${barPct}%` }}
         ></div>
       </div>
     </div>
