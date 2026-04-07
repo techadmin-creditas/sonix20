@@ -81,7 +81,7 @@ function App() {
               setCurrentUser(null);
             }}
           />
-          <main className="flex-1 flex flex-col overflow-x-hidden">
+          <main className="flex-1 flex flex-col ">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
@@ -91,6 +91,7 @@ function App() {
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
               <Route path="/personas/:id/config" element={<BotConfig />} />
+              <Route path="/personas/:id/config/debug" element={<BotConfig />} />
               <Route path="/knowledge" element={<KnowledgeBase />} />
               <Route path="/workflows" element={<Workflows />} />
               <Route path="/workflows/create" element={<WorkflowEditor />} />

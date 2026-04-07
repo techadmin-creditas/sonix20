@@ -251,7 +251,7 @@ export default function Personas() {
                     ) : (
                       <>
                         <Link
-                          to={`/personas/${persona.id}/config`}
+                          to={`/personas/${persona.id}/config/debug`}
                           className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
                         >
                           Configure

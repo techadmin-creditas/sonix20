@@ -129,10 +129,81 @@ function _sttWrapPcmAsWav(pcm: ArrayBuffer): Blob {
   return new Blob([out], { type: 'audio/wav' });
 }
 
+function SectionAccordion({
+  title,
+  icon: Icon,
+  children,
+  defaultOpen = false,
+  className,
+  headerExtra
+}: {
+  title: string;
+  icon: any;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+  headerExtra?: React.ReactNode;
+}) {
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+  return (
+    <section className={cn(
+      "glass-panel rounded-3xl flex flex-col border transition-all duration-300 ",
+      isOpen ? "bg-surface-low border-primary/20 shadow-inner bg-white" : "bg-surface-low/30 bg-white hover:bg-surface-low/50 border-outline-variant/10 ",
+      className
+    )}>
+      <div className="flex items-center justify-between w-full min-h-[72px] px-6">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex flex-1 items-center gap-4 text-left group py-3"
+        >
+          <div className={cn(
+            "p-2.5 rounded-xl transition-all duration-300 shadow-sm",
+            isOpen ? "bg-primary text-on-primary-fixed" : "bg-surface-highest text-on-surface-variant group-hover:bg-primary/10 group-hover:text-primary"
+          )}>
+            <Icon className="size-5" />
+          </div>
+          <span className={cn(
+            "font-headline font-bold text-base transition-colors",
+            isOpen ? "text-on-surface" : "text-on-surface-variant group-hover:text-on-surface"
+          )}>
+            {title}
+          </span>
+
+          <div className="ml-auto mr-2">
+            <div className={cn(
+              "size-8 rounded-lg flex items-center justify-center transition-all",
+              isOpen ? "bg-primary/10 text-primary rotate-180" : "bg-surface-highest/50 text-outline group-hover:bg-surface-highest group-hover:text-on-surface"
+            )}>
+              <ChevronDown className="size-4" />
+            </div>
+          </div>
+        </button>
+        {headerExtra && (
+          <div onClick={e => e.stopPropagation()} className="pl-4 border-l border-outline-variant/10">
+            {headerExtra}
+          </div>
+        )}
+      </div>
+      {isOpen && (
+        <div className="px-8 pb-8 pt-2 flex flex-col gap-6 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="h-px bg-outline-variant/10 w-full" />
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function BotConfig() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isCreateMode = !id;
+  const isDebug = window.location.pathname.endsWith('/debug');
+
+  React.useMemo(() => {
+    console.log('Debug mode enabled:', isDebug);
+  }, [isDebug]);
 
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -727,12 +798,8 @@ export default function BotConfig() {
             </div>
           </section>
 
-          {!isCreateMode && id ? (
-            <section className="glass-panel rounded-3xl p-8 flex flex-col gap-4 ghost-border border-outline-variant/20">
-              <div className="flex items-center gap-3">
-                <Mic className="size-5 text-primary" />
-                <h3 className="font-headline font-bold text-lg">STT sandbox</h3>
-              </div>
+          {isDebug && !isCreateMode && id && (
+            <SectionAccordion title="STT Sandbox" icon={Mic} className="border-outline-variant/20">
               <p className="text-xs text-on-surface-variant leading-relaxed">
                 Same path as live voice: <code className="text-primary/80">DeepgramStreamingProvider</code> WebSocket,{' '}
                 <code className="text-primary/80">send_audio</code> (20 ms frames), and Silero RMS gate. Mic capture is resampled to
@@ -810,250 +877,243 @@ export default function BotConfig() {
                   </p>
                 </div>
               ) : null}
-            </section>
-          ) : null}
+            </SectionAccordion>
+          )}
 
           {/* Policies (JSON, editable — no secrets in DB; use env refs in URLs) */}
-          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Settings2 className="size-5 text-primary" />
-                <h3 className="font-headline font-bold text-lg">Guardrails &amp; data rules</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSandboxOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
+
+
+          {isDebug && (
+            <>
+              <SectionAccordion
+                title="Guardrails & data rules"
+                icon={Settings2}
+                headerExtra={
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSandboxOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
+                  >
+                    <FlaskConical className="size-3.5" />
+                    Live Test
+                  </button>
+                }
               >
-                <FlaskConical className="size-3.5" />
-                Live Test
-              </button>
-            </div>
-            <p className="text-xs text-on-surface-variant">
-              Configure safety rules and data handling policies. Structured rules are applied in real-time to both user turns and bot responses.
-            </p>
-            <div className="space-y-4">
-              <label className="text-[10px] font-bold uppercase text-on-surface-variant">guardrail_policy</label>
-              <GuardrailManager
-                policy={policyDraft.guardrail}
-                onChange={(val) => setPolicyDraft(p => ({ ...p, guardrail: val }))}
-                botId={id}
-                botPersona={formData.persona}
-                botInstructions={formData.system_prompt}
-              />
-
-              <DataAccessPolicyManager
-                value={policyDraft.data_access}
-                botContext={{ name: formData.name, role: formData.role, system_prompt: formData.system_prompt }}
-                onChange={(val) => setPolicyDraft((p) => ({ ...p, data_access: val }))}
-              />
-              <label className="text-[10px] font-bold uppercase text-on-surface-variant">conversation_policy</label>
-              <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                <code className="text-primary/80">silence_threshold_ms</code>,{' '}
-                <code className="text-primary/80">interrupt_aware_reply</code>,{' '}
-                <code className="text-primary/80">max_tts_buffer_chars</code> (default 200; higher = fewer TTS segments).{' '}
-                Smooth speech: <code className="text-primary/80">tts_flush_mode</code>{' '}
-                <code>balanced</code> (flush on commas) | <code>sentence_only</code> (default, fewer mid-phrase cuts);{' '}
-                <code className="text-primary/80">tts_streaming_mode</code> <code>chunked</code> |{' '}
-                <code>whole_turn</code>; <code className="text-primary/80">tts_pipeline_llm</code> default{' '}
-                <code>true</code> (chunked: LLM runs ahead of TTS, less dead air).
-              </p>
-              <textarea
-                className="w-full min-h-[100px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
-                value={policyDraft.conversation}
-                onChange={(e) => setPolicyDraft((p) => ({ ...p, conversation: e.target.value }))}
-              />
-            </div>
-          </section>
-
-          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border border-primary/20">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="size-5 text-primary" />
-              <h3 className="font-headline font-bold text-lg">Self-Driving Guardrails (Auto-RAG)</h3>
-            </div>
-            <p className="text-xs text-on-surface-variant leading-relaxed">
-              Define the expertise boundary. If <code className="text-primary/80">Strict Refusal</code> is on, the bot will politely decline any query that is not semantically related to the focus topic.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Domain Focus Topic</label>
-                <input
-                  className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                  type="text"
-                  placeholder="e.g. Indian Personal Banking"
-                  value={formData.topic_restriction || ''}
-                  onChange={e => setFormData(prev => ({ ...prev, topic_restriction: e.target.value }))}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Enforcement</label>
-                <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10 cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
-                  <span className="text-sm font-bold text-on-surface-variant group-hover:text-primary">Strict Topic Refusal</span>
-                  <input
-                    checked={formData.refuse_off_topic || false}
-                    onChange={e => setFormData(prev => ({ ...prev, refuse_off_topic: e.target.checked }))}
-                    className="rounded border-outline-variant bg-surface-variant text-primary focus:ring-primary/20 size-6"
-                    type="checkbox"
+                <p className="text-xs text-on-surface-variant">
+                  Configure safety rules and data handling policies. Structured rules are applied in real-time to both user turns and bot responses.
+                </p>
+                <div className="space-y-4">
+                  <label className="text-[10px] font-bold uppercase text-on-surface-variant">guardrail_policy</label>
+                  <GuardrailManager
+                    policy={policyDraft.guardrail}
+                    onChange={(val) => setPolicyDraft(p => ({ ...p, guardrail: val }))}
+                    botId={id}
+                    botPersona={formData.persona}
+                    botInstructions={formData.system_prompt}
                   />
-                </label>
-              </div>
-            </div>
-          </section>
 
-          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
-            <div className="flex items-center gap-3">
-              <ClipboardList className="size-5 text-primary" />
-              <h3 className="font-headline font-bold text-lg">Task contract (agent_task_spec)</h3>
-            </div>
-            <p className="text-xs text-on-surface-variant leading-relaxed">
-              Optional JSON appended to the system prompt for any outbound or goal-driven voice agent (not bank-specific).
-              For polite hangup and server WebSocket close, enable the <code className="text-primary/80">end_voice_session</code>{' '}
-              capability below and ask the model to say goodbye before calling that tool.
-              Pair with <code className="text-primary/80">kb_only_factual</code> in guardrails when stating amounts or due dates.
-              For Alexa-style clarity, keep <code className="text-primary/80">system_prompt</code> short sentences; pick a natural{' '}
-              <code className="text-primary/80">voice_id</code> (e.g. Aura/ElevenLabs presets); tune smooth TTS in{' '}
-              <code className="text-primary/80">conversation_policy</code>.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-primary/15 text-primary border border-primary/25"
-                onClick={() =>
-                  setPolicyDraft((p) => ({ ...p, agent_task_spec: AGENT_TASK_OUTBOUND_EXAMPLE }))
-                }
-              >
-                Load outbound reminder template
-              </button>
-              <button
-                type="button"
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-surface-container-highest border border-outline-variant/30 text-on-surface"
-                onClick={() =>
-                  setPolicyDraft((p) => ({ ...p, agent_task_spec: AGENT_TASK_INBOUND_EXAMPLE }))
-                }
-              >
-                Load inbound support template
-              </button>
-              <button
-                type="button"
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-surface-container-highest border border-outline-variant/30 text-on-surface"
-                onClick={() => setPolicyDraft((p) => ({ ...p, agent_task_spec: '{}' }))}
-              >
-                Clear
-              </button>
-            </div>
-            <textarea
-              className="w-full min-h-[200px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
-              value={policyDraft.agent_task_spec}
-              onChange={(e) => setPolicyDraft((p) => ({ ...p, agent_task_spec: e.target.value }))}
-              spellCheck={false}
-            />
-          </section>
-
-          {/* Integrations & Webhooks */}
-          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
-            <div className="flex items-center gap-3">
-              <Webhook className="size-5 text-primary" />
-              <h3 className="font-headline font-bold text-lg">Integrations &amp; Webhooks</h3>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Escalation Webhook URL</label>
-              <input
-                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                type="url"
-                placeholder="https://your-crm.example.com/escalate"
-                value={formData.escalate_webhook_url || ''}
-                onChange={e => setFormData(prev => ({ ...prev, escalate_webhook_url: e.target.value }))}
-              />
-              <p className="text-[10px] text-on-surface-variant px-2">
-                POST fired with <code className="text-primary/80">{"{ session_id, transcript, reason }"}</code> when user requests a human agent.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Actions Webhook URL</label>
-              <input
-                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                type="url"
-                placeholder="https://your-service.example.com/actions"
-                value={formData.actions_webhook_url || ''}
-                onChange={e => setFormData(prev => ({ ...prev, actions_webhook_url: e.target.value }))}
-              />
-              <p className="text-[10px] text-on-surface-variant px-2">
-                Receives SMS/email action payloads from workflow action nodes.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Post-Call Webhook URL</label>
-              <input
-                className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
-                type="url"
-                placeholder="https://your-service.example.com/post-call"
-                value={formData.post_call_webhook_url || ''}
-                onChange={e => setFormData(prev => ({ ...prev, post_call_webhook_url: e.target.value }))}
-              />
-              <p className="text-[10px] text-on-surface-variant px-2">
-                Receives <code className="text-primary/80">{"{ session_id, summary, intent }"}</code> after every session ends.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Min STT Confidence</label>
-                <span className="font-mono text-sm text-primary">{(formData.min_stt_confidence ?? 0.6).toFixed(2)}</span>
-              </div>
-              <input
-                className="w-full custom-range cursor-pointer"
-                max="1" min="0" step="0.05" type="range"
-                value={formData.min_stt_confidence ?? 0.6}
-                onChange={e => setFormData(prev => ({ ...prev, min_stt_confidence: parseFloat(e.target.value) }))}
-              />
-              <p className="text-[10px] text-on-surface-variant px-2">
-                Below this threshold on short utterances, the bot asks the caller to repeat.
-              </p>
-            </div>
-          </section>
-
-          {/* Advanced Params */}
-          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-8 ghost-border">
-            <div className="flex items-center gap-3">
-              <SlidersHorizontal className="size-5 text-primary" />
-              <h3 className="font-headline font-bold text-lg">Inference Params</h3>
-            </div>
-            <div className="space-y-10">
-              <div className="flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Temperature</label>
-                  <span className="font-mono text-sm text-primary">{formData.temperature}</span>
+                  <DataAccessPolicyManager
+                    value={policyDraft.data_access}
+                    botContext={{ name: formData.name, role: formData.role, system_prompt: formData.system_prompt }}
+                    onChange={(val) => setPolicyDraft((p) => ({ ...p, data_access: val }))}
+                  />
+                  <label className="text-[10px] font-bold uppercase text-on-surface-variant">conversation_policy</label>
+                  <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                    <code className="text-primary/80">silence_threshold_ms</code>,{' '}
+                    <code className="text-primary/80">interrupt_aware_reply</code>,{' '}
+                    <code className="text-primary/80">max_tts_buffer_chars</code> (default 200; higher = fewer TTS segments).{' '}
+                    Smooth speech: <code className="text-primary/80">tts_flush_mode</code>{' '}
+                    <code>balanced</code> (flush on commas) | <code>sentence_only</code> (default, fewer mid-phrase cuts);{' '}
+                    <code className="text-primary/80">tts_streaming_mode</code> <code>chunked</code> |{' '}
+                    <code>whole_turn</code>; <code className="text-primary/80">tts_pipeline_llm</code> default{' '}
+                    <code>true</code> (chunked: LLM runs ahead of TTS, less dead air).
+                  </p>
+                  <textarea
+                    className="w-full min-h-[100px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
+                    value={policyDraft.conversation}
+                    onChange={(e) => setPolicyDraft((p) => ({ ...p, conversation: e.target.value }))}
+                  />
                 </div>
-                <input
-                  className="w-full custom-range cursor-pointer" max="1" min="0" step="0.1" type="range"
-                  value={formData.temperature}
-                  onChange={e => setFormData(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+              </SectionAccordion>
+
+              <SectionAccordion
+                title="Self-Driving Guardrails (Auto-RAG)"
+                icon={ShieldCheck}
+                className="border-primary/20"
+              >
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Define the expertise boundary. If <code className="text-primary/80">Strict Refusal</code> is on, the bot will politely decline any query that is not semantically related to the focus topic.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Domain Focus Topic</label>
+                    <input
+                      className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                      type="text"
+                      placeholder="e.g. Indian Personal Banking"
+                      value={formData.topic_restriction || ''}
+                      onChange={e => setFormData(prev => ({ ...prev, topic_restriction: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Enforcement</label>
+                    <label className="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low border border-outline-variant/10 cursor-pointer hover:bg-surface-container-high transition-colors h-14 group">
+                      <span className="text-sm font-bold text-on-surface-variant group-hover:text-primary">Strict Topic Refusal</span>
+                      <input
+                        checked={formData.refuse_off_topic || false}
+                        onChange={e => setFormData(prev => ({ ...prev, refuse_off_topic: e.target.checked }))}
+                        className="rounded border-outline-variant bg-surface-variant text-primary focus:ring-primary/20 size-6"
+                        type="checkbox"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </SectionAccordion>
+
+              <SectionAccordion title="Task contract (agent_task_spec)" icon={ClipboardList}>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Optional JSON appended to the system prompt for any outbound or goal-driven voice agent (not bank-specific).
+                  For polite hangup and server WebSocket close, enable the <code className="text-primary/80">end_voice_session</code>{' '}
+                  capability below and ask the model to say goodbye before calling that tool.
+                  Pair with <code className="text-primary/80">kb_only_factual</code> in guardrails when stating amounts or due dates.
+                  For Alexa-style clarity, keep <code className="text-primary/80">system_prompt</code> short sentences; pick a natural{' '}
+                  <code className="text-primary/80">voice_id</code> (e.g. Aura/ElevenLabs presets); tune smooth TTS in{' '}
+                  <code className="text-primary/80">conversation_policy</code>.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="text-xs font-bold px-3 py-2 rounded-xl bg-primary/15 text-primary border border-primary/25"
+                    onClick={() =>
+                      setPolicyDraft((p) => ({ ...p, agent_task_spec: AGENT_TASK_OUTBOUND_EXAMPLE }))
+                    }
+                  >
+                    Load outbound reminder template
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-bold px-3 py-2 rounded-xl bg-surface-container-highest border border-outline-variant/30 text-on-surface"
+                    onClick={() =>
+                      setPolicyDraft((p) => ({ ...p, agent_task_spec: AGENT_TASK_INBOUND_EXAMPLE }))
+                    }
+                  >
+                    Load inbound support template
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-bold px-3 py-2 rounded-xl bg-surface-container-highest border border-outline-variant/30 text-on-surface"
+                    onClick={() => setPolicyDraft((p) => ({ ...p, agent_task_spec: '{}' }))}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <textarea
+                  className="w-full min-h-[200px] font-mono text-xs bg-surface-container-highest border border-outline-variant/20 rounded-xl p-3 text-primary transition-all hover:bg-surface-container-high"
+                  value={policyDraft.agent_task_spec}
+                  onChange={(e) => setPolicyDraft((p) => ({ ...p, agent_task_spec: e.target.value }))}
+                  spellCheck={false}
                 />
-                <div className="flex justify-between text-[10px] text-on-surface-variant font-bold uppercase opacity-50">
-                  <span>Precise</span>
-                  <span>Creative</span>
+              </SectionAccordion>
+
+              <SectionAccordion title="Integrations & Webhooks" icon={Webhook}>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Escalation Webhook URL</label>
+                  <input
+                    className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                    type="url"
+                    placeholder="https://your-crm.example.com/escalate"
+                    value={formData.escalate_webhook_url || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, escalate_webhook_url: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-on-surface-variant px-2">
+                    POST fired with <code className="text-primary/80">{"{ session_id, transcript, reason }"}</code> when user requests a human agent.
+                  </p>
                 </div>
-              </div>
-              <div className="flex flex-col gap-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Max Tokens</label>
-                  <span className="font-mono text-sm text-primary">{formData.max_tokens}</span>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Actions Webhook URL</label>
+                  <input
+                    className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                    type="url"
+                    placeholder="https://your-service.example.com/actions"
+                    value={formData.actions_webhook_url || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, actions_webhook_url: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-on-surface-variant px-2">
+                    Receives SMS/email action payloads from workflow action nodes.
+                  </p>
                 </div>
-                <input
-                  className="w-full custom-range cursor-pointer" max="4096" min="256" step="128" type="range"
-                  value={formData.max_tokens}
-                  onChange={e => setFormData(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
-                />
-                <div className="flex justify-between text-[10px] text-on-surface-variant font-bold uppercase opacity-50">
-                  <span>Short</span>
-                  <span>Extensive</span>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Post-Call Webhook URL</label>
+                  <input
+                    className="bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 w-full focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                    type="url"
+                    placeholder="https://your-service.example.com/post-call"
+                    value={formData.post_call_webhook_url || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, post_call_webhook_url: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-on-surface-variant px-2">
+                    Receives <code className="text-primary/80">{"{ session_id, summary, intent }"}</code> after every session ends.
+                  </p>
                 </div>
-              </div>
-            </div>
-          </section>
+
+                <div className="flex flex-col gap-4 pt-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Min STT Confidence</label>
+                    <span className="font-mono text-sm text-primary">{(formData.min_stt_confidence ?? 0.6).toFixed(2)}</span>
+                  </div>
+                  <input
+                    className="w-full custom-range cursor-pointer"
+                    max="1" min="0" step="0.05" type="range"
+                    value={formData.min_stt_confidence ?? 0.6}
+                    onChange={e => setFormData(prev => ({ ...prev, min_stt_confidence: parseFloat(e.target.value) }))}
+                  />
+                  <p className="text-[10px] text-on-surface-variant px-2">
+                    Below this threshold on short utterances, the bot asks the caller to repeat.
+                  </p>
+                </div>
+              </SectionAccordion>
+
+              <SectionAccordion title="Inference Params" icon={SlidersHorizontal}>
+                <div className="space-y-10">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Temperature</label>
+                      <span className="font-mono text-sm text-primary">{formData.temperature}</span>
+                    </div>
+                    <input
+                      className="w-full custom-range cursor-pointer" max="1" min="0" step="0.1" type="range"
+                      value={formData.temperature}
+                      onChange={e => setFormData(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                    />
+                    <div className="flex justify-between text-[10px] text-on-surface-variant font-bold uppercase opacity-50">
+                      <span>Precise</span>
+                      <span>Creative</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Max Tokens</label>
+                      <span className="font-mono text-sm text-primary">{formData.max_tokens}</span>
+                    </div>
+                    <input
+                      className="w-full custom-range cursor-pointer" max="4096" min="256" step="128" type="range"
+                      value={formData.max_tokens}
+                      onChange={e => setFormData(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))}
+                    />
+                    <div className="flex justify-between text-[10px] text-on-surface-variant font-bold uppercase opacity-50">
+                      <span>Short</span>
+                      <span>Extensive</span>
+                    </div>
+                  </div>
+                </div>
+              </SectionAccordion>
+            </>
+          )}
         </div>
       </div>
 
