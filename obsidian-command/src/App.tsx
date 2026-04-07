@@ -90,6 +90,7 @@ function App() {
               <Route path="/sessions/:id" element={<SessionDetail />} />
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
+              <Route path="/personas/create/debug" element={<BotConfig />} />
               <Route path="/personas/:id/config" element={<BotConfig />} />
               <Route path="/personas/:id/config/debug" element={<BotConfig />} />
               <Route path="/knowledge" element={<KnowledgeBase />} />
