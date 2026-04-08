@@ -697,4 +697,19 @@ export const api = {
     if (!res.ok) throw new Error('Failed to upload PDF');
     return res.json();
   },
+
+  async suggestSystemPrompt(name: string, role: string, persona?: string, currentPrompt?: string): Promise<{
+    suggested_prompt?: string;
+    analysis?: string;
+    revised_prompt?: string;
+    provider?: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/bots/suggest-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, persona, current_prompt: currentPrompt }),
+    });
+    if (!res.ok) throw new Error('Failed to get prompt suggestions');
+    return res.json();
+  },
 };

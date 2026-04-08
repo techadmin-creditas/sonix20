@@ -201,10 +201,10 @@ export default function Personas() {
                       )}>
                         {persona.is_active ? 'Active' : 'Inactive'}
                       </span>
-                      <div className="flex items-center gap-1 mt-2 text-primary">
+                      {/* <div className="flex items-center gap-1 mt-2 text-primary">
                         <Star className="size-3 fill-current" />
                         <span className="text-xs font-bold">4.8</span>
-                      </div>
+                      </div> */}
                     </div>
                   </div>
 

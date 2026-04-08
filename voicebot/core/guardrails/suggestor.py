@@ -50,13 +50,17 @@ class RuleSuggestor:
         """
         
         try:
-            response = await self.llm.generate_response(prompt=prompt, stream=False)
-            if not response or not response.text:
+            # Use the correct 'complete' method from GeminiStreamingProvider
+            response_text = await self.llm.complete(
+                system_prompt="You are a security expert for Voice AI Bots.",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            if not response_text:
                 return []
             
             # Extract JSON and parse
             # (Simple cleanup of Markdown block quotes if needed)
-            raw_json = response.text.replace("```json", "").replace("```", "").strip()
+            raw_json = response_text.replace("```json", "").replace("```", "").strip()
             data = json.loads(raw_json)
             
             rules = []
