@@ -4,6 +4,7 @@ import time
 import asyncio
 from typing import Optional
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
@@ -19,6 +20,7 @@ from voicebot.core.session_disposition import (
     DISPOSITION_LLM_INSTRUCTION,
     normalize_disposition,
 )
+from voicebot.core.session_recording import SessionRecorder
 
 # --- Import Routers from sub-packages ---
 from voicebot.api.v1.routes import router as gateway_v1_router
@@ -365,6 +367,7 @@ async def voice_websocket(
     _playback_allowed = True
     _warm_audio = False
     normalizer = AudioFrameNormalizer()
+    recorder = SessionRecorder(sample_rate=16000)
     voice_session_close_sent = False
 
     # ─── Callback definitions ──────────────────────────────────────────
@@ -383,6 +386,7 @@ async def voice_websocket(
         if not _playback_allowed:
             logger.warning("🔇 Dropping %d audio bytes for session %s (playback blocked)", len(audio_bytes), session_id)
             return
+        recorder.add_bot_pcm(audio_bytes)
         if vt.connected:
             logger.debug("📡 Dispatching audio chunk to transport: %d bytes", len(audio_bytes))
             if not _warm_audio:
@@ -767,6 +771,7 @@ async def voice_websocket(
             if data.get("bytes") is not None:
                 last_activity_time = time.time()
                 audio_bytes = data.get("bytes")
+                recorder.add_user_pcm(audio_bytes)
                 
                 # [LOCAL VAD] We now offload VAD optimization to the STT provider class
                 # which implements a smarter 300ms lookback buffer to avoid clipping.
@@ -975,6 +980,10 @@ async def voice_websocket(
         
         # --- Post-Call Summarization ---
         try:
+            recording_meta = recorder.finalize(
+                session_id=session_id,
+                output_dir=Path(__file__).resolve().parents[1] / "obsidian-command" / "public" / "assets" / "recordings",
+            ) or {}
             log_entries = await db.get_session_log(session_id)
             transcript_text = "\n".join([f"{e['role']}: {e['content']}" for e in log_entries if e['role'] in ['user', 'assistant']])
             
@@ -1032,6 +1041,7 @@ async def voice_websocket(
                     'summary': summary,
                     'intent': intent,
                     'disposition': disposition,
+                    **recording_meta,
                 }
             )
             logger.info("Session %s archived with summary.", session_id[:8])

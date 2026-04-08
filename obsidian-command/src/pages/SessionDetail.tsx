@@ -36,6 +36,77 @@ function normalizeInsights(raw: unknown): string[] {
   );
 }
 
+function formatPlaybackTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function toEpochSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  // Backend can emit epoch in either seconds or milliseconds.
+  return value > 1_000_000_000_000 ? value / 1000 : value;
+}
+
+function getActiveTranscriptIndex(
+  transcript: Array<{ atSec?: number }>,
+  playbackAbsoluteSec: number,
+): number {
+  if (!transcript.length || !Number.isFinite(playbackAbsoluteSec)) return -1;
+  for (let i = 0; i < transcript.length; i += 1) {
+    const curr = transcript[i]?.atSec;
+    const next = transcript[i + 1]?.atSec;
+    if (!Number.isFinite(curr as number)) continue;
+    if (!Number.isFinite(next as number)) {
+      if (playbackAbsoluteSec >= (curr as number)) return i;
+      continue;
+    }
+    if (playbackAbsoluteSec >= (curr as number) && playbackAbsoluteSec < (next as number)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function getActiveTranscriptIndexByPlayback(
+  transcript: Array<{ atSec?: number }>,
+  playbackCurrentSec: number,
+  playbackDurationSec: number,
+): number {
+  if (!transcript.length) return -1;
+  const timed = transcript
+    .map((t, i) => ({ i, atSec: t.atSec }))
+    .filter((t): t is { i: number; atSec: number } => typeof t.atSec === 'number' && Number.isFinite(t.atSec));
+
+  if (!timed.length) return -1;
+  if (timed.length === 1 || playbackDurationSec <= 0) return timed[0].i;
+
+  const first = timed[0].atSec;
+  const last = timed[timed.length - 1].atSec;
+  const span = Math.max(1e-6, last - first);
+
+  const markers = timed.map((t) => ({
+    i: t.i,
+    atPlaybackSec: ((t.atSec - first) / span) * playbackDurationSec,
+  }));
+
+  for (let k = 0; k < markers.length; k += 1) {
+    const curr = markers[k].atPlaybackSec;
+    const next = markers[k + 1]?.atPlaybackSec;
+    if (next == null) {
+      if (playbackCurrentSec >= curr) return markers[k].i;
+      continue;
+    }
+    if (playbackCurrentSec >= curr && playbackCurrentSec < next) {
+      return markers[k].i;
+    }
+  }
+
+  return markers[0].i;
+}
+
 /** UI label for user_facts.category (hides internal session_extracted.* prefix). */
 function formatEntityCategory(category: string | undefined): string {
   if (!category) return '';
@@ -122,6 +193,9 @@ export default function SessionDetail() {
   const [facts, setFacts] = useState<UserFact[]>([]);
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [recordingUnavailable, setRecordingUnavailable] = useState(false);
+  const [playbackCurrentSec, setPlaybackCurrentSec] = useState(0);
+  const [playbackDurationSec, setPlaybackDurationSec] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'insights' | 'stats' | 'entities'>('transcript');
   const [sessionAnalysisBinding, setSessionAnalysisBinding] = useState(false);
@@ -135,6 +209,9 @@ export default function SessionDetail() {
 
     setLoading(true);
     setSession(null);
+    setIsPlaying(false);
+    setPlaybackCurrentSec(0);
+    setPlaybackDurationSec(0);
 
     async function loadData() {
       let details: Awaited<ReturnType<typeof api.getSessionDetails>> | null = null;
@@ -162,24 +239,31 @@ export default function SessionDetail() {
         const stData = {
           id: details.id,
           user_id: details.user_id,
+          startedAtSec: toEpochSeconds(details.started_at),
           bot: details.bot_name || 'System',
           date: new Date(details.started_at * 1000).toLocaleDateString(),
           time: new Date(details.started_at * 1000).toLocaleTimeString(),
           duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
-          transcript: transcript.map((msg: any) => ({
+          transcript: transcript.map((msg: any) => {
+            const atSec = toEpochSeconds(msg.timestamp);
+            return ({
             role: msg.role === 'assistant' ? 'bot' : msg.role,
             content: msg.content,
-            timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            atSec,
+            timestamp: new Date((atSec ?? 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             sentiment: (msg.metadata as any)?.sentiment as string | undefined,
-          })),
+            });
+          }),
           summary: meta.summary || 'No summary generated for this session.',
           intent: meta.intent || 'Unknown Intent',
           insights: normalizeInsights(meta.insights),
           disposition: meta.disposition || 'unknown',
+          recordingUrl: (meta.recording_url as string | undefined) || undefined,
           turns: details.turn_count || 0,
           sentimentScore,
           metrics,
         };
+        setRecordingUnavailable(false);
         setSession(stData);
       } catch (e) {
         console.error("Failed to load session details", e);
@@ -282,17 +366,27 @@ export default function SessionDetail() {
   }, [id, activeTab, session?.duration]);
 
   const togglePlayback = () => {
+    if (!session?.recordingUrl) return;
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        void audioRef.current.play().catch(() => {
+          setIsPlaying(false);
+        });
       }
       setIsPlaying(!isPlaying);
     }
   };
 
   const handleExport = () => {
+    if (session?.recordingUrl) {
+      const a = document.createElement('a');
+      a.href = session.recordingUrl;
+      a.download = `session-${session.id}-recording.wav`;
+      a.click();
+      return;
+    }
     const data = JSON.stringify(session, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -300,6 +394,7 @@ export default function SessionDetail() {
     a.href = url;
     a.download = `session-${session.id}-log.json`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleEscalate = () => {
@@ -331,6 +426,45 @@ export default function SessionDetail() {
 
   const dispositionMeta = getDispositionMeta(session.disposition);
   const dispositionToneClass = DISPOSITION_TONE_CLASS[dispositionMeta.statusTone];
+  const timedTurns = ((session?.transcript || []) as Array<{ atSec?: number }>)
+    .map((t) => t.atSec)
+    .filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
+  const firstTurnSec = timedTurns.length ? timedTurns[0] : undefined;
+  const lastTurnSec = timedTurns.length ? timedTurns[timedTurns.length - 1] : undefined;
+
+  let playbackAbsoluteSec =
+    typeof session?.startedAtSec === 'number'
+      ? session.startedAtSec + playbackCurrentSec
+      : NaN;
+
+  // Fallback for sessions where absolute alignment drifts (or missing start time):
+  // map current playback position proportionally across transcript time range.
+  if (
+    Number.isFinite(firstTurnSec) &&
+    Number.isFinite(lastTurnSec) &&
+    playbackDurationSec > 0 &&
+    (
+      !Number.isFinite(playbackAbsoluteSec) ||
+      playbackAbsoluteSec < (firstTurnSec as number) - 2 ||
+      playbackAbsoluteSec > (lastTurnSec as number) + 2
+    )
+  ) {
+    const progress = Math.min(1, Math.max(0, playbackCurrentSec / playbackDurationSec));
+    playbackAbsoluteSec = (firstTurnSec as number) + progress * ((lastTurnSec as number) - (firstTurnSec as number));
+  }
+  const absoluteMappedIndex = getActiveTranscriptIndex(
+    (session?.transcript || []) as Array<{ atSec?: number }>,
+    playbackAbsoluteSec,
+  );
+  const playbackMappedIndex = getActiveTranscriptIndexByPlayback(
+    (session?.transcript || []) as Array<{ atSec?: number }>,
+    playbackCurrentSec,
+    playbackDurationSec,
+  );
+  const activeTranscriptIndex =
+    playbackMappedIndex >= 0 ? playbackMappedIndex : absoluteMappedIndex;
+  const recordingDurationLabel =
+    playbackDurationSec > 0 ? formatPlaybackTime(playbackDurationSec) : session.duration;
 
   return (
     <div className="flex-1 flex flex-col ">
@@ -370,7 +504,7 @@ export default function SessionDetail() {
                 </div>
                 <div>
                   <h4 className="font-headline font-bold text-lg">Session Recording</h4>
-                  <p className="text-outline text-sm">Recorded on {session.date} · {session.duration}</p>
+                  <p className="text-outline text-sm">Recorded on {session.date} · {recordingDurationLabel}</p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -386,21 +520,61 @@ export default function SessionDetail() {
             <div className="relative z-10 flex items-center gap-6 bg-surface-high/50 p-6 rounded-2xl">
               <button
                 onClick={togglePlayback}
-                className="size-14 rounded-full ember-gradient flex items-center justify-center text-on-primary-fixed shadow-xl shadow-primary/20 active:scale-95 transition-all"
+                disabled={!session.recordingUrl}
+                className={cn(
+                  "size-14 rounded-full ember-gradient flex items-center justify-center text-on-primary-fixed shadow-xl shadow-primary/20 active:scale-95 transition-all",
+                  !session.recordingUrl && "opacity-50 cursor-not-allowed"
+                )}
               >
                 {isPlaying ? <Pause className="size-6" /> : <Play className="size-6 fill-current" />}
               </button>
               <div className="flex-1 flex flex-col gap-2">
-                <div className="h-1.5 bg-surface-highest rounded-full overflow-hidden relative">
-                  <div className="absolute inset-0 bg-primary/20 animate-pulse"></div>
-                  <div className="h-full bg-primary w-1/3 relative z-10"></div>
-                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(playbackDurationSec, 0)}
+                  step={0.1}
+                  value={Math.min(playbackCurrentSec, playbackDurationSec || 0)}
+                  onChange={(e) => {
+                    const nextSec = Number(e.target.value);
+                    if (!audioRef.current || !Number.isFinite(nextSec)) return;
+                    audioRef.current.currentTime = nextSec;
+                    setPlaybackCurrentSec(nextSec);
+                  }}
+                  disabled={!session.recordingUrl || playbackDurationSec <= 0}
+                  className="w-full accent-primary cursor-pointer disabled:cursor-not-allowed"
+                  aria-label="Seek recording"
+                />
                 <div className="flex justify-between text-[10px] font-bold text-outline uppercase tracking-widest">
-                  <span>01:22</span>
-                  <span>{session.duration}</span>
+                  <span>{formatPlaybackTime(playbackCurrentSec)}</span>
+                  <span>{formatPlaybackTime(playbackDurationSec)}</span>
                 </div>
+                {(recordingUnavailable || !session.recordingUrl) && (
+                  <span className="text-[10px] text-outline">Recording unavailable for this session.</span>
+                )}
               </div>
-              <audio ref={audioRef} src={session.recordingUrl} onEnded={() => setIsPlaying(false)} />
+              <audio
+                ref={audioRef}
+                src={session.recordingUrl}
+                preload="none"
+                onLoadedMetadata={(e) => {
+                  const dur = e.currentTarget.duration;
+                  setPlaybackDurationSec(Number.isFinite(dur) ? dur : 0);
+                }}
+                onTimeUpdate={(e) => {
+                  setPlaybackCurrentSec(e.currentTarget.currentTime || 0);
+                }}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => {
+                  setIsPlaying(false);
+                  setPlaybackCurrentSec(playbackDurationSec || 0);
+                }}
+                onError={() => {
+                  setIsPlaying(false);
+                  setRecordingUnavailable(true);
+                }}
+              />
             </div>
           </div>
 
@@ -453,8 +627,9 @@ export default function SessionDetail() {
                       </div>
                       <div className="flex flex-col gap-1.5">
                         <div className={cn(
-                          "p-4 rounded-2xl text-sm leading-relaxed",
-                          msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium"
+                          "p-4 rounded-2xl text-sm leading-relaxed transition-all",
+                          msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium",
+                          i === activeTranscriptIndex && "ring-2 ring-primary/70 shadow-lg shadow-primary/15"
                         )}>
                           {msg.content}
                         </div>
