@@ -20,6 +20,8 @@ export default function Sessions() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [hasPersonas, setHasPersonas] = useState<boolean>(false);
+  const [userMap, setUserMap] = useState<Record<string, string>>({});
 
   const handleDelete = async (id: string) => {
     setDeleteLoadingId(id);
@@ -35,24 +37,45 @@ export default function Sessions() {
   };
 
   React.useEffect(() => {
-    async function loadSessions() {
+    async function loadData() {
       try {
-        const data = await api.getSessions(100);
-        setSessions(data);
+        const [sessionsResults, botsResults, usersResults] = await Promise.allSettled([
+          api.getSessions(100),
+          api.getBots(),
+          api.listUsers()
+        ]);
+
+        if (sessionsResults.status === 'fulfilled') {
+          setSessions(sessionsResults.value);
+        }
+
+        if (botsResults.status === 'fulfilled') {
+          setHasPersonas(botsResults.value && botsResults.value.length > 0);
+        }
+
+        if (usersResults.status === 'fulfilled') {
+          const mapping: Record<string, string> = {};
+          usersResults.value.forEach((u: any) => {
+            mapping[u.id] = u.username;
+          });
+          setUserMap(mapping);
+        }
       } catch (err) {
-        console.error('Failed to load sessions:', err);
+        // console.error('Failed to load sessions:', err);
       } finally {
         setLoading(false);
       }
     }
-    loadSessions();
+    loadData();
   }, []);
 
   const filteredSessions = sessions.filter((s) => {
     const q = searchQuery.toLowerCase();
     const id = (s?.id || '').toLowerCase();
     const botName = (s?.bot_name || '').toLowerCase();
-    return id.includes(q) || botName.includes(q);
+    const userId = (s?.user_id || '').toLowerCase();
+    const userName = (userMap[s.user_id] || '').toLowerCase();
+    return id.includes(q) || botName.includes(q) || userId.includes(q) || userName.includes(q);
   });
 
   const handleExport = () => {
@@ -78,7 +101,7 @@ export default function Sessions() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
                 <input
                   type="text"
-                  placeholder="Search by ID, Bot"
+                  placeholder="Search by ID, Bot, User"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
@@ -115,10 +138,10 @@ export default function Sessions() {
               {sessions?.length > 0 && (
                 <>
                   <button
-                    onClick={() => navigate('/sessions/live')}
+                    onClick={() => navigate(hasPersonas ? '/sessions/live' : '/personas/create')}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all">
                     <Play className="size-4" />
-                    Create Session
+                    {hasPersonas ? 'Create Session' : 'Create Bot First'}
                   </button>
                 </>
               )}
@@ -156,7 +179,7 @@ export default function Sessions() {
                     <p className="text-outline text-xs">{session.bot_name || 'External System'}</p>
                     {session.user_id && (
                       <p className="text-[9px] text-on-surface-variant/60 font-mono mt-0.5">
-                        User: {session.user_id}
+                        User: {userMap[session.user_id] || session.user_id}
                       </p>
                     )}
                   </div>
@@ -298,7 +321,9 @@ export default function Sessions() {
                 )}
                 <div className="text-center">
                   {!searchQuery && (
-                    <p className="font-bold text-on-surface text-lg">No Sessions yet</p>
+                    <p className="font-bold text-on-surface text-lg">
+                      {hasPersonas ? 'No Sessions yet' : 'No Bots Found'}
+                    </p>
                   )}
                   <p className="text-sm text-outline mt-1 max-w-xs mx-auto">
                     {searchQuery ? (
@@ -306,12 +331,20 @@ export default function Sessions() {
                         <p className="font-bold text-sm">No sessions match &ldquo;{searchQuery}&rdquo;</p>
                         <p className="text-xs mt-1 opacity-60">Try searching by another ID, Bot </p>
                       </>
-                    ) : 'Create your first conversational logic flow.'}
+                    ) : (
+                      hasPersonas
+                        ? 'Create your first conversational logic flow.'
+                        : 'Please create a bot persona first to begin a session.'
+                    )}
                   </p>
                 </div>
+
                 {!searchQuery && (
-                  <Link to="/sessions/live" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
-                    Create Your First Sesion
+                  <Link
+                    to={hasPersonas ? "/sessions/live" : "/personas/create"}
+                    className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg"
+                  >
+                    {hasPersonas ? 'Create Your First Session' : 'Create Your First Bot'}
                   </Link>
                 )}
               </div>

@@ -198,7 +198,9 @@ function SectionAccordion({
 export default function BotConfig() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const isCreateMode = !id;
+  const query = new URLSearchParams(window.location.search);
+  const cloneId = query.get('clone');
+  const isCreateMode = !id || !!cloneId;
   const isDebug = window.location.pathname.endsWith('/debug');
 
   React.useMemo(() => {
@@ -385,8 +387,9 @@ export default function BotConfig() {
         setVoices(voicesData);
         setWorkflows(workflowData);
 
-        if (!isCreateMode && id) {
-          const botData = await api.getBot(id);
+        const effectiveId = id || cloneId;
+        if (effectiveId) {
+          const botData = await api.getBot(effectiveId);
 
           // Auto-sync provider with voice engine if they mismatch in DB
           let tts_provider = botData.tts_provider;
@@ -399,6 +402,7 @@ export default function BotConfig() {
 
           setFormData({
             ...botData,
+            name: cloneId ? `${botData.name}_1` : botData.name,
             tts_provider,
             pipeline_mode: botData.pipeline_mode || 'classic',
             guardrails: botData.guardrail_policy?.negative_constraints || '',
@@ -434,7 +438,7 @@ export default function BotConfig() {
 
   const handleSave = async () => {
     if (isCreateMode && (!formData.name || !formData.system_prompt)) {
-      alert('Name and System Instructions are required');
+      alert('Name and System Promt are required');
       return;
     }
 

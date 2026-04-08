@@ -595,9 +595,9 @@ class SQLiteProvider:
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id,min_stt_confidence))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -647,7 +647,7 @@ class SQLiteProvider:
         """List all active bots."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
+            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at DESC").fetchall()
             results = []
             for r in rows:
                 d = dict(r)

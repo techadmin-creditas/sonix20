@@ -182,7 +182,7 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                             </div>
                         </section>
 
-                        <section className="bg-red-500/5 rounded-3xl p-8 border border-red-500/10 transition-colors hover:bg-red-500/10">
+                        {/* <section className="bg-red-500/5 rounded-3xl p-8 border border-red-500/10 transition-colors hover:bg-red-500/10">
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="size-10 rounded-xl bg-red-500/20 flex items-center justify-center text-red-500">
                                     <LogOut className="size-5" />
@@ -196,7 +196,7 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                             <button className="w-full py-3 rounded-xl bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white font-bold text-sm transition-all border border-red-500/30">
                                 Terminate All Sessions
                             </button>
-                        </section>
+                        </section> */}
                     </div>
 
                     {/* Right Column: Quotas & Infrastructure */}
