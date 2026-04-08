@@ -8,25 +8,26 @@ import {
     HardDrive, BrainCircuit, Loader2, Save, Check, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { api, Bot } from '../lib/api';
+import { api, Bot, AuthUser } from '../lib/api';
 import { useNotifications } from '../contexts/NotificationContext';
 
-export default function Profile() {
+export default function Profile({ currentUser }: { currentUser: AuthUser }) {
     const { notifications } = useNotifications();
     const navigate = useNavigate();
+
     const [healthData, setHealthData] = React.useState<any>(null);
     const [vectorHealth, setVectorHealth] = React.useState<{ status: string; doc_count: number } | null>(null);
     const [healthLoading, setHealthLoading] = React.useState(true);
     const [bots, setBots] = React.useState<Bot[]>([]);
     const [isEditing, setIsEditing] = React.useState(false);
     const [userData, setUserData] = React.useState({
-        name: "Alex Rivera",
-        email: "alex.rivera@sonix.ai",
-        role: "Organization Owner",
+        name: currentUser.username,
+        email: `${currentUser.username.toLowerCase()}@sonix.ai`,
+        role: currentUser.role === 'admin' ? "System Administrator" : "Standard User",
         joined: "Oct 2023",
         status: "Verified",
         location: "California, USA",
-        plan: "Enterprise Alpha",
+        plan: currentUser.role === 'admin' ? "Enterprise Alpha" : "Growth Beta",
         apiCalls: "1.2M / 5M",
         credits: "$842.10"
     });
@@ -56,11 +57,8 @@ export default function Profile() {
 
     const handleSave = () => {
         setIsEditing(false);
-        // Here you'd call an API to save the data
         alert('Profile updated successfully!');
     };
-
-
 
     return (
         <div className="flex-1 flex flex-col bg-background">
@@ -341,15 +339,6 @@ function InfoRow({ icon: Icon, label, value, isEditing, onChange }: any) {
                     <span className="text-sm font-bold text-on-surface">{value}</span>
                 )}
             </div>
-        </div>
-    );
-}
-
-function InfraStatus({ label, status, color }: any) {
-    return (
-        <div className="flex items-center justify-between py-1">
-            <span className="text-xs font-medium text-outline">{label}</span>
-            <span className={cn("text-[10px] font-black uppercase tracking-widest", color)}>{status}</span>
         </div>
     );
 }

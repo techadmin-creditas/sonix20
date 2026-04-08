@@ -13,8 +13,10 @@ Provides persistent storage for:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import sqlite3
 import time
 import uuid
@@ -25,8 +27,10 @@ from concurrent.futures import ThreadPoolExecutor
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.agent_task_spec import parse_agent_task_spec
 from voicebot.shared.policy import parse_json_dict
+from voicebot.shared.config import get_settings
 
 logger = setup_logger("memory-sqlite", level="INFO")
+settings = get_settings()
 
 # Default DB path — can be overridden by env var
 DEFAULT_DB_PATH = Path(__file__).parent.parent.parent.parent / "data" / "voicebot.db"
@@ -131,6 +135,21 @@ class SQLiteProvider:
 
     def _create_tables(self) -> None:
         conn = self._get_conn()
+        # Identity table for dashboard users (admin + standard users)
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+                username      TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+                is_active     INTEGER NOT NULL DEFAULT 1,
+                created_at    REAL NOT NULL DEFAULT (strftime('%s','now')),
+                updated_at    REAL NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            """
+        )
+        conn.commit()
         
         # 1. Create bots table
         conn.executescript("""
@@ -180,6 +199,7 @@ class SQLiteProvider:
             ("proactive_prompts", "TEXT DEFAULT '[]'"),
             ("topic_restriction", "TEXT DEFAULT NULL"),
             ("refuse_off_topic", "INTEGER DEFAULT 0"),
+            ("owner_user_id", "TEXT REFERENCES users(id)"),
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
         ]:
             try:
@@ -200,6 +220,7 @@ class SQLiteProvider:
                 description  TEXT,
                 nodes_json   TEXT DEFAULT '[]',
                 edges_json   TEXT DEFAULT '[]',
+                owner_user_id TEXT REFERENCES users(id),
                 is_active    INTEGER NOT NULL DEFAULT 1,
                 created_at   REAL NOT NULL DEFAULT (strftime('%s','now')),
                 updated_at   REAL NOT NULL DEFAULT (strftime('%s','now'))
@@ -272,6 +293,7 @@ class SQLiteProvider:
             CREATE TABLE IF NOT EXISTS knowledge_base (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 bot_id      TEXT REFERENCES bots(id),
+                owner_user_id TEXT REFERENCES users(id),
                 topic       TEXT,
                 question    TEXT NOT NULL,
                 answer      TEXT NOT NULL,
@@ -344,15 +366,19 @@ class SQLiteProvider:
             conn.execute("ALTER TABLE workflows ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
         if "updated_at" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
-        
-        # Knowledge Base Source Column Support
+            conn.execute("UPDATE workflows SET updated_at = created_at WHERE updated_at = 0")
+        if "owner_user_id" not in existing_cols:
+            conn.execute("ALTER TABLE workflows ADD COLUMN owner_user_id TEXT REFERENCES users(id)")
         existing_kb_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_base)").fetchall()}
+        if "owner_user_id" not in existing_kb_cols:
+            conn.execute("ALTER TABLE knowledge_base ADD COLUMN owner_user_id TEXT REFERENCES users(id)")
         if "source" not in existing_kb_cols:
             conn.execute("ALTER TABLE knowledge_base ADD COLUMN source TEXT")
             logger.info("KB Migration: Added 'source' column for filename-based filtering.")
-        
         conn.commit()
 
+        admin_id = self._seed_default_admin()
+        self._backfill_owner_columns(admin_id)
         self._seed_default_bots()
 
     def _seed_default_bots(self) -> None:
@@ -391,12 +417,13 @@ class SQLiteProvider:
             "Built-in fallback persona for call recovery and advanced handoff. No workflow binding; "
             "pure LLM + tools. Safe to use as default when bot_id is unknown."
         )
+        owner_user_id = self._get_admin_user_id(conn)
         conn.execute(
             """
             INSERT INTO bots (
                 id, name, description, persona, system_prompt, greeting, tools_enabled,
-                llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id,
-                default_language
+                llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
+                 default_language
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
             """,
@@ -415,13 +442,142 @@ class SQLiteProvider:
                 "primary",
                 0.6,
                 1024,
+                owner_user_id,
                 "hi",
             ),
         )
         conn.commit()
         logger.info("Seeded default bot: %s (%s)", name, bot_id)
 
+    def _hash_password_seed(self, password: str, *, iterations: int = 150_000) -> str:
+        salt = os.urandom(16).hex()
+        dk = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), bytes.fromhex(salt), iterations
+        ).hex()
+        return f"pbkdf2_sha256${iterations}${salt}${dk}"
+
+    def _seed_default_admin(self) -> str:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        if row:
+            return str(row["id"])
+        username = (settings.admin_username if hasattr(settings, "admin_username") else "") or "admin"
+        password = (settings.admin_password if hasattr(settings, "admin_password") else "") or "admin123"
+        admin_id = str(uuid.uuid4())
+        conn.execute(
+            """
+            INSERT INTO users (id, username, password_hash, role, is_active)
+            VALUES (?, ?, ?, 'admin', 1)
+            """,
+            (admin_id, username, self._hash_password_seed(password)),
+        )
+        conn.commit()
+        logger.info("Seeded default admin user: %s", username)
+        return admin_id
+
+    def _get_admin_user_id(self, conn: sqlite3.Connection) -> Optional[str]:
+        row = conn.execute(
+            "SELECT id FROM users WHERE role = 'admin' AND is_active = 1 ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        return str(row["id"]) if row else None
+
+    def _backfill_owner_columns(self, admin_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE bots SET owner_user_id = COALESCE(owner_user_id, ?) WHERE owner_user_id IS NULL",
+            (admin_id,),
+        )
+        conn.execute(
+            "UPDATE workflows SET owner_user_id = COALESCE(owner_user_id, ?) WHERE owner_user_id IS NULL",
+            (admin_id,),
+        )
+        conn.execute(
+            "UPDATE knowledge_base SET owner_user_id = COALESCE(owner_user_id, ?) WHERE owner_user_id IS NULL",
+            (admin_id,),
+        )
+        conn.execute(
+            "UPDATE sessions SET user_id = COALESCE(user_id, ?) WHERE user_id IS NULL OR user_id = ''",
+            (admin_id,),
+        )
+        conn.commit()
+
     # ─── Bot Registry ─────────────────────────────────────────────────────────
+
+    # ─── User Registry / Auth ────────────────────────────────────────────────
+
+    async def get_user_by_id(self, user_id: str) -> Optional[dict]:
+        def _do():
+            row = self._get_conn().execute(
+                "SELECT id, username, password_hash, role, is_active, created_at, updated_at FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            return dict(row) if row else None
+        return await self._run(_do)
+
+    async def get_user_by_username(self, username: str) -> Optional[dict]:
+        def _do():
+            row = self._get_conn().execute(
+                "SELECT id, username, password_hash, role, is_active, created_at, updated_at FROM users WHERE lower(username) = lower(?)",
+                (username,),
+            ).fetchone()
+            return dict(row) if row else None
+        return await self._run(_do)
+
+    async def list_users(self) -> list[dict]:
+        def _do():
+            rows = self._get_conn().execute(
+                "SELECT id, username, role, is_active, created_at, updated_at FROM users ORDER BY created_at ASC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def create_user(self, username: str, password_hash: str, role: str = "user") -> dict:
+        def _do():
+            conn = self._get_conn()
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO users (id, username, password_hash, role, is_active)
+                VALUES (?, ?, ?, ?, 1)
+                """,
+                (user_id, username, password_hash, role),
+            )
+            conn.commit()
+            return {"id": user_id, "username": username, "role": role, "is_active": 1}
+        return await self._run(_do)
+
+    async def update_user(self, user_id: str, *, username: Optional[str] = None, role: Optional[str] = None, is_active: Optional[bool] = None) -> bool:
+        def _do():
+            updates: dict[str, Any] = {}
+            if username is not None:
+                updates["username"] = username
+            if role is not None:
+                updates["role"] = role
+            if is_active is not None:
+                updates["is_active"] = 1 if is_active else 0
+            if not updates:
+                return False
+            updates["updated_at"] = time.time()
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [user_id]
+            conn = self._get_conn()
+            conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
+    async def change_password(self, user_id: str, password_hash: str) -> bool:
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (password_hash, time.time(), user_id),
+            )
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
 
     async def create_bot(self, name: str, persona: str, system_prompt: str,
                          description: str = "", greeting: Optional[str] = None,
@@ -435,16 +591,16 @@ class SQLiteProvider:
                          temperature: float = 0.7,
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
-                         min_stt_confidence: float = 0.35) -> dict:
+                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, min_stt_confidence)
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, min_stt_confidence))
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id,min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -494,7 +650,7 @@ class SQLiteProvider:
         """List all active bots."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
+            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
             results = []
             for r in rows:
                 d = dict(r)
@@ -553,7 +709,7 @@ class SQLiteProvider:
 
     # ─── Workflow Management ──────────────────────────────────────────────────
 
-    async def save_workflow(self, workflow_id: str, name: str, description: str, nodes: list, edges: list) -> None:
+    async def save_workflow(self, workflow_id: str, name: str, description: str, nodes: list, edges: list, owner_user_id: Optional[str] = None) -> None:
         """Create or update a workflow graph."""
         def _do():
             conn = self._get_conn()
@@ -567,6 +723,11 @@ class SQLiteProvider:
                     edges_json=excluded.edges_json,
                     updated_at=strftime('%s','now')
             """, (workflow_id, name, description, json.dumps(nodes), json.dumps(edges)))
+            if owner_user_id:
+                conn.execute(
+                    "UPDATE workflows SET owner_user_id = COALESCE(owner_user_id, ?) WHERE id = ?",
+                    (owner_user_id, workflow_id),
+                )
             conn.commit()
         await self._run(_do)
 
@@ -995,55 +1156,85 @@ class SQLiteProvider:
 
     async def add_knowledge(self, topic: str, question: str, answer: str,
                              keywords: Optional[list] = None, bot_id: Optional[str] = None,
-                             priority: int = 0, source: Optional[str] = None) -> None:
+                             priority: int = 0, owner_user_id: Optional[str] = None,source: Optional[str] = None) -> None:
         """Add a knowledge base entry."""
         def _do():
             conn = self._get_conn()
             conn.execute("""
-                INSERT INTO knowledge_base (bot_id, topic, source, question, answer, keywords, priority)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, topic, source, question, answer, json.dumps(keywords or []), priority))
+                INSERT INTO knowledge_base (bot_id, owner_user_id, topic,source, question, answer, keywords, priority)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, owner_user_id, topic,source, question, answer, json.dumps(keywords or []), priority))
             conn.commit()
         await self._run(_do)
 
     # ─── Analytics ────────────────────────────────────────────────────────────
-    async def get_dashboard_analytics(self) -> dict:
+    async def get_dashboard_analytics(self, owner_user_id: Optional[str] = None) -> dict:
         """Calculate and return key metrics for the dashboard overview."""
         def _do():
             conn = self._get_conn()
-            
-            # 1. Total Sessions
-            total_sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-            
-            # 2. Active Bots
-            active_bots = conn.execute("SELECT COUNT(*) FROM bots WHERE is_active = 1").fetchone()[0]
-            
-            # 3. Average Session Duration
-            # Assuming sessions with ended_at > started_at
-            avg_duration = conn.execute("SELECT AVG(ended_at - started_at) FROM sessions WHERE ended_at IS NOT NULL").fetchone()[0] or 0
-            
-            # 4. Success Rate (Mocking for now as sessions with > 2 turns)
-            successful_sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 2").fetchone()[0]
+
+            if owner_user_id:
+                total_sessions = conn.execute(
+                    "SELECT COUNT(*) FROM sessions WHERE user_id = ?",
+                    (owner_user_id,),
+                ).fetchone()[0]
+                active_bots = conn.execute(
+                    "SELECT COUNT(*) FROM bots WHERE is_active = 1 AND owner_user_id = ?",
+                    (owner_user_id,),
+                ).fetchone()[0]
+                avg_duration = conn.execute(
+                    "SELECT AVG(ended_at - started_at) FROM sessions WHERE ended_at IS NOT NULL AND user_id = ?",
+                    (owner_user_id,),
+                ).fetchone()[0] or 0
+                successful_sessions = conn.execute(
+                    "SELECT COUNT(*) FROM sessions WHERE turn_count > 2 AND user_id = ?",
+                    (owner_user_id,),
+                ).fetchone()[0]
+            else:
+                # 1. Total Sessions
+                total_sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+                # 2. Active Bots
+                active_bots = conn.execute("SELECT COUNT(*) FROM bots WHERE is_active = 1").fetchone()[0]
+                # 3. Average Session Duration
+                avg_duration = conn.execute("SELECT AVG(ended_at - started_at) FROM sessions WHERE ended_at IS NOT NULL").fetchone()[0] or 0
+                # 4. Success Rate
+                successful_sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 2").fetchone()[0]
             success_rate = (successful_sessions / total_sessions * 100) if total_sessions > 0 else 0
             
             # 5. Bot Usage Distribution
-            bot_usage = conn.execute("""
-                SELECT b.name, COUNT(s.id) as count
-                FROM bots b LEFT JOIN sessions s ON b.id = s.bot_id
-                WHERE b.is_active = 1
-                GROUP BY b.id
-            """).fetchall()
+            if owner_user_id:
+                bot_usage = conn.execute("""
+                    SELECT b.name, COUNT(s.id) as count
+                    FROM bots b LEFT JOIN sessions s ON b.id = s.bot_id AND s.user_id = ?
+                    WHERE b.is_active = 1 AND b.owner_user_id = ?
+                    GROUP BY b.id
+                """, (owner_user_id, owner_user_id)).fetchall()
+            else:
+                bot_usage = conn.execute("""
+                    SELECT b.name, COUNT(s.id) as count
+                    FROM bots b LEFT JOIN sessions s ON b.id = s.bot_id
+                    WHERE b.is_active = 1
+                    GROUP BY b.id
+                """).fetchall()
             usage_data = [{"name": r["name"], "value": r["count"]} for r in bot_usage]
             
             # 6. Peak Hours (last 24h by hour)
-            # This is a bit complex for SQLite without a date table, but we can aggregate by strftime
-            peak_hours = conn.execute("""
-                SELECT strftime('%H', datetime(started_at, 'unixepoch')) as hour, COUNT(*) as count
-                FROM sessions
-                WHERE started_at > strftime('%s', 'now', '-1 day')
-                GROUP BY hour
-                ORDER BY hour
-            """).fetchall()
+            if owner_user_id:
+                peak_hours = conn.execute("""
+                    SELECT strftime('%H', datetime(started_at, 'unixepoch')) as hour, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-1 day') AND user_id = ?
+                    GROUP BY hour
+                    ORDER BY hour
+                """, (owner_user_id,)).fetchall()
+            else:
+                peak_hours = conn.execute("""
+                    SELECT strftime('%H', datetime(started_at, 'unixepoch')) as hour, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-1 day')
+                    GROUP BY hour
+                    ORDER BY hour
+                """).fetchall()
             hour_data = [{"hour": r["hour"] + ":00", "sessions": r["count"]} for r in peak_hours]
             
             # 7. Sentiment — not computed from DB yet; UI can hide or show placeholder
@@ -1227,24 +1418,41 @@ class SQLiteProvider:
 
     # ─── Analytics ───────────────────────────────────────────────────────────
 
-    async def get_latency_analytics(self, limit: int = 30) -> list[dict]:
+    async def get_latency_analytics(self, limit: int = 30, owner_user_id: Optional[str] = None) -> list[dict]:
         """Return per-session average latency metrics from the last N sessions."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("""
-                SELECT
-                    t.session_id,
-                    AVG(json_extract(t.arguments, '$.stt_ms'))      AS stt_ms,
-                    AVG(json_extract(t.arguments, '$.llm_ms'))      AS llm_ms,
-                    AVG(json_extract(t.arguments, '$.tts_ms'))      AS tts_ms,
-                    AVG(json_extract(t.arguments, '$.total_ms'))    AS total_ms,
-                    AVG(json_extract(t.arguments, '$.first_audio_ms')) AS first_audio_ms
-                FROM tool_logs t
-                WHERE t.tool_name = '__metrics__'
-                GROUP BY t.session_id
-                ORDER BY MAX(t.executed_at) DESC
-                LIMIT ?
-            """, (limit,)).fetchall()
+            if owner_user_id:
+                rows = conn.execute("""
+                    SELECT
+                        t.session_id,
+                        AVG(json_extract(t.arguments, '$.stt_ms'))      AS stt_ms,
+                        AVG(json_extract(t.arguments, '$.llm_ms'))      AS llm_ms,
+                        AVG(json_extract(t.arguments, '$.tts_ms'))      AS tts_ms,
+                        AVG(json_extract(t.arguments, '$.total_ms'))    AS total_ms,
+                        AVG(json_extract(t.arguments, '$.first_audio_ms')) AS first_audio_ms
+                    FROM tool_logs t
+                    JOIN sessions s ON s.id = t.session_id
+                    WHERE t.tool_name = '__metrics__' AND s.user_id = ?
+                    GROUP BY t.session_id
+                    ORDER BY MAX(t.executed_at) DESC
+                    LIMIT ?
+                """, (owner_user_id, limit)).fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT
+                        t.session_id,
+                        AVG(json_extract(t.arguments, '$.stt_ms'))      AS stt_ms,
+                        AVG(json_extract(t.arguments, '$.llm_ms'))      AS llm_ms,
+                        AVG(json_extract(t.arguments, '$.tts_ms'))      AS tts_ms,
+                        AVG(json_extract(t.arguments, '$.total_ms'))    AS total_ms,
+                        AVG(json_extract(t.arguments, '$.first_audio_ms')) AS first_audio_ms
+                    FROM tool_logs t
+                    WHERE t.tool_name = '__metrics__'
+                    GROUP BY t.session_id
+                    ORDER BY MAX(t.executed_at) DESC
+                    LIMIT ?
+                """, (limit,)).fetchall()
             return [
                 {
                     "session_id": r["session_id"],
@@ -1258,20 +1466,35 @@ class SQLiteProvider:
             ]
         return await self._run(_do)
 
-    async def get_intent_analytics(self, limit: int = 100) -> list[dict]:
+    async def get_intent_analytics(self, limit: int = 100, owner_user_id: Optional[str] = None) -> list[dict]:
         """Return intent distribution from recent sessions."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("""
-                SELECT
-                    json_extract(metadata, '$.intent') AS intent,
-                    COUNT(*) AS count
-                FROM sessions
-                WHERE metadata IS NOT NULL
-                  AND json_extract(metadata, '$.intent') IS NOT NULL
-                ORDER BY count DESC
-                LIMIT ?
-            """, (limit,)).fetchall()
+            if owner_user_id:
+                rows = conn.execute("""
+                    SELECT
+                        json_extract(metadata, '$.intent') AS intent,
+                        COUNT(*) AS count
+                    FROM sessions
+                    WHERE metadata IS NOT NULL
+                      AND json_extract(metadata, '$.intent') IS NOT NULL
+                      AND user_id = ?
+                    GROUP BY intent
+                    ORDER BY count DESC
+                    LIMIT ?
+                """, (owner_user_id, limit)).fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT
+                        json_extract(metadata, '$.intent') AS intent,
+                        COUNT(*) AS count
+                    FROM sessions
+                    WHERE metadata IS NOT NULL
+                      AND json_extract(metadata, '$.intent') IS NOT NULL
+                    GROUP BY intent
+                    ORDER BY count DESC
+                    LIMIT ?
+                """, (limit,)).fetchall()
             return [{"intent": r["intent"], "count": r["count"]} for r in rows]
         return await self._run(_do)
 

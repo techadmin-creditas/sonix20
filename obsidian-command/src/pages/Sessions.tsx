@@ -73,20 +73,20 @@ export default function Sessions() {
         actions={
           <div className="w-full flex flex-col md:flex-row gap-4 justify-between items-center">
 
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input
-                type="text"
-                placeholder="Search by ID, Bot"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-              />
-            </div>
-
+            {sessions?.length > 0 && (
+              <div className="relative w-full md:w-96">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+                <input
+                  type="text"
+                  placeholder="Search by ID, Bot"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
+            )}
 
             <div className="flex gap-3">
-
               {filteredSessions?.length > 0 && (
                 <div className="flex gap-2 w-full md:w-auto">
                   {/* <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all">
@@ -130,8 +130,6 @@ export default function Sessions() {
 
       <div className="p-8 flex flex-col gap-6">
         {/* Filters & Search */}
-
-
         {loading ? (
           <div className="flex flex-col items-center justify-center p-20 gap-4">
             <Loader2 className="size-8 text-primary animate-spin" />
@@ -271,18 +269,8 @@ export default function Sessions() {
                 </div>
               </motion.div>
             ))}
-
-            {/* No search results */}
-            {filteredSessions.length === 0 && sessions.length > 0 && (
-              <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
-                <Search className="size-10 mb-3 opacity-30" />
-                <p className="font-bold text-sm">No sessions match &ldquo;{searchQuery}&rdquo;</p>
-                <p className="text-xs mt-1 opacity-60">Try searching by bot name or session ID</p>
-              </div>
-            )}
-
             {/* Truly empty — no sessions at all */}
-            {sessions.length === 0 && !loading && (
+            {/* {sessions.length === 0 && !loading && (
               <div className="flex justify-center">
                 <Link
                   to="/sessions/live"
@@ -296,6 +284,36 @@ export default function Sessions() {
                     <p className="text-xs text-outline mt-1">Start a new conversation</p>
                   </div>
                 </Link>
+              </div>
+            )} */}
+
+            {!loading && filteredSessions.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-24 gap-6">
+                {searchQuery ? (
+                  <Search className="size-10 opacity-30" />
+                ) : (
+                  <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
+                    <PlusCircle className="size-10" />
+                  </div>
+                )}
+                <div className="text-center">
+                  {!searchQuery && (
+                    <p className="font-bold text-on-surface text-lg">No Sessions yet</p>
+                  )}
+                  <p className="text-sm text-outline mt-1 max-w-xs mx-auto">
+                    {searchQuery ? (
+                      <>
+                        <p className="font-bold text-sm">No sessions match &ldquo;{searchQuery}&rdquo;</p>
+                        <p className="text-xs mt-1 opacity-60">Try searching by another ID, Bot </p>
+                      </>
+                    ) : 'Create your first conversational logic flow.'}
+                  </p>
+                </div>
+                {!searchQuery && (
+                  <Link to="/sessions/live" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
+                    Create Your First Sesion
+                  </Link>
+                )}
               </div>
             )}
 

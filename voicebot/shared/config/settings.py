@@ -195,6 +195,9 @@ class AppSettings(BaseSettings):
     # JWT (REST auth when debug=False)
     jwt_secret_key: str = Field(default="change-me-in-production", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_access_token_expire_minutes: int = Field(default=1440, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="admin123", alias="ADMIN_PASSWORD")
 
 
 def _resolve_env_file() -> str:

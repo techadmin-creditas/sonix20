@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { api, UserFact } from '../lib/api';
 import { cn } from '../lib/utils';
+import { getDispositionMeta } from '../lib/sessionDisposition';
 import {
   ArrowLeft, Play, Pause, Download,
   MessageSquare, BarChart3, FileText, Lightbulb,
@@ -106,6 +107,13 @@ function buildLatencyMetrics(meta: Record<string, unknown>): LatencyMetrics {
   };
 }
 
+const DISPOSITION_TONE_CLASS: Record<string, string> = {
+  success: 'text-emerald-500',
+  warning: 'text-amber-500',
+  danger: 'text-red-500',
+  neutral: 'text-outline',
+};
+
 export default function SessionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -167,6 +175,7 @@ export default function SessionDetail() {
           summary: meta.summary || 'No summary generated for this session.',
           intent: meta.intent || 'Unknown Intent',
           insights: normalizeInsights(meta.insights),
+          disposition: meta.disposition || 'unknown',
           turns: details.turn_count || 0,
           sentimentScore,
           metrics,
@@ -319,6 +328,9 @@ export default function SessionDetail() {
       </div>
     );
   }
+
+  const dispositionMeta = getDispositionMeta(session.disposition);
+  const dispositionToneClass = DISPOSITION_TONE_CLASS[dispositionMeta.statusTone];
 
   return (
     <div className="flex-1 flex flex-col ">
@@ -488,13 +500,22 @@ export default function SessionDetail() {
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div className="p-6 rounded-2xl bg-surface-low ghost-border">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Primary Intent</p>
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Topic (Intent)</p>
                       <p className="text-lg font-bold text-primary">{session.intent}</p>
                     </div>
                     <div className="p-6 rounded-2xl bg-surface-low ghost-border">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Resolution Status</p>
-                      <p className="text-lg font-bold text-emerald-500">Completed</p>
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Session Outcome</p>
+                      <p className={cn("text-lg font-bold", dispositionToneClass)}>{dispositionMeta.label}</p>
+                      <p className="text-xs text-on-surface-variant mt-1">{dispositionMeta.description}</p>
                     </div>
+                  </div>
+                  <div className="p-6 rounded-2xl bg-surface-low ghost-border">
+                    <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-3">Suggested Next Steps</p>
+                    <ul className="list-disc pl-5 space-y-1.5 text-sm text-on-surface-variant">
+                      {dispositionMeta.nextSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
                   </div>
                 </motion.div>
               )}
@@ -625,6 +646,10 @@ export default function SessionDetail() {
                         return 'No per-turn latency samples were recorded for this session.';
                       })()}
                     </p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-surface-high/50 border border-outline-variant/10 flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-widest text-outline">Session Outcome</p>
+                    <span className={cn("text-sm font-bold", dispositionToneClass)}>{dispositionMeta.label}</span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <LatencyCard label="Avg STT" value={session.metrics.sttLatency} icon={Clock} color="text-indigo-500" />

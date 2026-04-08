@@ -8,18 +8,18 @@ import {
   Settings,
   Database,
   Bot,
-  Layers,
   LogOut,
   PlusCircle,
-  Sun,
-  Moon,
   GitBranch,
+  Users,
   User
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AuthUser } from '../lib/api';
+import { ThemeToggle } from './ThemeToggle';
 
 const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
   { icon: GitBranch, label: 'Workflows', path: '/workflows' },
@@ -29,14 +29,13 @@ const NAV_ITEMS = [
   { icon: User, label: 'Profile', path: '/profile' },
 ];
 
-export function Sidebar() {
-  const [isDark, setIsDark] = React.useState(true);
-
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-  };
-
+export function Sidebar({
+  currentUser,
+  onLogout,
+}: {
+  currentUser: AuthUser;
+  onLogout: () => void;
+}) {
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0">
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
@@ -45,12 +44,7 @@ export function Sidebar() {
             <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.0</h1>
             {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg bg-surface-low hover:bg-surface-high transition-all border border-outline-variant/10 text-outline hover:text-primary"
-          >
-            {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          </button>
+          <ThemeToggle />
         </div>
 
         <nav className="flex flex-col gap-2">
@@ -73,6 +67,24 @@ export function Sidebar() {
               )}
             </NavLink>
           ))}
+          {currentUser.role === 'admin' && (
+            <NavLink
+              to="/users"
+              className={({ isActive }) => cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
+                isActive
+                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
+                  : "text-on-surface-variant hover:bg-surface-high/50"
+              )}
+            >
+              {({ isActive }) => (
+                <>
+                  <Users className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
+                  <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>Users</span>
+                </>
+              )}
+            </NavLink>
+          )}
         </nav>
 
         {/* <div className="mt-4">
@@ -104,13 +116,20 @@ export function Sidebar() {
         )}
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-surface-high border border-outline-variant/20 flex items-center justify-center text-primary font-bold">
-            AR
+          <div className="w-10 h-10 rounded-full bg-surface-high border border-outline-variant/20 flex items-center justify-center text-primary font-bold uppercase">
+            {currentUser.username.substring(0, 2)}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-on-surface">Alex Rivera</span>
-            <span className="text-[10px] uppercase tracking-tighter text-outline font-bold">Owner • Enterprise</span>
+            <span className="text-sm font-semibold">{currentUser.username}</span>
+            <span className="text-[10px] uppercase tracking-tighter text-outline">{currentUser.role}</span>
           </div>
+          <button
+            onClick={onLogout}
+            className="ml-auto p-2 rounded-lg bg-surface-low hover:bg-surface-high border border-outline-variant/20"
+            title="Logout"
+          >
+            <LogOut className="size-4" />
+          </button>
         </div>
       </NavLink>
     </aside>

@@ -147,18 +147,22 @@ class LogicHandler(BaseNodeHandler):
         retry_limit = int((node.get("data") or {}).get("retry_limit") or 3)
 
         # 3. Classify Intent
-        selected = None
-        if all_options:
-            selected = await engine._classify_intent(user_text, all_options)
-            await engine._log("[WORKFLOW]", f"Logic branch → {selected} (Try {engine.node_visit_counts[node_id]})", "text-primary")
+        selected = await engine._classify_intent(user_text, all_options) if all_options else "NONE"
+        await engine._log("[WORKFLOW]", f"Logic branch → {selected} (Try {engine.node_visit_counts[node_id]})", "text-primary")
+
+        # Intelligence Update: If NO match found, stay on node and re-prompt!
+        if selected == "NONE":
+            await engine._log("[ENGINE]", f"Ambiguous input: '{user_text}'. Providing clarification.", "text-amber-400")
+            await engine._handle_reprompt(user_text)
+            return True # PAUSE and wait for new user input after reprompt
 
         # 4. Routing Logic (Priority: Intent Match -> Retry Match -> Default)
         target_id = None
         
-        # Standard label match
+        # Standard label match (STRICT MATCHING)
         for e in edges:
             lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-            if selected and lbl and lbl in selected.lower():
+            if selected and lbl and lbl == selected.lower():
                 target_id = e.get("target")
                 break
         
@@ -174,15 +178,12 @@ class LogicHandler(BaseNodeHandler):
 
         # Sane Fallback: If still no target, don't just pick edges[0] if it's ambiguous
         if not target_id:
-            if len(edges) == 1:
-                target_id = edges[0].get("target")
-            else:
-                # Try to find a 'default' or 'fallback' or 'denied' edge
-                for e in edges:
-                    lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-                    if any(x in lbl for x in ["denied", "fallback", "default", "exit"]):
-                        target_id = e.get("target")
-                        break
+            # Try to find a 'default' or 'fallback' or 'denied' edge
+            for e in edges:
+                lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
+                if any(x in lbl for x in ["denied", "fallback", "default", "exit"]):
+                    target_id = e.get("target")
+                    break
         
         if not target_id:
             await engine._log("[WORKFLOW]", "No valid path after retries. Handing over to LLM.", "text-red-300")
@@ -445,6 +446,7 @@ class WorkflowEngine:
         self.session_data: dict[str, Any] = {}
         self.last_user_text: str = ""
         self._spoke: bool = False
+        self.last_intent = None
 
         # Compile conversational regexes from bot config
         self.intent_patterns: dict[str, re.Pattern] = {}
@@ -530,13 +532,41 @@ class WorkflowEngine:
                 return True
             
             self.last_user_text = user_text
-            if len(edges) > 1:
+            
+            # Smart Guard: If user says "No/Can't" but we only have a "Success" path, block it.
+            if len(edges) == 1:
+                # Single edge advance: ONLY if not ambiguous
+                sentiment = await self._classify_sentiment(user_text)
+                if sentiment == "negative" and "yes" not in (edges[0].get("label") or "").lower():
+                    await self._log("[ENGINE]", "Refusal detected on single-edge input. Backtracking for logic re-evaluation.", "text-red-400")
+                    if await self._handle_backtrack(None):
+                        return await self._execute_node_chain(user_text)
+                    return True # Yield if we can't backtrack safely
+                
+                # If user says something irrelevant like "hello", stay here rather than jumping
+                selected = await self._classify_intent(user_text, ["next"])
+                if selected == "NONE":
+                    await self._handle_reprompt(user_text)
+                    return False
+
+                self.current_node_id = edges[0].get("target")
+            else:
                 labels = [e.get("label") or e.get("sourceHandle") or "next" for e in edges]
                 selected = await self._classify_intent(user_text, labels)
-                target_id = next((e.get("target") for e in edges if (e.get("label") or "").lower() in selected.lower()), edges[0].get("target"))
+                self.last_intent = selected # Capture for UI debugging
+                
+                # Intelligence Update: If NO match found, stay on node and re-prompt!
+                if selected == "NONE":
+                    await self._log("[ENGINE]", f"Ambiguous input: '{user_text}'. Providing clarification.", "text-amber-400")
+                    await self._handle_reprompt(user_text)
+                    return True # PAUSE and wait for new user input after reprompt
+                
+                target_id = next((e.get("target") for e in edges if (e.get("label") or "").lower() == selected.lower()), None)
+                if not target_id:
+                    await self._handle_reprompt(user_text)
+                    return True # PAUSE and wait
+
                 self.current_node_id = target_id
-            else:
-                self.current_node_id = edges[0].get("target")
 
         return await self._execute_node_chain(user_text)
 
@@ -555,11 +585,22 @@ class WorkflowEngine:
             node = self.nodes[self.current_node_id]
             node_type = _norm_type(node.get("type", "")) or "llm_fallback"
             
-            handler = HANDLER_REGISTRY.get(node_type) or HANDLER_REGISTRY["llm_fallback"]
-            
-            should_pause = await handler.handle(self, node, user_text)
-            if should_pause:
-                break
+            try:
+                handler = HANDLER_REGISTRY.get(node_type) or HANDLER_REGISTRY["llm_fallback"]
+                should_pause = await handler.handle(self, node, user_text)
+                if should_pause:
+                    break
+            except Exception as e:
+                logger.error("[WorkflowEngine] Handler Error at node %s: %s", self.current_node_id, e)
+                await self._log("[ENGINE]", f"Logic Failure! Redirecting to fallback...", "text-red-500")
+                
+                # Try to jump to fallback node
+                fallback_id = next((nid for nid, n in self.nodes.items() if _norm_type(n.get("type", "")) == "llm_fallback"), None)
+                if fallback_id and self.current_node_id != fallback_id:
+                    self.current_node_id = fallback_id
+                    continue
+                else:
+                    return True # Yield to LLM on absolute failure
 
             # If not a logic node, handler doesn't set the next node. Find first edge.
             if node_type not in ("logic", "sentiment", "language"):
@@ -992,15 +1033,23 @@ class WorkflowEngine:
             return "CONTINUE"
 
     async def _classify_intent(self, text: str, options: list[str]) -> str:
-        """Map user input to one of the provided labels."""
+        """Map user input to one of the provided labels or 'NONE' if ambiguous."""
         text_lower = text.lower()
-        for opt in options:
-            if opt.lower() in text_lower:
-                return opt
+        
+        # Fast path for very short turns
+        if len(text_lower.split()) < 3:
+            for opt in options:
+                if opt.lower() in text_lower:
+                    return opt
 
         ops_str = ", ".join([f'"{opt}"' for opt in options])
         try:
-            prompt = PROMPT_TEMPLATES["logic_intent"].format(ops_str=ops_str, text=text)
+            prompt = (
+                f"User said: \"{text}\"\n"
+                f"Available Intents: {ops_str}, \"NONE\"\n\n"
+                f"Rule: If the input matches an intent, output only the label. "
+                f"If the input is irrelevant, a greeting like 'hello', or completely unrelated to the options, output \"NONE\"."
+            )
             response = await self._classifier_complete(
                 "You are an intent classifier. Output exactly the label and nothing else.",
                 prompt,
@@ -1008,10 +1057,34 @@ class WorkflowEngine:
             for opt in options:
                 if opt.lower() in response.lower():
                     return opt
-            return options[0]
+            return "NONE"
         except Exception as e:
             logger.error("[WorkflowEngine] Intent classification error: %s", e)
-            return options[0]
+            return "NONE"
+
+    async def _handle_reprompt(self, last_input: str) -> None:
+        """Informative clarification + Repeat the current question."""
+        node = self.nodes.get(self.current_node_id, {})
+        base_speech = _node_speech(node)
+        
+        # Use LLM to generate a smart clarification like "Hello! To continue, please tell me..."
+        clarification_prompt = (
+            f"The user said '{last_input}' during a workflow node where the bot's goal was: {base_speech}.\n"
+            f"This input was determined to be an irrelevant greeting or ambiguous. "
+            f"Please provide a natural, 1-sentence response that acknowledges the user (e.g. Greeting back) "
+            f"and then RE-ASKS the original question to get the conversation back on track."
+        )
+        
+        try:
+            res = await self._classifier_complete(
+                "You are a professional but conversational debt collection voice assistant.",
+                clarification_prompt
+            )
+            await self.brain._generate_and_speak(res)
+            self._spoke = True
+        except Exception:
+            await self.brain._generate_and_speak(f"I'm not sure I understood. To continue, {base_speech}")
+            self._spoke = True
 
     async def _classify_sentiment(self, text: str) -> str:
         """Detect base sentiment via dynamic patterns or cheap LLM."""

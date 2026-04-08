@@ -135,52 +135,37 @@ export default function Workflows() {
         subtitle="Conversational Logic"
         actions={
           <div className="w-full flex justify-between items-center">
-            {/* <div className="flex items-center gap-4 bg-surface-low p-1 rounded-xl ghost-border">
-            <button
-              onClick={() => setView('grid')}
-              className={cn("p-2 rounded-lg transition-all", view === 'grid' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
-            >
-              <LayoutGrid className="size-5" />
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={cn("p-2 rounded-lg transition-all", view === 'list' ? "bg-surface-highest text-primary" : "text-outline hover:text-on-surface")}
-            >
-              <List className="size-5" />
-            </button>
-          </div> */}
+            {workflows && workflows?.length > 0 && (
+              <>
+                <div className="relative w-full md:w-96">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
+                  <input
+                    type="text"
+                    placeholder="Search workflows..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowMagicModal(true)}
+                  className="px-6 py-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.15)] hover:bg-primary/20 active:scale-95 transition-all"
+                >
+                  <Sparkles className="size-5" />
+                  AI Magic
+                </button>
+                <Link
+                  to="/workflows/create"
+                  className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+                >
+                  <PlusCircle className="size-5" />
+                  Create Workflow
+                </Link>
+                </div>
+              </>
 
-
-
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
-              <input
-                type="text"
-                placeholder="Search workflows..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
-              />
-            </div>
-
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowMagicModal(true)}
-                className="px-6 py-2.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.15)] hover:bg-indigo-500/20 active:scale-95 transition-all"
-              >
-                <Sparkles className="size-5" />
-                AI Magic
-              </button>
-
-              <Link
-                to="/workflows/create"
-                className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-              >
-                <PlusCircle className="size-5" />
-                Create Workflow
-              </Link>
-            </div>
+            )}
           </div>
         }
       />
@@ -207,21 +192,31 @@ export default function Workflows() {
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && !error && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 gap-6">
-            <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
-              <GitBranch className="size-10" />
-            </div>
+            {search ? (
+              <Search className="size-10 opacity-30" />
+            ) : (
+              <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
+                <GitBranch className="size-10" />
+              </div>
+            )}
             <div className="text-center">
-              <p className="font-bold text-on-surface text-lg">No workflows yet</p>
-              <p className="text-sm text-outline mt-1">
-                {search ? 'No workflows match your search.' : 'Create your first conversational logic flow.'}
+              {!search && (
+                <p className="font-bold text-on-surface text-lg">No Workflows yet</p>
+              )}
+              <p className="text-sm text-outline mt-1 max-w-xs mx-auto">
+                {search ? (
+                  <>
+                    <p className="font-bold text-sm">No Workflows match &ldquo;{search}&rdquo;</p>
+                    <p className="text-xs mt-1 opacity-60">Try searching by another Workflow </p>
+                  </>
+                ) : 'Create your first Workflow.'}
               </p>
             </div>
             {!search && (
-              <Link to="/workflows/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
-                Create Your First Flow
+              <Link to="/workflows/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg active:scale-95 transition-all">
+                Create Your First Workflow
               </Link>
             )}
           </div>
@@ -235,48 +230,35 @@ export default function Workflows() {
               : "flex flex-col gap-4"
           )}>
             {filtered.map((flow) => (
-              <WorkflowCard
-                key={flow.id}
-                flow={flow}
-                view={view}
-                isConfirming={deletingId === flow.id}
-                isDeleting={deleteLoadingId === flow.id}
-                onDeleteRequest={() => setDeletingId(flow.id)}
-                onDeleteCancel={() => setDeletingId(null)}
-                onDeleteConfirm={() => handleDelete(flow.id)}
-              />
+              <React.Fragment key={flow.id}>
+                <WorkflowCard
+                  flow={flow}
+                  view={view}
+                  isConfirming={deletingId === flow.id}
+                  isDeleting={deleteLoadingId === flow.id}
+                  onDeleteRequest={() => setDeletingId(flow.id)}
+                  onDeleteCancel={() => setDeletingId(null)}
+                  onDeleteConfirm={() => handleDelete(flow.id)}
+                />
+              </React.Fragment>
             ))}
 
-            {/* Create New Card — only show in grid view */}
-            {filtered?.length === 0 && view === 'grid' && (
-              <Link
-                to="/workflows/create"
-                className="rounded-3xl border-2 border-dashed border-outline-variant/20 hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-4 p-12 group"
-              >
-                <div className="size-16 rounded-full bg-surface-high flex items-center justify-center text-outline group-hover:text-primary group-hover:scale-110 transition-all">
-                  <PlusCircle className="size-8" />
-                </div>
-                <div className="text-center">
-                  <p className="font-bold text-on-surface">Add New Workflow</p>
-                  <p className="text-xs text-outline mt-1">Design conversational paths</p>
-                </div>
-              </Link>
-            )}
+            {/* Workflow cards mapped here */}
           </div>
         )}
       </div>
 
       {/* AI Magic Modal */}
       {showMagicModal && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={() => !magicLoading && setShowMagicModal(false)} />
-          <div className="relative w-full max-w-xl glass-panel rounded-4xl p-8 border-indigo-500/30 shadow-[0_0_50px_rgba(99,102,241,0.2)] overflow-hidden">
+          <div className="relative z-20 w-full max-w-xl glass-panel rounded-4xl p-8 border-primary/30 shadow-[0_0_50px_rgba(251,140,0,0.2)] overflow-hidden">
             {/* Background Glow */}
-            <div className="absolute -top-24 -right-24 size-64 bg-indigo-500/20 blur-[100px] rounded-full" />
+            <div className="absolute -top-24 -right-24 size-64 bg-primary/20 blur-[100px] rounded-full" />
             
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                <div className="size-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
                   <Sparkles className="size-6" />
                 </div>
                 <div>
@@ -286,8 +268,9 @@ export default function Workflows() {
               </div>
               <button 
                 onClick={() => setShowMagicModal(false)}
-                className="p-2 hover:bg-white/5 rounded-full transition-all"
+                className="relative z-50 p-2 hover:bg-white/5 rounded-full transition-all cursor-pointer"
                 disabled={magicLoading}
+                aria-label="Close modal"
               >
                 <X className="size-6" />
               </button>
@@ -297,7 +280,7 @@ export default function Workflows() {
               <div className="space-y-2">
                 <label className="text-xs font-bold text-outline uppercase tracking-widest px-1">What should this workflow do?</label>
                 <textarea
-                  className="w-full h-40 bg-surface-low border border-outline-variant/10 rounded-2xl p-4 text-sm font-medium focus:ring-1 focus:ring-indigo-500/50 transition-all resize-none"
+                  className="w-full h-40 bg-surface-low border border-outline-variant/10 rounded-2xl p-4 text-sm font-medium focus:ring-1 focus:ring-primary/50 transition-all resize-none"
                   placeholder="e.g. Create a healthcare appointment reminder flow that handles rescheduling if the user is busy, and sends a confirmation link if they agree..."
                   value={magicPrompt}
                   onChange={(e) => setMagicPrompt(e.target.value)}
@@ -308,7 +291,7 @@ export default function Workflows() {
               <button
                 onClick={handleMagicGenerate}
                 disabled={magicLoading || !magicPrompt.trim()}
-                className="w-full py-4 rounded-2xl bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+                className="w-full py-4 rounded-2xl ember-gradient text-on-primary-fixed font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/25 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
               >
                 {magicLoading ? (
                   <div className="flex items-center gap-3">

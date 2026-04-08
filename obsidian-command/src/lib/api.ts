@@ -1,5 +1,46 @@
 /** REST API base (override with VITE_API_BASE, e.g. http://localhost:8000/api/v1) */
 const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api/v1';
+const AUTH_TOKEN_KEY = 'voicebot.auth.token';
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  is_active?: number;
+};
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token: string) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+export function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+const nativeFetch = globalThis.fetch.bind(globalThis);
+
+async function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers || {});
+  const token = getAuthToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return nativeFetch(input, { ...(init || {}), headers });
+}
+const fetch = authedFetch;
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+  } catch { }
+  return fallback;
+}
 
 /** HTTP origin for the voice gateway (no /api/v1), used to build default ws:// URL */
 export function getApiOrigin(): string {
@@ -208,8 +249,70 @@ export interface QACacheEntry {
 }
 
 export const api = {
+  async login(username: string, password: string): Promise<{ access_token: string; token_type: string; user: AuthUser }> {
+    const res = await nativeFetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) throw new Error('Invalid username or password');
+    const data = await res.json();
+    if (data?.access_token) setAuthToken(data.access_token);
+    return data;
+  },
+
+  async me(): Promise<AuthUser> {
+    const res = await fetch(`${BASE_URL}/auth/me`);
+    if (!res.ok) throw new Error('Unauthorized');
+    return res.json();
+  },
+
+  async listUsers(): Promise<AuthUser[]> {
+    const res = await fetch(`${BASE_URL}/admin/users`);
+    if (!res.ok) throw new Error('Failed to fetch users');
+    const data = await res.json();
+    return data.users || [];
+  },
+
+  async createUser(data: { username: string; password: string; role?: 'admin' | 'user' }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create user'));
+    return res.json();
+  },
+
+  async updateUser(userId: string, data: { username?: string; role?: 'admin' | 'user'; is_active?: boolean }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update user'));
+    return res.json();
+  },
+
+  async changeUserPassword(userId: string, password: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to change password'));
+    return res.json();
+  },
+  async deleteUser(userId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'));
+    return res.json();
+  },
+
   async getBots(): Promise<Bot[]> {
-    const res = await fetch(`${BASE_URL}/bots`);
+    const res = await authedFetch(`${BASE_URL}/bots`);
     if (!res.ok) throw new Error('Failed to fetch bots');
     const data = await res.json();
     return data.bots;

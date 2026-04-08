@@ -27,6 +27,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from typing import Any, Callable, Coroutine, Optional
 
 from voicebot.shared.logging.logger import setup_logger
@@ -135,6 +136,18 @@ class OpenAIRealtimeBridge:
         # Bot transcript accumulation
         self._bot_transcript_buf = ""
 
+        # ── Per-turn latency tracking (for live UI metrics) ─────────────
+        # We anchor the turn at `input_audio_buffer.speech_stopped`.
+        # Then compute:
+        # - STT Latency: speech_stopped -> input_audio_transcription.completed
+        # - LLM TTFT: speech_stopped -> first response.audio_transcript.delta
+        # - TTS Latency: first transcript delta -> first response.audio.delta
+        # - Total RTT: speech_stopped -> response.audio.done
+        self._turn_start_ts: Optional[float] = None
+        self._stt_first_ts: Optional[float] = None
+        self._llm_first_ts: Optional[float] = None
+        self._tts_first_ts: Optional[float] = None
+
         # Derived config
         self._voice = _resolve_voice(bot_config)
         self._model = (bot_config.get("s2s_model") or _DEFAULT_MODEL).strip()
@@ -213,6 +226,13 @@ class OpenAIRealtimeBridge:
         if not self._connected or not self._ws or not text.strip():
             return
         try:
+            # Simulator mode: there is no VAD speech_stopped event, so start a
+            # measurement window right away.
+            self._turn_start_ts = time.time()
+            self._stt_first_ts = None
+            self._llm_first_ts = None
+            self._tts_first_ts = None
+
             # Echo transcript to client so UI shows the typed text
             await self._send_json({"type": "transcript", "text": text, "is_final": True})
 
@@ -247,6 +267,11 @@ class OpenAIRealtimeBridge:
                 logger.info("Interrupt sent to OpenAI (session=%s)", self.session_id[:8])
             self._response_active = False
             self._bot_transcript_buf = ""
+            # Drop latency measurement window for interrupted turn.
+            self._turn_start_ts = None
+            self._stt_first_ts = None
+            self._llm_first_ts = None
+            self._tts_first_ts = None
             await self._send_json({"type": "status", "state": "listening"})
         except Exception as exc:
             logger.warning("handle_interrupt error (session=%s): %s", self.session_id[:8], exc)
@@ -374,6 +399,12 @@ class OpenAIRealtimeBridge:
             })
 
         elif t == "input_audio_buffer.speech_stopped":
+            # Start latency measurements at end-of-user-speech.
+            self._turn_start_ts = time.time()
+            self._stt_first_ts = None
+            self._llm_first_ts = None
+            self._tts_first_ts = None
+
             await self._send_json({"type": "status", "state": "processing"})
 
         elif t == "input_audio_buffer.committed":
@@ -383,6 +414,8 @@ class OpenAIRealtimeBridge:
         elif t == "conversation.item.input_audio_transcription.completed":
             transcript = (event.get("transcript") or "").strip()
             if transcript:
+                if self._turn_start_ts is not None and self._stt_first_ts is None:
+                    self._stt_first_ts = time.time()
                 await self._send_json({
                     "type": "transcript", "text": transcript, "is_final": True,
                 })
@@ -403,6 +436,8 @@ class OpenAIRealtimeBridge:
         elif t == "response.audio_transcript.delta":
             delta = event.get("delta", "")
             if delta:
+                if self._turn_start_ts is not None and self._llm_first_ts is None:
+                    self._llm_first_ts = time.time()
                 self._bot_transcript_buf += delta
                 await self._send_json({
                     "type":     "bot_transcript",
@@ -428,12 +463,36 @@ class OpenAIRealtimeBridge:
                     raw = base64.b64decode(b64)
                     # Resample 24 kHz → 16 kHz for the client
                     client_pcm = _resample_pcm16(raw, _OPENAI_SAMPLE_RATE, _CLIENT_SAMPLE_RATE)
+                    if self._turn_start_ts is not None and self._tts_first_ts is None:
+                        self._tts_first_ts = time.time()
                     await self._send_bytes(client_pcm)
                 except Exception as exc:
                     logger.warning("Audio delta decode error (session=%s): %s",
                                    self.session_id[:8], exc)
 
         elif t == "response.audio.done":
+            # Emit live latency metrics for this turn.
+            if self._turn_start_ts is not None:
+                now = time.time()
+                stt_ms = max(0.0, (self._stt_first_ts - self._turn_start_ts) * 1000) if self._stt_first_ts is not None else 0.0
+                llm_ms = max(0.0, (self._llm_first_ts - self._turn_start_ts) * 1000) if self._llm_first_ts is not None else 0.0
+                tts_ms = max(0.0, (self._tts_first_ts - self._llm_first_ts) * 1000) if (self._tts_first_ts is not None and self._llm_first_ts is not None) else 0.0
+                total_ms = max(0.0, (now - self._turn_start_ts) * 1000)
+
+                await self._send_json({
+                    "type": "metrics",
+                    "stt": round(stt_ms, 0),
+                    "llm": round(llm_ms, 0),
+                    "tts": round(tts_ms, 0),
+                    "total": round(total_ms, 0),
+                })
+
+            # Reset measurement window for next turn.
+            self._turn_start_ts = None
+            self._stt_first_ts = None
+            self._llm_first_ts = None
+            self._tts_first_ts = None
+
             await self._send_json({"type": "status", "state": "listening"})
 
         # ── Response done ────────────────────────────────────────────────
@@ -446,6 +505,10 @@ class OpenAIRealtimeBridge:
 
         elif t == "response.cancelled":
             self._response_active = False
+            self._turn_start_ts = None
+            self._stt_first_ts = None
+            self._llm_first_ts = None
+            self._tts_first_ts = None
             await self._send_json({"type": "status", "state": "listening"})
 
         # ── Rate limit info (informational) ─────────────────────────────

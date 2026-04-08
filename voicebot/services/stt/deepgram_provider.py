@@ -19,6 +19,10 @@ import time
 import collections
 import audioop  # Built-in fast math for audio RMS
 import websockets
+try:
+    import webrtc_audio_processing as wap
+except ImportError:
+    wap = None
 from typing import Any, Callable, Optional
 
 try:
@@ -219,15 +223,21 @@ class DeepgramStreamingProvider:
         self._last_keepalive = 0.0
         self._last_final_transcript = ""
 
-        # 🛠️ 1. Initialize WebRTC Audio Processing (optional)
-        if wap is not None:
-            self.ap = wap.AudioProcessingModule(enable_ns=True, enable_vad=False)
-            self.ap.set_ns_level(2)
+        # 🛠️ 1. Initialize WebRTC Audio Processing (Optional)
+        if wap:
+            try:
+                self.ap = wap.AudioProcessingModule(
+                    enable_ns=True,
+                    enable_vad=False
+                )
+                # Set suppression level (0=Low, 1=Moderate, 2=High, 3=VeryHigh)
+                self.ap.set_ns_level(2) 
+            except Exception as e:
+                logger.warning(f"Failed to initialize WebRTC AP module: {e}")
+                self.ap = None
         else:
-            logger.warning(
-                "webrtc_audio_processing not installed; STT noise suppression disabled"
-            )
-            self.ap = _PassthroughAudioProcessing()
+            logger.info("WebRTC Audio Processing module not found. Noise suppression will be disabled.")
+            self.ap = None
 
         # 🧠 2. Initialize Adaptive Noise Floor
         self._noise_floor = 0.0
@@ -359,10 +369,13 @@ class DeepgramStreamingProvider:
             self._audio_chunk_buffer = self._audio_chunk_buffer[STREAM_FRAME_BYTES:]
 
             # 🧹 2. Clean the audio frame using WebRTC
-            try:
-                clean_audio = self.ap.process_stream(chunk)
-            except Exception as e:
-                logger.warning(f"WebRTC NS failed, falling back to raw audio: {e}")
+            if self.ap:
+                try:
+                    clean_audio = self.ap.process_stream(chunk)
+                except Exception as e:
+                    logger.warning(f"WebRTC NS failed, falling back to raw audio: {e}")
+                    clean_audio = chunk
+            else:
                 clean_audio = chunk
 
             # 🎚️ 3. Get RMS of the CLEANED audio

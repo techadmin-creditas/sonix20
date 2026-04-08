@@ -401,6 +401,21 @@ function WorkflowEditor() {
     (changes: EdgeChange[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
     []
   );
+
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      setNodes((nds) => nds.filter((n) => !deleted.some((d) => d.id === n.id)));
+      setEdges((eds) => eds.filter((e) => !deleted.some((d) => d.id === e.source || d.id === e.target)));
+    },
+    []
+  );
+
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      setEdges((eds) => eds.filter((e) => !deleted.some((d) => d.id === e.id)));
+    },
+    []
+  );
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
     []
@@ -540,10 +555,26 @@ function WorkflowEditor() {
       );
 
       if (res.status === 'success') {
+        const prevNodeId = simNode;
         setSimNode(res.next_node_id);
+        const nextNodeId = res.next_node_id;
+
+        // If we moved to a new node, record the transition
+        if (prevNodeId && nextNodeId && prevNodeId !== nextNodeId) {
+             setSimHistory(prev => [...prev, `${prevNodeId}->${nextNodeId}`]);
+        }
+
         setSimVisitCounts(res.node_visit_counts || {});
         
-        const newMsgs = (res.speak_responses || []).map((r: string) => ({ role: 'bot', text: r }));
+        const sourceNode = nodes.find(n => n.id === (res.current_node_id || currentNode));
+        const nodeLabel = sourceNode?.data?.label || "Bot";
+
+        const newMsgs = (res.speak_responses || []).map((r: string) => ({ 
+            role: 'bot', 
+            text: r, 
+            nodeLabel: nodeLabel,
+            intent: res.intent  // Pass intent here
+        }));
         setSimChat(prev => [...prev, ...newMsgs]);
 
         if (res.is_disconnected) {
@@ -819,15 +850,20 @@ function WorkflowEditor() {
               ...n,
               data: { ...n.data, isActive: n.id === simNode }
             }))}
-            edges={edges.map(e => ({
-              ...e,
-              animated: simHistory.includes(e.target) && simHistory.includes(e.source),
-              style: simHistory.includes(e.target) && simHistory.includes(e.source) 
-                ? { stroke: '#10b981', strokeWidth: 3, opacity: 1 } 
-                : { opacity: 0.4 }
-            }))}
+            edges={edges.map(e => {
+              const isPath = simHistory.includes(`${e.source}->${e.target}`);
+              return {
+                ...e,
+                animated: isPath,
+                style: isPath 
+                  ? { stroke: '#fbbf24', strokeWidth: 4, opacity: 1, filter: 'drop-shadow(0 0 8px rgba(251,191,36,0.4))' } 
+                  : { opacity: 0.2, stroke: '#64748b' }
+              };
+            })}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
@@ -1339,12 +1375,24 @@ function WorkflowEditor() {
               )}
               {simChat.map((msg, i) => (
                 <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <span className="text-[10px] text-outline mb-1 uppercase font-bold">{msg.role}</span>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[10px] text-outline uppercase font-black tracking-tighter">{msg.role}</span>
+                    {msg.nodeLabel && (
+                        <span className="text-[8px] px-1.5 py-0.25 rounded bg-primary/20 text-primary font-bold border border-primary/20">
+                            {msg.nodeLabel}
+                        </span>
+                    )}
+                    {msg.intent && (
+                        <span className="text-[8px] px-1.5 py-0.25 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20 flex items-center gap-1">
+                            <Cpu className="size-2" /> {msg.intent}
+                        </span>
+                    )}
+                  </div>
                   <div className={cn(
-                    "text-xs px-3 py-2 rounded-xl max-w-[85%]",
-                    msg.role === 'user' ? 'bg-primary/20 text-primary rounded-br-none' 
-                    : msg.role === 'system' ? 'bg-white/5 text-outline italic border border-white/5'
-                    : 'bg-white/10 text-on-surface rounded-bl-none'
+                    "text-xs px-3 py-2 rounded-xl max-w-[85%] font-medium",
+                    msg.role === 'user' ? 'bg-primary/20 text-primary rounded-br-none border border-primary/10' 
+                    : msg.role === 'system' ? 'bg-red-500/10 text-red-400 italic border border-red-500/20 px-4 py-3 rounded-lg text-[10px]'
+                    : 'bg-surface-highest text-on-surface rounded-bl-none border border-white/5'
                   )}>
                     {msg.text}
                   </div>

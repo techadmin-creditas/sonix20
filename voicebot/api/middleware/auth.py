@@ -9,6 +9,7 @@ Skips auth for health checks and docs endpoints.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -16,12 +17,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from voicebot.shared.config import get_settings
+from voicebot.services.auth.auth_service import decode_access_token
 
 logger = logging.getLogger("gateway-auth")
 settings = get_settings()
 
 # Paths that skip authentication
-SKIP_AUTH_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
+SKIP_AUTH_PATHS = {
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/api/v1/auth/login",
+}
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
@@ -33,6 +41,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ):
+        # Always allow CORS preflight through so CORSMiddleware can attach headers.
+        if request.method.upper() == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for health/docs endpoints
         if request.url.path in SKIP_AUTH_PATHS:
             return await call_next(request)
@@ -41,8 +53,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if request.headers.get("upgrade", "").lower() == "websocket":
             return await call_next(request)
 
-        # In development mode, allow all requests
-        if settings.debug:
+        # Optional unsafe bypass for local debugging only.
+        if os.getenv("ALLOW_UNSAFE_DEBUG_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
             return await call_next(request)
 
         # Extract the Bearer token
@@ -75,15 +87,7 @@ def _verify_jwt(token: str) -> Optional[dict]:
     Verify a JWT token and return the decoded payload.
     Returns None if verification fails.
     """
-    try:
-        import jwt
-
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm],
-        )
-        return payload
-    except Exception as e:
-        logger.warning("JWT verification failed: %s", e)
-        return None
+    payload = decode_access_token(token)
+    if payload is None:
+        logger.warning("JWT verification failed")
+    return payload
