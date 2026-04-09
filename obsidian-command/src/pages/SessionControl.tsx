@@ -76,6 +76,10 @@ export default function SessionControl() {
   const [negativeSentimentCount, setNegativeSentimentCount] = useState(0);
   // Entity extraction
   const [entities, setEntities] = useState<Entity[]>([]);
+  
+  // User selection (for Caller ID)
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [isUserSelectorOpen, setIsUserSelectorOpen] = useState(false);
 
   const transcriptRef = React.useRef<HTMLDivElement>(null);
   const logRef = React.useRef<HTMLDivElement>(null);
@@ -109,6 +113,43 @@ export default function SessionControl() {
     api.getModels()
       .then(models => setModelLimits(models || []))
       .catch(err => console.error("Failed to load model specs:", err));
+
+    api.listUsers().then(users => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        users.forEach(u => {
+          if (!merged.find(m => m.id === u.id)) {
+            merged.push({ id: u.id, username: u.username, source: 'auth' });
+          }
+        });
+        return merged;
+      });
+    }).catch(() => {});
+
+    api.getTestCustomers().then(customers => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        customers.forEach(c => {
+          // Use customer_name and account_number
+          if (!merged.find(m => m.id === c.account_number)) {
+            merged.push({ 
+              id: c.account_number, 
+              username: `${c.customer_name} (Lead)`, 
+              source: 'db' 
+            });
+          }
+        });
+        return merged;
+      });
+    }).catch(err => {
+      console.warn("Failed to load test customers:", err);
+      // Fallback only if both fail and list is empty
+      setAvailableUsers(prev => prev.length > 0 ? prev : [
+        { id: 'vaibhav', username: 'Vaibhav (Lead)' },
+        { id: 'rahul', username: 'Rahul (Test)' },
+        { id: 'priya', username: 'Priya (Customer)' },
+      ]);
+    });
 
     // Cleanup on page exit: Ensure all session handles are closed immediately
     return () => {
@@ -766,7 +807,6 @@ export default function SessionControl() {
       setIsExporting(false);
     }, 1500);
   };
-
   return (
     <div className="flex-1 flex flex-col  relative">
       <Header
@@ -825,17 +865,55 @@ export default function SessionControl() {
             {!isLive ? (
               <>
                 {/* Caller ID + Transport — grouped as a pill pair on sm+, stacked on xs */}
-                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl overflow-hidden px-1">
+                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl px-1 relative">
                   <UserCircle2 className="size-3.5 text-on-surface-variant ml-2 shrink-0" />
-                  <input
-                    type="text"
-                    placeholder="Caller ID"
-                    value={userId}
-                    onChange={e => setUserId(e.target.value)}
-                    disabled={isConnecting}
-                    title="Enables cross-session memory. Leave blank for anonymous session."
-                    className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
-                  />
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Caller ID"
+                      value={userId}
+                      onChange={e => setUserId(e.target.value)}
+                      onFocus={() => setIsUserSelectorOpen(true)}
+                      onBlur={() => setTimeout(() => setIsUserSelectorOpen(false), 200)}
+                      disabled={isConnecting}
+                      title="Enables cross-session memory. Leave blank for anonymous session."
+                      className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
+                    />
+                    
+                    {isUserSelectorOpen && availableUsers.length > 0 && !isLive && (
+                      <div className="absolute top-full left-0 mt-2 w-56 glass-panel rounded-xl p-1.5 z-110 shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center justify-between px-2 py-1 mb-1">
+                          <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Select User</span>
+                          <button onClick={() => setIsUserSelectorOpen(false)} className="text-outline hover:text-on-surface">
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {availableUsers.map((u) => (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                setUserId(u.id);
+                                setIsUserSelectorOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/5 text-left transition-colors group"
+                            >
+                              <div className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold group-hover:bg-primary/20">
+                                {(u.username || u.id).charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-semibold truncate text-on-surface">
+                                  {u.username || u.id}
+                                </span>
+                                <span className="text-[9px] text-outline truncate">{u.id}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="w-px h-5 bg-outline-variant/20 mx-0.5 shrink-0" />
                   <select
                     value={sessionTransport}

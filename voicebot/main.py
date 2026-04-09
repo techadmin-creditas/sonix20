@@ -352,11 +352,13 @@ async def voice_websocket(
     session_language = bot_config.get("default_language") or language
 
     # Sync session in SQLite (with user_id for cross-session memory)
+    recovered_meta = session_data.get("metadata") if session_data else {}
     await db.create_session(
         session_id=session_id,
         bot_id=bot_config.get("id"),
         language=session_language,
         user_id=user_id,
+        metadata=recovered_meta
     )
 
     # Track current session in global map
@@ -621,8 +623,17 @@ async def voice_websocket(
         return
 
 
-    # Initialize Brain
-    session = SessionState(session_id=session_id, detected_language=language, user_id=user_id)
+    # Recover metadata and user_id from DB record if it exists
+    db_metadata = (session_data.get("metadata") or {}) if session_data else {}
+    resolved_user_id = user_id or (session_data.get("user_id") if session_data else None) or "anonymous"
+    
+    # Initialize Brain with recovered context
+    session = SessionState(
+        session_id=session_id, 
+        detected_language=language, 
+        user_id=resolved_user_id,
+        metadata=db_metadata
+    )
     vector_memory = locals().get("vector_memory")
     brain = AgenticBrain(
         session=session,

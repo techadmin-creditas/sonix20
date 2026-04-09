@@ -1449,7 +1449,7 @@ function WorkflowEditor() {
 
         {/* Inline Test Simulator Drawer */}
         {simOpen && (
-          <div className="w-96 border-l border-outline-variant/10 bg-surface-low flex flex-col shrink-0">
+          <div className="w-96 border-l border-outline-variant/10 bg-surface-low flex flex-col shrink-0 max-h-[calc(100vh-82px)]">
             <div className="p-4 border-b border-outline-variant/5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -1529,18 +1529,22 @@ function WorkflowEditor() {
                 
                 {showOverrides && (
                   <div className="px-4 pb-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                    {detectedGraphVars.map(v => (
-                      <div key={v} className="flex flex-col gap-1">
-                        <label className="text-[10px] font-bold text-outline uppercase px-1">{v}</label>
-                        <input 
-                          list="sim-db-columns"
-                          className="bg-surface-highest border border-outline-variant/10 rounded-xl p-2.5 text-xs text-primary focus:border-primary/50 outline-none transition-all"
-                          placeholder={`Value or DB Key for ${v}...`}
-                          value={simOverrides[v] || ''}
-                          onChange={(e) => setSimOverrides(prev => ({ ...prev, [v]: e.target.value }))}
-                        />
-                      </div>
-                    ))}
+                    {detectedGraphVars.map(v => {
+                      const isDate = v.toLowerCase().includes('date');
+                      return (
+                        <div key={v} className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-outline uppercase px-1">{v}</label>
+                          <input 
+                            list={!isDate ? "sim-db-columns" : undefined}
+                            type={isDate ? "date" : "text"}
+                            className="bg-surface-highest border border-outline-variant/10 rounded-xl p-2.5 text-xs text-primary focus:border-primary/50 outline-none transition-all"
+                            placeholder={isDate ? undefined : `Value or DB Key for ${v}...`}
+                            value={simOverrides[v] || ''}
+                            onChange={(e) => setSimOverrides(prev => ({ ...prev, [v]: e.target.value }))}
+                          />
+                        </div>
+                      );
+                    })}
                     <datalist id="sim-db-columns">
                       {dbColumns.map(col => <option key={col} value={col} />)}
                     </datalist>

@@ -274,6 +274,13 @@ export const api = {
     return data.users || [];
   },
 
+  async getTestCustomers(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/test-customers`);
+    if (!res.ok) throw new Error('Failed to fetch test customers');
+    const data = await res.json();
+    return data.customers || [];
+  },
+
   async createUser(data: { username: string; password: string; role?: 'admin' | 'user' }): Promise<any> {
     const res = await fetch(`${BASE_URL}/admin/users`, {
       method: 'POST',

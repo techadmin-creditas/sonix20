@@ -201,6 +201,8 @@ class SQLiteProvider:
             ("refuse_off_topic", "INTEGER DEFAULT 0"),
             ("owner_user_id", "TEXT REFERENCES users(id)"),
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
+            ("variable_mappings", "TEXT DEFAULT '{}'"),
+            ("metadata_defaults", "TEXT DEFAULT '{}'"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -640,6 +642,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -659,6 +663,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -694,19 +700,18 @@ class SQLiteProvider:
                 "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
+                "variable_mappings", "metadata_defaults",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
-            if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
-                updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
-            if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
-                updates["proactive_prompts"] = json.dumps(updates["proactive_prompts"])
+            for field in ("tools_enabled", "proactive_prompts", "agent_task_spec", 
+                          "variable_mappings", "metadata_defaults",
+                          "guardrail_policy", "data_access_policy", "conversation_policy"):
+                if field in updates and (isinstance(updates[field], (dict, list))):
+                    updates[field] = json.dumps(updates[field])
+
             if "refuse_off_topic" in updates:
                 updates["refuse_off_topic"] = 1 if updates["refuse_off_topic"] else 0
-            if "agent_task_spec" in updates and isinstance(updates["agent_task_spec"], dict):
-                updates["agent_task_spec"] = json.dumps(updates["agent_task_spec"])
-            for pol in ("guardrail_policy", "data_access_policy", "conversation_policy"):
-                if pol in updates and isinstance(updates[pol], dict):
-                    updates[pol] = json.dumps(updates[pol])
+            
             updates["updated_at"] = time.time()
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             values = list(updates.values()) + [bot_id]
@@ -775,24 +780,27 @@ class SQLiteProvider:
     # ─── Session Management ───────────────────────────────────────────────────
 
     async def create_session(self, session_id: str, bot_id: Optional[str] = None,
-                             user_id: Optional[str] = None, language: str = "hi") -> None:
+                             user_id: Optional[str] = None, language: str = "hi",
+                             metadata: Optional[dict] = None) -> None:
         """Register or update a session in SQLite."""
+        meta_json = json.dumps(metadata or {})
         def _do():
             conn = self._get_conn()
             # 1. Insert session record if it doesn't exist yet
             conn.execute("""
-                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, started_at)
-                VALUES (?, ?, ?, ?, strftime('%s','now'))
-            """, (session_id, bot_id, user_id, language))
+                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, metadata, started_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+            """, (session_id, bot_id, user_id, language, meta_json))
             
             # 2. Update existing session fields (except started_at)
             conn.execute("""
                 UPDATE sessions 
                 SET bot_id = COALESCE(?, bot_id),
                     user_id = COALESCE(?, user_id),
-                    language = ?
+                    language = ?,
+                    metadata = ?
                 WHERE id = ?
-            """, (bot_id, user_id, language, session_id))
+            """, (bot_id, user_id, language, meta_json, session_id))
             
             conn.commit()
         await self._run(_do)
@@ -1595,6 +1603,17 @@ class SQLiteProvider:
                  emi_amount, emi_due_date, next_due, status),
             )
             conn.commit()
+        return await self._run(_do)
+
+    async def get_customer(self, account_number: str) -> Optional[dict]:
+        """Fetch a single customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM customer_accounts WHERE account_number = ?",
+                (account_number.upper().strip(),)
+            ).fetchone()
+            return dict(row) if row else None
         return await self._run(_do)
     
     async def get_customer_schema(self) -> list[dict]:

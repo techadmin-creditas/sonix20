@@ -151,7 +151,7 @@ function SectionAccordion({
   return (
     <section className={cn(
       "glass-panel rounded-3xl flex flex-col border transition-all duration-300 ",
-      isOpen ? "bg-surface-low border-primary/20 shadow-inner bg-white" : "bg-surface-low/30 bg-white hover:bg-surface-low/50 border-outline-variant/10 ",
+      isOpen ? "bg-surface-base border-primary/20 shadow-inner" : "bg-surface-low/30 hover:bg-surface-low/50 border-outline-variant/10 ",
       className
     )}>
       <div className="flex items-center justify-between w-full min-h-[72px] px-6">

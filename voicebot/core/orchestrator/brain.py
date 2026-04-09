@@ -588,26 +588,35 @@ class AgenticBrain:
             meta["call_phase"] = "pitch"
 
     def _format_task_phase_hint(self) -> str:
-        if not self._agent_task_spec:
-            return ""
-        meta = self.session.metadata
-        phase = meta.get("call_phase")
-        if not phase:
-            return ""
-        parts = [f"\n\n[Session hint: call_phase={phase}"]
-        if meta.get("user_stance"):
-            parts.append(f", user_stance={meta.get('user_stance')}")
-        if meta.get("objection_round") is not None:
-            parts.append(f", objection_round={meta.get('objection_round')}")
-        parts.append("]")
-        if phase == "handle_objection":
+        """Provide a mission-critical context hint to the LLM about the current state/workflow."""
+        parts = []
+        
+        # 1. Prioritize Context from WorkflowEngine
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            wf_status = self.workflow_engine.get_context_status()
+            parts.append(f"\n\n[WORKFLOW STATE: {wf_status}]")
             parts.append(
-                " Respond with empathy; offer one alternative angle from value_props or objection_handling; stay polite."
+                "\nINSTRUCTION: You are in a structured logic flow. If the user asks an unrelated question, "
+                "answer it briefly and then bridge back to the CURRENT TASK."
             )
-        elif phase == "closing":
-            parts.append(
-                " User has declined repeatedly or exit conditions met: give a brief polite goodbye, then call end_voice_session."
-            )
+
+        # 2. Add Agent Task Spec hints (Call Phase / Objection Round)
+        if self._agent_task_spec:
+            meta = self.session.metadata
+            phase = meta.get("call_phase")
+            if phase:
+                parts.append(f"\n[Session hint: call_phase={phase}")
+                if meta.get("user_stance"):
+                    parts.append(f", user_stance={meta.get('user_stance')}")
+                if meta.get("objection_round") is not None:
+                    parts.append(f", objection_round={meta.get('objection_round')}")
+                parts.append("]")
+                
+                if phase == "handle_objection":
+                    parts.append(" Respond with empathy; offer one alternative angle; stay polite.")
+                elif phase == "closing":
+                    parts.append(" User exit conditions met: give a brief polite goodbye.")
+
         return "".join(parts)
 
     # ─── Audio Input Handling ────────────────────────────────────────────
@@ -1130,25 +1139,40 @@ class AgenticBrain:
                 else:
                     self.workflow_engine = None
 
-            # Use custom greeting from bot config if set
-            custom_greeting = self._bot_config.get("greeting")
-            if custom_greeting:
-                logger.info("Using bot greeting (session=%s): %s", self.session.session_id[:8], custom_greeting[:60])
-                # We try to speak, but if it fails, we still want the transcript
+            # 2. Build Unified Greeting (Config + Workflow)
+            custom_greeting = self._bot_config.get("greeting") or ""
+            wf_greeting = ""
+            
+            if self.workflow_engine:
+                wf_greeting = self.workflow_engine.get_context_status().split("Objective: ")[-1]
+                # Log the transition status for debugging
+                logger.info("[Brain] Merging workflow objective into greeting: %s", wf_greeting)
+
+            full_opening = f"{custom_greeting} {wf_greeting}".strip()
+            
+            # 3. Resolve variables [Placeholders]
+            full_opening = self._inject_variables(full_opening)
+
+            if full_opening:
+                logger.info("Using unified opening (session=%s): %s", self.session.session_id[:8], full_opening[:60])
                 try:
-                    await self._stream_text_to_tts(custom_greeting, time.time())
+                    await self._stream_text_to_tts(full_opening, time.time())
                 except Exception as tts_err:
                     logger.warning("Greeting TTS failed: %s", tts_err)
                     await self._log_event("[SYSTEM]", "Voice greeting failed. Continuing with text.", "text-yellow-400")
 
                 if self._on_bot_transcript:
-                    await self._on_bot_transcript(custom_greeting, True)
+                    await self._on_bot_transcript(full_opening, True)
                 
                 await self._set_state(BotState.LISTENING)
-                # Log the greeting as an assistant turn
-                self.session.add_turn(TurnRole.ASSISTANT, custom_greeting)
+                self.session.add_turn(TurnRole.ASSISTANT, full_opening)
                 if self.db:
-                    await self.db.log_turn(self.session.session_id, "assistant", custom_greeting)
+                    await self.db.log_turn(self.session.session_id, "assistant", full_opening)
+
+                # 4. Advance Workflow Engine state past the greeting nodes
+                if self.workflow_engine:
+                    logger.info("🎬 Advancing WorkflowEngine past initial greeting (suppressing speech)")
+                    await self.workflow_engine.evaluate("", is_initial=True)
             else:
                 # LLM-generated greeting based on persona
                 bot_name = self._bot_config.get("name", "Assistant")
@@ -1648,17 +1672,76 @@ class AgenticBrain:
     async def _generate_and_speak(self, text: str) -> None:
         """Speak fixed text (workflows, rejection messages). Logs assistant turn via _finalize_turn."""
         try:
-            t = self._strip_technical_artifacts(text or "")
+            # 1. Resolve variables [Placeholders]
+            t = self._inject_variables(text or "")
+            # 2. Cleanup artifacts
+            t = self._strip_technical_artifacts(t)
             if not t:
                 return
             if self.output_guard:
                 t = self.output_guard.validate_and_mask(t)["masked_text"]
+            
             turn_start = time.time()
             self._interrupt_event.clear()
             await self._stream_text_to_tts(t, turn_start)
             await self._finalize_turn(t, turn_start)
         except Exception as e:
             await self._handle_fatal_error(e, "tts_reply_failed")
+
+    def _inject_variables(self, text: str) -> str:
+        """Replace [Variable Name] placeholders from session data, metadata, mappings, or bot defaults."""
+        if not text: return ""
+        
+        import re
+        # 1. Gather all data sources
+        metadata = getattr(self.session, "metadata", {}) if self.session else {}
+        # Also check WorkflowEngine's local session_data if available
+        workflow_data = {}
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            workflow_data = getattr(self.workflow_engine, "session_data", {})
+            
+        bot_cfg = self._bot_config or {}
+        mappings = bot_cfg.get("variable_mappings", {})
+        defaults = bot_cfg.get("metadata_defaults", {})
+        
+        # Regex to find [Bracked Variables]
+        pattern = re.compile(r'\[(.*?)\]')
+        
+        def _repl(match):
+            key = match.group(1).strip()
+            bracketed_key = f"[{key}]"
+            
+            # Helper to check if a value is actually another key in metadata
+            def _resolve_pointer(v):
+                if isinstance(v, str) and (v in metadata or v in workflow_data):
+                    return str(metadata.get(v) or workflow_data.get(v))
+                return str(v)
+
+            # A. Check explicit mappings (e.g. "[POS Amount]" -> "balance")
+            mapped_key = mappings.get(bracketed_key) or mappings.get(key)
+            if mapped_key:
+                val = metadata.get(mapped_key) or workflow_data.get(mapped_key)
+                if val is not None: return _resolve_pointer(val)
+                
+            # B. Check direct metadata/workflow_data (exact, bracketed, and snake_case)
+            val = metadata.get(bracketed_key) or workflow_data.get(bracketed_key) or \
+                  metadata.get(key) or workflow_data.get(key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # C. Check snake_case variant
+            sc_key = key.lower().replace(" ", "_").replace("-", "_")
+            val = metadata.get(sc_key) or workflow_data.get(sc_key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # D. Check bot config defaults
+            val = defaults.get(bracketed_key) or defaults.get(key) or \
+                  defaults.get(sc_key) or bot_cfg.get(sc_key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # E. Fallback to the original tag if nothing found
+            return match.group(0)
+            
+        return pattern.sub(_repl, text)
 
     async def _process_user_turn(self, user_text: str) -> None:
         try:
@@ -2053,7 +2136,8 @@ class AgenticBrain:
 
     async def _emit_tts_audio_stream(self, text: str, turbo: bool = False) -> None:
         """Stream one TTS synthesis to the client; one short log per segment."""
-        t = (text or "").strip()
+        # 1. Resolve variables [Placeholders]
+        t = self._inject_variables(text or "").strip()
         if not self.tts or not t:
             return
         # Clear interrupt event explicitly before starting synthesis loop

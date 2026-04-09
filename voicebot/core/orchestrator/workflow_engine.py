@@ -4,9 +4,11 @@ import asyncio
 import httpx
 from typing import Optional, Any
 import logging
+from voicebot.core.orchestrator.constants import DEFAULT_SEMANTIC_AFFINITIES
 from voicebot.shared.logging.logger import setup_logger
 
 logger = setup_logger("workflow-engine")
+_background_tasks: set[asyncio.Task] = set()
 
 # Node type used to signal "hand off to the main LLM" — any unknown type also falls through.
 _LLM_FALLBACK_TYPE = "llm_fallback"
@@ -15,12 +17,15 @@ _LLM_FALLBACK_TYPE = "llm_fallback"
 PROMPT_TEMPLATES = {
     "dynamic_speech": (
         "You are a sophisticated AI voice bot. Your current workflow step is: {label}.\n"
-        "Base Instruction: {base_text}\n\n"
-        "Context from conversation:\n{context_str}\n\n"
-        "Recent User Input: {last_user_text}\n\n"
-        "Your Task: Generate a warm, professional response that fulfills the bridge between the conversation context and the workflow goal.\n"
+        "GOAL/OBJECTIVE: {base_text}\n\n"
+        "Context from previous turns:\n{context_str}\n\n"
+        "Most Recent User Input: {last_user_text}\n\n"
+        "YOUR TASK:\n"
+        "1. Analyze the user's latest query in the context of the previous chat.\n"
+        "2. Generate a warm, empathetic, and professional response that resolves the user's immediate concern.\n"
+        "3. CRITICAL: You MUST end your response with a clear question that steers the user back toward achieving the 'GOAL/OBJECTIVE' stated above.\n"
         "Keep it concise (1-2 sentences) and suitable for high-quality voice synthesis.\n"
-        "If the user mentioned specific details (e.g., their name, a date), acknowledge them naturally."
+        "If the user mentioned specific details like names or amounts, acknowledge them naturally."
     ),
     "nav_intent": (
         "Analyze the user's voice transcript for 'navigational' or 'topic switching' intent.\n"
@@ -33,10 +38,11 @@ PROMPT_TEMPLATES = {
         '\n\nTranscript: "{text}"'
     ),
     "global_intent": (
-        "Does this voice transcript show:\n"
-        "- User wants to hang up / end the call? → reply: DISCONNECT\n"
-        "- User wants a human agent/manager? → reply: ESCALATE\n"
-        "- Normal response? → reply: CONTINUE\n\n"
+        "Analyze if the user explicitly wants to terminate the call, talk to a human, or is being impatient.\n"
+        "- User wants to HANG UP / END the call (e.g., 'bye', 'disconnect', 'stop calling', 'hang up now') → reply: DISCONNECT\n"
+        "- User wants a human agent, manager, or supervisor → reply: ESCALATE\n"
+        "- User is impatient, wants to hurry up, or skip preamble (e.g., 'jaldi batao', 'hurry up', 'get to the point') → reply: HURRY\n"
+        "- User is asking a question, arguing, or making a statement (even if negative) → reply: CONTINUE\n\n"
         "Reply STRICTLY with ONE word.\n\nTranscript: \"{text}\""
     ),
     "logic_intent": (
@@ -72,7 +78,7 @@ PROMPT_TEMPLATES = {
 
 class BaseNodeHandler:
     """Base interface for all workflow conversation blocks."""
-    async def handle(self, engine: "WorkflowEngine", node: dict[str, Any], user_text: str) -> bool:
+    async def handle(self, engine: "WorkflowEngine", node: dict[str, Any], user_text: str, is_initial: bool = False) -> bool:
         """
         Execute the node logic.
         Returns:
@@ -82,7 +88,7 @@ class BaseNodeHandler:
         raise NotImplementedError()
 
 class SpeechHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         data = node.get("data") or {}
         mode = data.get("mode", "direct")
         text = _node_speech(node)
@@ -91,11 +97,13 @@ class SpeechHandler(BaseNodeHandler):
             text = await engine._generate_dynamic_speech(node, user_text)
 
         if text:
-            text = engine._inject_variables(text)
-            await engine.brain._generate_and_speak(text)
+            text = engine.brain._inject_variables(text)
+            if not is_initial:
+                await engine.brain._generate_and_speak(text)
         else:
             logger.warning("[WorkflowEngine] Speech node %s has no text configured.", node['id'])
-            await engine.brain._generate_and_speak("...")
+            if not is_initial:
+                await engine.brain._generate_and_speak("...")
         
         engine._mark_spoken()
         if node['id'] not in engine.history:
@@ -111,16 +119,22 @@ class SpeechHandler(BaseNodeHandler):
             engine.current_node_id = target_id
             return False # Continue chain
         else:
+            # TERMINAL NODE: End Call gracefully
             engine.current_node_id = None
-            return True # Yield
+            engine.brain.request_voice_session_end("workflow_completed")
+            return True # Yield/End
 
 class UserInputHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         # userInput always pauses the flow execution for the next turn
         return True
 
 class LogicHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
+        if not user_text:
+            # If no input yet, wait for the user to respond to the previous prompt
+            return True
+
         edges = engine._get_outgoing_edges(node['id'])
         if not edges:
             engine.current_node_id = None
@@ -128,7 +142,9 @@ class LogicHandler(BaseNodeHandler):
             
         intents = _node_intents(node)
         edge_labels = [e.get("label") or e.get("sourceHandle") or "" for e in edges]
-        all_options = list(set([l for l in edge_labels + intents if l]))
+        # Skip internal retry labels for semantic classification
+        semantic_labels = [l for l in edge_labels if "retry_" not in l.lower()]
+        all_options = list(set([l for l in semantic_labels + intents if l]))
 
         # 1. Smart Sentiment Routing
         sentiment = await engine._classify_sentiment(user_text)
@@ -144,23 +160,29 @@ class LogicHandler(BaseNodeHandler):
                         engine.current_node_id = e.get("target")
                         return False
 
-            # Priority B: Direct Handle Match (Intuitive branching for Yes/No)
-            # We look for an edge that matches the sentiment's handle AND hasn't been exhausted if it's a retry
+            # Priority B: Direct Handle/Label Match (Intuitive branching for Yes/No)
+            # We look for an edge that matches the sentiment's intent (yes/no)
             for e in edges:
                 handle = (e.get("sourceHandle") or "").lower()
-                if handle == target_handle:
+                lbl = (e.get("label") or "").lower()
+                
+                # A 'match' happens if handle is 'yes'/'no' 
+                # OR if it is a negative response and the label is 'retry_n' or 'fail'
+                is_no_match = (target_handle == "no" and (handle == "no" or "retry" in lbl or "fail" in lbl or "refusal" in lbl))
+                is_yes_match = (target_handle == "yes" and (handle == "yes" or "confirm" in lbl or "success" in lbl))
+                
+                if is_no_match or is_yes_match:
                     # If this is a numbered retry path (e.g. retry_1), follow the current visit count
-                    lbl = (e.get("label") or "").lower()
                     if "retry_" in lbl:
                         current_visits = engine.node_visit_counts.get(node['id'], 0)
                         if f"retry_{current_visits + 1}" in lbl:
-                           await engine._log("[WORKFLOW]", f"Sentiment routing → {lbl}", "text-emerald-400")
+                           await engine._log("[WORKFLOW]", f"Sentiment auto-retry → {lbl}", "text-emerald-400")
                            engine.node_visit_counts[node['id']] = current_visits + 1
                            engine.current_node_id = e.get("target")
                            return False
-                    else:
-                        # Simple un-labeled handle match
-                        await engine._log("[WORKFLOW]", f"Sentiment routing → handle '{target_handle}'", "text-emerald-400")
+                    elif handle == target_handle or (target_handle == "no" and ("fail" in lbl or "refusal" in lbl)):
+                        # Simple match
+                        await engine._log("[WORKFLOW]", f"Sentiment routing → {lbl or handle}", "text-emerald-400")
                         engine.current_node_id = e.get("target")
                         return False
 
@@ -225,7 +247,10 @@ class LogicHandler(BaseNodeHandler):
         return False
 
 class SentimentHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
+        if not user_text:
+            return True
+            
         edges = engine._get_outgoing_edges(node['id'])
         if not edges:
             engine.current_node_id = None
@@ -256,7 +281,7 @@ class SentimentHandler(BaseNodeHandler):
         return False
 
 class LanguageHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         language = await engine._detect_language(user_text)
         await engine._log("[WORKFLOW]", f"Language detected: {language}", "text-blue-400")
         
@@ -283,7 +308,7 @@ class LanguageHandler(BaseNodeHandler):
         return False
 
 class BacktrackHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         await engine._log("[WORKFLOW]", "Backtrack point reached.", "text-purple-300")
         edges = engine._get_outgoing_edges(node['id'])
         if edges:
@@ -294,7 +319,7 @@ class BacktrackHandler(BaseNodeHandler):
             return True
 
 class ActionHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         action_type = _node_action_type(node)
         data = node.get("data") or node.get("config") or {}
         label = (node.get("data") or {}).get("label") or action_type
@@ -337,9 +362,11 @@ class ActionHandler(BaseNodeHandler):
                             })
                     except Exception as e:
                         logger.warning("[WorkflowEngine] Action task failed: %s", e)
-                asyncio.create_task(_dispatch())
+                task = asyncio.create_task(_dispatch())
+                _background_tasks.add(task)
+                task.add_done_callback(_background_tasks.discard)
             
-            if spoken_msg:
+            if spoken_msg and not is_initial:
                 await engine.brain._generate_and_speak(spoken_msg)
 
         edges = engine._get_outgoing_edges(node['id'])
@@ -350,17 +377,18 @@ class ActionHandler(BaseNodeHandler):
         return True # Yield after action
 
 class KnowledgeHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         query = _node_knowledge_query(node)
         await engine._log("[WORKFLOW]", f"RAG lookup: '{query}'", "text-indigo-400")
         try:
             results = await engine.brain.db.search_knowledge(query, limit=2)
             if results:
                 answer = results[0].get("answer", "")
-                if answer:
+                if answer and not is_initial:
                     await engine.brain._generate_and_speak(answer)
             else:
-                await engine.brain._generate_and_speak("I don't have that info yet, but I can check for you.")
+                if not is_initial:
+                    await engine.brain._generate_and_speak("I don't have that info yet, but I can check for you.")
         except Exception as e:
             logger.warning("[WorkflowEngine] RAG failed: %s", e)
         
@@ -372,7 +400,7 @@ class KnowledgeHandler(BaseNodeHandler):
         return True
 
 class FallbackHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text):
+    async def handle(self, engine, node, user_text, is_initial: bool = False):
         await engine._log("[WORKFLOW]", "Yielding to agentic LLM.", "text-indigo-400")
         edges = engine._get_outgoing_edges(node['id'])
         engine.current_node_id = edges[0].get("target") if edges else None
@@ -419,6 +447,24 @@ def _node_speech(node: dict[str, Any]) -> str:
             return str(res)
         if (res := config.get(key)) is not None:
             return str(res)
+    return ""
+
+def _get_effective_speech(engine, node) -> str:
+    """Get speech for a node, looking back one step if it's an empty userInput node."""
+    speech = _node_speech(node)
+    if speech:
+        return speech
+        
+    # If empty userInput, try to find the immediate previous speech node
+    node_type = _norm_type(node.get("type", ""))
+    if node_type == "userinput":
+        node_id = node.get("id")
+        # Find incoming edges
+        incoming = [e.get("source") for e in engine.edges if e.get("target") == node_id]
+        if incoming:
+            prev_node = engine.nodes.get(incoming[0])
+            if prev_node:
+                return _node_speech(prev_node)
     return ""
 
 
@@ -496,119 +542,128 @@ class WorkflowEngine:
                 self.adjacency[src] = []
             self.adjacency[src].append(edge)
 
-        self.current_node_id: Optional[str] = workflow_data.get("start_node_id")
+        # 🔄 HYDRATION: Check for saved state in session metadata
+        saved_node_id = None
+        if self.brain.session and self.brain.session.metadata:
+            saved_node_id = self.brain.session.metadata.get("workflow_node_id")
+
+        self._current_node_id: Optional[str] = saved_node_id or workflow_data.get("start_node_id")
         self.history: list[str] = []
-        self.session_data: dict[str, Any] = {}
+        # UNIFIED MEMORY: Workflow shares the brain's session metadata for persistence
+        self.session_data: dict[str, Any] = self.brain.session.metadata
         self.last_user_text: str = ""
         self._spoke: bool = False
         self.last_intent = None
 
-        # Compile conversational regexes from bot config
+        # Harvest raw patterns from configuration for dynamic resolution
+        bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
+        rules = bot_cfg.get("conversational_rules") or {}
+        self._raw_intent_patterns: dict[str, str] = rules.get("intent_patterns") or {}
         self.intent_patterns: dict[str, re.Pattern] = {}
-        self._init_intent_patterns()
 
         # Tracks how many times each node has been visited/executed in this session
         self.node_visit_counts: dict[str, int] = {}
         
         # Find start node if not set
-        if not self.current_node_id and self.nodes:
+        if not self._current_node_id and self.nodes:
             targets = {e.get("target") for e in self.edges}
             root_candidates = [n for n in self.nodes.keys() if n not in targets]
-            self.current_node_id = root_candidates[0] if root_candidates else list(self.nodes.keys())[0]
+            self._current_node_id = root_candidates[0] if root_candidates else list(self.nodes.keys())[0]
 
-        logger.info("[WorkflowEngine] Strategy-based engine initialized. Start: %s", self.current_node_id)
+        if saved_node_id:
+            logger.info("[WorkflowEngine] Strategy-based engine RESUMED at node: %s", self._current_node_id)
+        else:
+            logger.info("[WorkflowEngine] Strategy-based engine initialized. Start: %s", self._current_node_id)
         self._classifier_llm = None
 
-    def _init_intent_patterns(self):
-        """Compile regexes from bot configuration (conversational_rules)."""
-        bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
-        # Expected config format: {"intent_patterns": {"disconnect": "bye|stop", "positive": "yes|ok"}}
-        rules = bot_cfg.get("conversational_rules") or {}
-        patterns = rules.get("intent_patterns") or {}
-
-        for name, raw in patterns.items():
-            try:
-                self.intent_patterns[name] = re.compile(raw, re.I | re.UNICODE)
-            except Exception as e:
-                logger.error("[WorkflowEngine] Invalid regex for intent '%s': %s", name, e)
+    def _get_intent_regex(self, name: str) -> Optional[re.Pattern]:
+        """Dynamically resolve variables in regex and compile on-the-fly."""
+        raw = self._raw_intent_patterns.get(name)
+        if not raw:
+            return None
+            
+        try:
+            # Resolve dynamic variables [POS Amount], etc.
+            resolved = self.brain._inject_variables(raw)
+            return re.compile(resolved, re.I | re.UNICODE)
+        except Exception as e:
+            logger.error("[WorkflowEngine] Dynamic regex resolve failed for '%s': %s", name, e)
+            return None
 
     def _get_outgoing_edges(self, node_id: str) -> list[dict]:
         return self.adjacency.get(node_id, [])
 
+    @property
+    def current_node_id(self) -> Optional[str]:
+        return self._current_node_id
+
+    @current_node_id.setter
+    def current_node_id(self, value: Optional[str]):
+        if value != self._current_node_id:
+            logger.debug("[WorkflowEngine] Node transition: %s -> %s", self._current_node_id, value)
+            self._current_node_id = value
+            self._sync_state()
+
     def _mark_spoken(self):
         self._spoke = True
 
-    def _inject_variables(self, text: str) -> str:
-        """Replace [Variable Name] placeholders from session data, metadata, mappings, or bot defaults."""
-        if not text: return ""
-        
-        # 1. Gather all data sources
-        metadata = getattr(self.brain.session, "metadata", {}) if self.brain.session else {}
-        session_data = self.session_data
-        bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
-        
-        # New: Bot-level mappings and defaults
-        mappings = bot_cfg.get("variable_mappings", {})
-        defaults = bot_cfg.get("metadata_defaults", {})
-        
-        # Regex to find [Bracked Variables]
-        pattern = re.compile(r'\[(.*?)\]')
-        
-        def _repl(match):
-            key = match.group(1).strip()
-            bracketed_key = f"[{key}]"
+    def _sync_state(self):
+        """Persist the current node ID to the database session metadata."""
+        if not self.brain or not self.brain.session:
+            return
             
-            # Helper to check if a value is actually another key in metadata
-            def _resolve_pointer(v):
-                if isinstance(v, str) and (v in metadata or v in session_data):
-                    return str(metadata.get(v) or session_data.get(v))
-                return str(v)
+        # 1. Update in-memory session metadata
+        metadata = getattr(self.brain.session, "metadata", {})
+        metadata["workflow_node_id"] = self.current_node_id
+        
+        # 2. Fire async DB sync
+        if self.brain.db:
+            asyncio.create_task(
+                self.brain.db.merge_session_metadata(
+                    self.brain.session.session_id, 
+                    {"workflow_node_id": self.current_node_id}
+                )
+            )
+            logger.debug("[WorkflowEngine] Synced current_node_id %s to DB", self.current_node_id)
 
-            # A. Check explicit mappings (e.g. "[POS Amount]" -> "balance")
-            mapped_key = mappings.get(bracketed_key) or mappings.get(key)
-            if mapped_key:
-                val = metadata.get(mapped_key) or session_data.get(mapped_key)
-                if val is not None: return _resolve_pointer(val)
-                
-            # B. Check direct metadata/session_data (exact, bracketed, and snake_case)
-            val = metadata.get(bracketed_key) or session_data.get(bracketed_key) or \
-                  metadata.get(key) or session_data.get(key)
-            if val is not None: return _resolve_pointer(val)
-            
-            # C. Check snake_case variant
-            sc_key = key.lower().replace(" ", "_").replace("-", "_")
-            val = metadata.get(sc_key) or session_data.get(sc_key)
-            if val is not None: return _resolve_pointer(val)
-            
-            # D. Check bot config defaults
-            val = defaults.get(bracketed_key) or defaults.get(key) or \
-                  defaults.get(sc_key) or bot_cfg.get(sc_key)
-            if val is not None: return _resolve_pointer(val)
-            
-            # E. Fallback to the original tag if nothing found
-            return match.group(0)
-            
-        return pattern.sub(_repl, text)
-
-    async def evaluate(self, user_text: str) -> bool:
-        """Process one user turn using the dynamic engine."""
+    async def evaluate(self, user_text: str, is_initial: bool = False) -> bool:
+        """
+        Process the workflow. 
+        If is_initial is True, it advances the engine past initial speech nodes
+        without re-triggering audio (used for session startup greetings).
+        """
         if not self.current_node_id or self.current_node_id not in self.nodes:
             return True
 
         user_text = user_text.strip()
-        if user_text:
+        if user_text and not is_initial:
             # 1. Global Interceptors (Disconnect/Escalate)
             global_intent = await self._check_global_interceptor(user_text)
             if global_intent in ("DISCONNECT", "ESCALATE"):
                 key = "disconnect" if global_intent == "DISCONNECT" else "escalation"
-                await self._log("[GLOBAL]", f"User: {global_intent}", "text-red-400")
-                await self.brain._generate_and_speak(self._resolve_farewell(key))
+                key_color = "text-red-400" if global_intent == "DISCONNECT" else "text-orange-400"
+                await self._log("[INTERCEPTOR]", f"Detected global move: {global_intent}", f"{key_color} font-bold")
+                
+                # Speak the proper farewell and terminate
+                farewell = self._resolve_farewell(key)
+                await self.brain._generate_and_speak(farewell)
                 
                 if global_intent == "DISCONNECT":
                     self.brain.request_voice_session_end("user_disconnect")
                 else:
                     await self._handle_escalation()
-                return False
+                
+                return False # MUST return False to prevent double-speech
+
+            if global_intent == "HURRY":
+                await self._log("[INTERCEPTOR]", "Detected impatience: HURRY. Skipping to next step.", "text-amber-400 font-bold")
+                edges = self._get_outgoing_edges(self.current_node_id)
+                if edges:
+                    # Filter for non-retry edges first
+                    best_edges = [e for e in edges if "retry" not in (e.get("label") or "").lower()]
+                    self.current_node_id = (best_edges or edges)[0].get("target")
+                    # Advance to next node immediately
+                    return await self.evaluate("")
 
             # 2. Navigation / Context Switching (Backtrack or Jump)
             nav_intent = await self._detect_navigational_intent(user_text)
@@ -633,35 +688,70 @@ class WorkflowEngine:
         node_type = _norm_type(node.get("type", ""))
         
         if user_text and node_type == "userInput":
+            # Track visits for userInput to trigger auto-backtrack on persistent failure
+            current_visits = self.node_visit_counts.get(self.current_node_id, 0)
+            retry_limit = int((node.get("data") or {}).get("retry_limit") or 2)
+            
             edges = self._get_outgoing_edges(self.current_node_id)
             if not edges:
                 self.current_node_id = None
                 return True
             
+            logger.info("[evaluate] Node: %s | Outgoing Edges: %d", self.current_node_id, len(edges))
+            
             self.last_user_text = user_text
+            self.node_visit_counts[self.current_node_id] = current_visits + 1
+            
+            # If we've failed too many times, backtrack to help the user get back on track
+            if current_visits >= retry_limit:
+                await self._log("[ENGINE]", f"Persistent ambiguity on node '{self.current_node_id}'. Attempting auto-backtrack.", "text-amber-400")
+                if await self._handle_backtrack(None):
+                    return await self._execute_node_chain(user_text)
+                return True # Yield if we can't backtrack
             
             # Smart Guard: If user says "No/Can't" but we only have a "Success" path, block it.
             if len(edges) == 1:
-                # Single-Edge Rescue: If the edge is unlabeled, it's a "Continue" gate. No classification needed.
                 lbl = (edges[0].get("label") or edges[0].get("sourceHandle") or "").lower()
-                if not lbl or lbl == "next":
+                expected_intents = _node_intents(node)
+                
+                # Logic Passthrough: If the next node is a LOGIC node, 
+                # ALWAYS pass the input through. Logic nodes handle the validation internally.
+                target_node = self.nodes.get(edges[0].get("target"), {})
+                target_type = _norm_type(target_node.get("type", ""))
+                
+                logger.info("[evaluate] One edge detected. Target: %s (%s) | lbl: '%s' | Expected Intents: %s", 
+                            edges[0].get("target"), target_type, lbl, expected_intents)
+                
+                if target_type == "logic" or (not lbl or lbl == "next") and not expected_intents:
                     self.current_node_id = edges[0].get("target")
                     return await self._execute_node_chain(user_text)
 
                 # Otherwise, strict validation
                 sentiment = await self._classify_sentiment(user_text)
                 if sentiment == "negative" and "yes" not in lbl:
-                    await self._log("[ENGINE]", "Refusal detected on single-edge input. Backtracking for logic re-evaluation.", "text-red-400")
+                    await self._log("[ENGINE]", "Refusal detected on success-path. Attempting smart routing to Empathy.", "text-red-400")
+                    
+                    # 1. Try to find a 'refusal' or 'retry_1' path in the global graph
+                    if await self._handle_jump("Tier 1 - Empathy") or await self._handle_jump("Empathy") or await self._handle_jump("refusal"):
+                        return await self._execute_node_chain(user_text)
+                        
+                    # 2. Fallback to backtrack
                     if await self._handle_backtrack(None):
                         return await self._execute_node_chain(user_text)
-                    return True # Yield if we can't backtrack safely
+                    
+                    # 3. If all else fails, yield but don't error
+                    return True 
                 
                 # If user says something irrelevant like "hello", stay here rather than jumping
-                selected = await self._classify_intent(user_text, [lbl])
+                valid_options = [lbl] if lbl and lbl != "next" else expected_intents
+                selected = await self._classify_intent(user_text, valid_options)
+                
                 if selected == "NONE":
                     await self._handle_reprompt(user_text)
-                    return True # PAUSE and wait for new user input after reprompt
-
+                    return False # Return False: We already spoke the reprompt, don't let Brain speak again.
+                
+                # If we matched one of the node's semantic intents, proceed to the target
+                self.last_intent = selected
                 self.current_node_id = edges[0].get("target")
             else:
                 labels = [e.get("label") or e.get("sourceHandle") or "next" for e in edges]
@@ -672,23 +762,33 @@ class WorkflowEngine:
                 if selected == "NONE":
                     await self._log("[ENGINE]", f"Ambiguous input: '{user_text}'. Providing clarification.", "text-amber-400")
                     await self._handle_reprompt(user_text)
-                    return True # PAUSE and wait for new user input after reprompt
+                    return False # Return False to prevent double-speech
                 
                 target_id = next((e.get("target") for e in edges if (e.get("label") or "").lower() == selected.lower()), None)
                 if not target_id:
                     await self._handle_reprompt(user_text)
-                    return True # PAUSE and wait
+                    return False
 
                 self.current_node_id = target_id
 
-        return await self._execute_node_chain(user_text)
+        return await self._execute_node_chain(user_text, is_initial=is_initial)
 
     def _resolve_farewell(self, key: str) -> str:
-        """Get farewell/escalation message from bot config."""
+        """Get farewell/escalation message from bot config or persona-aware fallback."""
         bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
-        return bot_cfg.get(f"{key}_message") or "I understand. Thank you."
+        
+        # Try multiple potential config keys
+        msg = bot_cfg.get(f"{key}_message") or bot_cfg.get("farewell_message") or bot_cfg.get("farewell")
+        if msg:
+            return msg
+            
+        # Persona-aware dynamic fallback
+        name = bot_cfg.get("name", "Assistant")
+        if key == "disconnect":
+            return f"I understand. Thank you for your time. This is {name} from the bank. We look forward to your payment. Have a good day."
+        return f"I understand. Please hold for a moment while I connect you with a senior advisor."
 
-    async def _execute_node_chain(self, user_text: str = "") -> bool:
+    async def _execute_node_chain(self, user_text: str = "", is_initial: bool = False) -> bool:
         """
         Walk the graph executing deterministic nodes until a blocking point.
         Returns True if the caller should yield to the main LLM (free-form fallback).
@@ -699,13 +799,18 @@ class WorkflowEngine:
 
         while self.current_node_id and self.current_node_id in self.nodes and hops < self.MAX_HOPS:
             hops += 1
+            # 0. SENSORY SYNC: Check for hardware interruptions or session end
+            if self.brain._interrupt_event.is_set() or self.brain.session.voice_session_end_requested:
+                logger.debug("[WorkflowEngine] Aborting node chain due to interruption/session end.")
+                return False
+
             prev_node_id = self.current_node_id
             node = self.nodes[self.current_node_id]
             node_type = _norm_type(node.get("type", "")) or "llm_fallback"
             
             try:
                 handler = HANDLER_REGISTRY.get(node_type) or HANDLER_REGISTRY["llm_fallback"]
-                should_pause = await handler.handle(self, node, user_text)
+                should_pause = await handler.handle(self, node, user_text, is_initial=is_initial)
                 if should_pause:
                     break
             except Exception as e:
@@ -809,9 +914,14 @@ class WorkflowEngine:
             from voicebot.shared.config import get_settings
             _s = get_settings()
 
-            # 1. Explicit bot-level override
-            provider = bot_cfg.get("classifier_llm_provider") or getattr(_s, "classifier_llm_provider", "")
-            model    = bot_cfg.get("classifier_llm_model")    or getattr(_s, "classifier_llm_model", "")
+            # 1. Explicit bot-level override (Classifier-specific)
+            provider = bot_cfg.get("classifier_llm_provider")
+            model    = bot_cfg.get("classifier_llm_model")
+
+            # NEW: If not explicitly set for classifier, use the main bot's settings
+            if not provider:
+                provider = bot_cfg.get("llm_provider") or bot_cfg.get("llm") or getattr(_s, "classifier_llm_provider", "")
+                model    = bot_cfg.get("llm_model") or getattr(_s, "classifier_llm_model", "")
 
             if provider:
                 provider = provider.lower()
@@ -850,6 +960,37 @@ class WorkflowEngine:
         # Final fallback — the bot's main LLM (not cached here since it's shared)
         return self.brain.llm
 
+    def get_context_status(self) -> str:
+        """Return a high-level summary of the current node's objective for the Agent Brain."""
+        if not self.current_node_id or self.current_node_id not in self.nodes:
+            return "No active workflow task."
+            
+        # Recursive Lookback: Find the most recent instruction/speech node
+        target_id = self.current_node_id
+        visited = set()
+        
+        while target_id and target_id in self.nodes and target_id not in visited:
+            visited.add(target_id)
+            node = self.nodes[target_id]
+            node_type = (node.get("type") or "").lower()
+            
+            # Extract meaningful objective text
+            text = node.get("data", {}).get("speech") or \
+                   node.get("data", {}).get("text") or \
+                   node.get("config", {}).get("text") or \
+                   node.get("data", {}).get("label") or ""
+            
+            if text and node_type in ("speech", "userinput", "verify", "identification"):
+                label = node.get("data", {}).get("label") or node.get("id")
+                return f"CURRENT TASK: [{label}]. Objective: {text[:250]}"
+            
+            # Walk backward to find context if we're in a Logic node (Logic nodes don't have text)
+            # This is simple 'reverse scan' — in complex graphs we take the first incoming edge
+            incoming = [e.get("source") for e in self.edges if e.get("target") == target_id]
+            target_id = incoming[0] if incoming else None
+            
+        return "Executing background logic. Stay on high alert for user interruptions."
+
     async def _classifier_complete(self, system_prompt: str, user_prompt: str) -> str:
         """Stream a single classifier response using the cheap classifier LLM."""
         llm = self._get_classifier_llm()
@@ -862,12 +1003,21 @@ class WorkflowEngine:
         return "".join(chunks).strip()
 
     async def _check_global_interceptor(self, text: str) -> str:
-        """Detect disconnect / escalation intent via dynamic patterns or cheap LLM."""
+        """Detect disconnect / escalation / hurry intent via dynamic patterns or cheap LLM."""
         # 1. Fast-path regex (dynamic from config)
-        if (p := self.intent_patterns.get("disconnect")) and p.search(text):
+        if (p := self._get_intent_regex("disconnect")) and p.search(text):
             return "DISCONNECT"
-        if (p := self.intent_patterns.get("escalate")) and p.search(text):
+        if (p := self._get_intent_regex("escalate")) and p.search(text):
             return "ESCALATE"
+
+        # 1b. Fast-path for impatience (Hindi/English)
+        text_lower = text.lower().strip("?.! ")
+        if any(h in text_lower for h in ["jaldi", "fast", "fatafat", "hurry"]):
+            return "HURRY"
+
+        # Refinement: Reject conversational statements or logic keywords that aren't explicit requests to stop.
+        if text_lower in ("no", "never", "can't pay", "i don't have money", "give me money"):
+            return "CONTINUE"
 
         # 2. Heuristic check: short utterances are rarely global intents
         if len(text.split()) <= 4:
@@ -877,12 +1027,13 @@ class WorkflowEngine:
         try:
             prompt = PROMPT_TEMPLATES["global_intent"].format(text=text)
             response = await self._classifier_complete(
-                "You are a strict intent classifier. Reply only with: DISCONNECT, ESCALATE, or CONTINUE.",
+                "You are a strict intent classifier. Reply only with: DISCONNECT, ESCALATE, HURRY, or CONTINUE.",
                 prompt,
             )
             response = response.upper()
             if "DISCONNECT" in response: return "DISCONNECT"
             if "ESCALATE" in response: return "ESCALATE"
+            if "HURRY" in response: return "HURRY"
             return "CONTINUE"
         except Exception as e:
             logger.error("[WorkflowEngine] Global interceptor error: %s", e)
@@ -894,18 +1045,23 @@ class WorkflowEngine:
         
         # Fast path for very short turns
         if len(text_lower.split()) < 3:
+            # 1. Load affinities (Shared Defaults + Bot Overrides)
+            bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
+            affinities = {**DEFAULT_SEMANTIC_AFFINITIES, **(bot_cfg.get("semantic_affinities", {}))}
+            
             for opt in options:
-                if opt.lower() in text_lower:
+                opt_low = opt.lower()
+                # Direct match
+                if opt_low in text_lower:
                     return opt
+                # Affinity match
+                for aff_key, keywords in affinities.items():
+                    if aff_key in opt_low and any(k == text_lower for k in keywords):
+                        return opt
 
         ops_str = ", ".join([f'"{opt}"' for opt in options])
         try:
-            prompt = (
-                f"User said: \"{text}\"\n"
-                f"Available Intents: {ops_str}, \"NONE\"\n\n"
-                f"Rule: If the input matches an intent, output only the label. "
-                f"If the input is irrelevant, a greeting like 'hello', or completely unrelated to the options, output \"NONE\"."
-            )
+            prompt = PROMPT_TEMPLATES["logic_intent"].format(ops_str=ops_str, text=text)
             response = await self._classifier_complete(
                 "You are an intent classifier. Output exactly the label and nothing else.",
                 prompt,
@@ -921,7 +1077,7 @@ class WorkflowEngine:
     async def _handle_reprompt(self, last_input: str) -> None:
         """Informative clarification + Repeat the current question."""
         node = self.nodes.get(self.current_node_id, {})
-        base_speech = _node_speech(node)
+        base_speech = _get_effective_speech(self, node)
         
         # Use LLM to generate a smart clarification. 
         # If the user is asking a relevant question (e.g. "What is your bank name?"), 
@@ -949,13 +1105,15 @@ class WorkflowEngine:
             self._spoke = True
         except Exception as e:
             logger.error("[WorkflowEngine] Reprompt generation failed: %s", e)
-            await self.brain._generate_and_speak(f"I understand. To continue, {base_speech}")
+            # Give a proper reply and end call safely if we can't recover
+            await self.brain._generate_and_speak("I'm sorry, I seem to be having some technical issues. Let's talk again later. Goodbye.")
+            self.brain.request_voice_session_end("reprompt_error")
             self._spoke = True
 
     async def _classify_sentiment(self, text: str) -> str:
         """Detect base sentiment via dynamic patterns or cheap LLM."""
-        pos = self.intent_patterns.get("positive")
-        neg = self.intent_patterns.get("negative")
+        pos = self._get_intent_regex("positive")
+        neg = self._get_intent_regex("negative")
         
         if pos and pos.search(text) and (not neg or not neg.search(text)):
             return "positive"
@@ -1155,7 +1313,7 @@ class WorkflowEngine:
         if not text: return None
 
         # Stage 1: Dynamic Regex lookup
-        nav_p = self.intent_patterns.get("navigation")
+        nav_p = self._get_intent_regex("navigation")
         if nav_p and not nav_p.search(text):
             return None
 

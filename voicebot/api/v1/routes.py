@@ -293,13 +293,46 @@ async def create_session(
         if bot_lang:
             session_language = bot_lang
 
+    # Hydrate metadata if this user_id is a customer account
+    metadata = {}
+    if owner_user_id:
+        customer = await db.get_customer(owner_user_id)
+        if customer:
+            # Map database columns to standard metadata keys
+            metadata = {
+                # Display-friendly keys (for [Customer Name])
+                "Customer Name": customer.get("customer_name"),
+                "Account Number": customer.get("account_number"),
+                "Balance": customer.get("balance"),
+                "Account Type": customer.get("account_type"),
+                "Due Date": customer.get("emi_due_date") or customer.get("next_due"),
+                "EMI Amount": customer.get("emi_amount"),
+                # Database-style keys (for [customer_name] or pointers)
+                "customer_name": customer.get("customer_name"),
+                "account_number": customer.get("account_number"),
+                "balance": customer.get("balance"),
+                "account_type": customer.get("account_type"),
+                "emi_due_date": customer.get("emi_due_date"),
+                "next_due": customer.get("next_due"),
+                "emi_amount": customer.get("emi_amount"),
+            }
+            # Also include any custom metadata stored in the customer record
+            test_meta = customer.get("test_meta_data")
+            if test_meta:
+                 try:
+                     metadata.update(json.loads(test_meta))
+                 except:
+                     pass
+
     await db.create_session(
         session_id,
         bot_id=bot_id,
         user_id=owner_user_id,
         language=session_language,
+        metadata=metadata
     )
-    logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], owner_user_id, bot_id, transport)
+    logger.info("Created session %s for user %s (bot=%s, metadata_keys=%s) transport=%s", 
+                session_id[:8], owner_user_id, bot_id, list(metadata.keys()), transport)
 
     ws_url = f"/ws/voice/{session_id}"
     if bot_id:
