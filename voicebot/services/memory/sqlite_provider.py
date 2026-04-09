@@ -338,6 +338,7 @@ class SQLiteProvider:
                 email           TEXT,
                 balance         REAL NOT NULL DEFAULT 0.0,
                 account_type    TEXT DEFAULT 'savings',
+                test_meta_data  TEXT DEFAULT '{}',
                 is_active       INTEGER NOT NULL DEFAULT 1,
                 created_at      REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
@@ -358,6 +359,14 @@ class SQLiteProvider:
             CREATE INDEX IF NOT EXISTS idx_customers_account ON customer_accounts(account_number);
             CREATE INDEX IF NOT EXISTS idx_loans_account ON loans(account_number);
         """)
+        # Ensure test_meta_data exists in customer_accounts
+        existing_customer_cols = {row[1] for row in conn.execute("PRAGMA table_info(customer_accounts)").fetchall()}
+        if "test_meta_data" not in existing_customer_cols:
+            try:
+                conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            except sqlite3.OperationalError:
+                pass
+
         conn.commit()
 
         # 3b. Migrate legacy rows missing columns
@@ -447,6 +456,14 @@ class SQLiteProvider:
             ),
         )
         conn.commit()
+        
+        # Add test_meta_data for persistent simulator overrides if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         logger.info("Seeded default bot: %s (%s)", name, bot_id)
 
     def _hash_password_seed(self, password: str, *, iterations: int = 150_000) -> str:
@@ -1579,8 +1596,115 @@ class SQLiteProvider:
             )
             conn.commit()
         return await self._run(_do)
+    
+    async def get_customer_schema(self) -> list[dict]:
+        """Return the current columns and types of the customer_accounts table."""
+        def _do():
+            conn = self._get_conn()
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def add_customer_column(self, name: str, data_type: str = "TEXT") -> tuple[bool, str]:
+        """
+        Dynamically add a new column to the customer_accounts table.
+        Returns (success, message).
+        """
+        # 1. Auto-correction: Replace spaces/hyphens with underscores, lowercase everything
+        clean_name = name.strip().replace(" ", "_").replace("-", "_").lower()
+        
+        # 2. Strict Validation: Alphanumeric and underscores only
+        if not clean_name:
+            return False, "Column name cannot be empty"
+            
+        if not clean_name[0].isalpha() and clean_name[0] != "_":
+            return False, "Column name must start with a letter or underscore"
+            
+        if not all(c.isalnum() or c == "_" for c in clean_name):
+            return False, "Column name can only contain letters, numbers, and underscores"
+
+        # Valid SQLite types
+        valid_types = {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
+        clean_type = data_type.upper() if data_type.upper() in valid_types else "TEXT"
+        
+        def _do():
+            conn = self._get_conn()
+            try:
+                conn.execute(f"ALTER TABLE customer_accounts ADD COLUMN {clean_name} {clean_type}")
+                conn.commit()
+                return True, f"Column '{clean_name}' added successfully"
+            except sqlite3.OperationalError as e:
+                error_str = str(e).lower()
+                if "duplicate column name" in error_str:
+                    return False, f"Column '{clean_name}' already exists"
+                return False, f"Database error: {str(e)}"
+        return await self._run(_do)
+
+    async def list_customers_dynamic(self, limit: int = 200) -> list[dict]:
+        """Fetch all customer records with all columns dynamically."""
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute(f"SELECT * FROM customer_accounts ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def upsert_customer_dynamic(self, data: dict[str, Any]) -> str:
+        """Upsert a customer record using all provided keys as columns."""
+        if not data.get("account_number"):
+            raise ValueError("account_number is required for dynamic upsert")
+        
+        account_number = data["account_number"].upper().strip()
+        
+        def _do():
+            conn = self._get_conn()
+            # 1. Get current columns
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            columns = {r["name"] for r in cursor.fetchall()}
+            
+            # 2. Filter data for only valid columns
+            valid_data = {k: v for k, v in data.items() if k in columns}
+            valid_data["account_number"] = account_number
+            
+            keys = list(valid_data.keys())
+            placeholders = ", ".join(["?" for _ in keys])
+            cols_clause = ", ".join(keys)
+            
+            # 3. Handle conflict (Update everything except account_number)
+            update_clause = ", ".join([f"{k} = excluded.{k}" for k in keys if k != "account_number"])
+            
+            sql = f"""
+                INSERT INTO customer_accounts ({cols_clause})
+                VALUES ({placeholders})
+                ON CONFLICT(account_number) DO UPDATE SET
+                    {update_clause}
+            """
+            conn.execute(sql, list(valid_data.values()))
+            conn.commit()
+            return account_number
+        return await self._run(_do)
+
+    async def delete_customer(self, account_number: str) -> bool:
+        """Delete a customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("DELETE FROM customer_accounts WHERE account_number = ?", (account_number,))
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
 
     # ─── Cleanup ─────────────────────────────────────────────────────────────
+    async def update_customer_metadata(self, account_number: str, metadata: dict) -> bool:
+        """Update the test_meta_data JSON for a customer."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE customer_accounts SET test_meta_data = ? WHERE account_number = ?",
+                (json.dumps(metadata), account_number.upper().strip())
+            )
+            conn.commit()
+            return True
+        return await self._run(_do)
 
     async def close(self) -> None:
         """Close the connection pool."""

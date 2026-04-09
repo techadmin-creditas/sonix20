@@ -704,6 +704,62 @@ async def delete_session(session_id: str, request: Request):
     return {"status": "deleted", "session_id": session_id}
 
 
+# ─── Dynamic Test Customer Management ──────────────────────────────────────────
+@router.get("/test-customers/schema", tags=["testing"])
+async def get_test_customer_schema():
+    """Get the current structure of the customer_accounts table."""
+    db = await get_db()
+    schema = await db.get_customer_schema()
+    return {"columns": schema}
+
+@router.post("/test-customers/schema/columns", tags=["testing"])
+async def add_test_customer_column(data: dict):
+    """Dynamically add a new column to the test database."""
+    name = data.get("name")
+    data_type = data.get("type", "TEXT")
+    if not name:
+        raise HTTPException(status_code=422, detail="Column 'name' is required")
+    db = await get_db()
+    ok, message = await db.add_customer_column(name, data_type)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"status": "success", "column": name, "message": message}
+
+@router.get("/test-customers", tags=["testing"])
+async def list_test_customers():
+    """List all test customer accounts with their current data."""
+    db = await get_db()
+    customers = await db.list_customers_dynamic()
+    return {"customers": customers, "count": len(customers)}
+
+@router.post("/test-customers", tags=["testing"])
+async def upsert_test_customer(data: dict):
+    """Create or update a test customer record."""
+    if "account_number" not in data:
+         raise HTTPException(status_code=422, detail="account_number is required")
+    db = await get_db()
+    try:
+        account_number = await db.upsert_customer_dynamic(data)
+        return {"status": "success", "account_number": account_number}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/test-customers/{account_number}", tags=["testing"])
+async def delete_test_customer(account_number: str):
+    """Remove a test customer account."""
+    db = await get_db()
+    ok = await db.delete_customer(account_number)
+    return {"status": "deleted" if ok else "not_found"}
+
+
+@router.put("/test-customers/{account_number}/metadata", tags=["testing"])
+async def update_test_customer_metadata(account_number: str, data: dict):
+    """Update simulation overrides (test_meta_data) in the database."""
+    db = await get_db()
+    metadata = data.get("metadata", {})
+    await db.update_customer_metadata(account_number, metadata)
+    return {"status": "updated"}
+
 # ─── Workflow Endpoints ───────────────────────────────────────────────────────
 
 # Icon mapping: node type → icon name (matches mock structure)
@@ -785,11 +841,15 @@ async def test_workflow(data: dict):
     user_input = data.get("user_input", "")
     current_node_id = data.get("current_node_id")
     node_visit_counts = data.get("node_visit_counts", {})
+    metadata = data.get("metadata", {}) # Allow injecting test variables
 
     if current_node_id:
         workflow_data["start_node_id"] = current_node_id
 
     session = SessionState(session_id="test_simulator")
+    if metadata:
+        session.metadata.update(metadata) # Inject the test data
+        
     llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
 
     brain = AgenticBrain(

@@ -56,6 +56,8 @@ import {
   Copy,
   Check,
   RefreshCw,
+  Target,
+  ChevronDown,
   Plus
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -343,6 +345,9 @@ function WorkflowEditor() {
   const [simNode, setSimNode] = useState<string | undefined>();
   const [simHistory, setSimHistory] = useState<string[]>([]);
   const [simVisitCounts, setSimVisitCounts] = useState<Record<string, number>>({});
+  const [testCustomers, setTestCustomers] = useState<any[]>([]);
+  const [selectedTestUserId, setSelectedTestUserId] = useState<string>('');
+  const [simMetadata, setSimMetadata] = useState<any>({});
   const [simRunning, setSimRunning] = useState(false);
   const [expandedIntent, setExpandedIntent] = useState<string | null>(null);
   const [isJsonMode, setIsJsonMode] = useState(false);
@@ -533,13 +538,94 @@ function WorkflowEditor() {
     }
   };
 
-  const runSimulatorTurn = async (overrideText?: string, overrideNode?: string) => {
-    // ... Existing implementation
+  // --- Database Schema for Simulator Overrides ---
+  const [dbColumns, setDbColumns] = React.useState<string[]>([]);
+  const loadSchema = async () => {
+    try {
+      const resp = await api.request('GET', '/test-customers/schema');
+      if (resp?.columns) {
+        const names = resp.columns.map((c: any) => c.name);
+        setDbColumns(names);
+      }
+    } catch (err) {
+      console.error("Failed to load DB schema for simulator:", err);
+    }
+  };
+
+  React.useEffect(() => {
+    loadSchema();
+  }, []);
+
+  // --- Simulation Variable Overrides ---
+  const [showOverrides, setShowOverrides] = React.useState(false);
+  const [simOverrides, setSimOverrides] = React.useState<Record<string, string>>({});
+
+  // Reload overrides only when identity OR workflow changes (initial load)
+  React.useEffect(() => {
+    const user = testCustomers.find(c => c.account_number === selectedTestUserId);
+    if (user?.test_meta_data) {
+      try {
+        setSimOverrides(JSON.parse(user.test_meta_data));
+      } catch { setSimOverrides({}); }
+    } else {
+      setSimOverrides({});
+    }
+  }, [selectedTestUserId, testCustomers]);
+
+  // Persist changes to DB (debounced)
+  React.useEffect(() => {
+    if (!selectedTestUserId) return;
+    const timer = setTimeout(async () => {
+      try {
+        await api.request('PUT', `/test-customers/${selectedTestUserId}/metadata`, {
+          metadata: simOverrides
+        });
+      } catch (err) {
+        console.error("Failed to sync overrides to DB:", err);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [simOverrides, selectedTestUserId]);
+  const detectedGraphVars = React.useMemo(() => {
+    const vars = new Set<string>();
+    const scan = (val: any) => {
+      if (typeof val === 'string') {
+        const matches = val.match(/\[([^\[\]]+)\]/g) || [];
+        matches.forEach(m => {
+          const inner = m.slice(1, -1);
+          // If it looks like technical JSON (has quotes or commas), skip it
+          if (!inner.includes('"') && !inner.includes(',') && !inner.includes(':')) {
+            vars.add(m.trim());
+          }
+        });
+      } else if (Array.isArray(val)) {
+        // Skip technical arrays entirely to avoid capturing intents
+        return; 
+      } else if (val && typeof val === 'object') {
+        Object.keys(val).forEach(k => {
+          // Skip technical routing keys
+          if (['id', 'nodes', 'edges', 'options', 'transitions', 'type'].includes(k)) return;
+          scan(val[k]);
+        });
+      }
+    };
+    nodes.forEach(n => scan(n.data));
+    return Array.from(vars);
+  }, [nodes]);
+
+  const runSimulatorTurn = async (overrideText?: string, overrideNode?: string, overrideMetadata?: any) => {
     const isInitial = overrideText === "";
-    if (!isInitial && !simInput.trim()) return;
+    if (!isInitial && !simInput.trim() && overrideText === undefined) return;
     
-    const text = isInitial ? "" : simInput;
+    const text = isInitial ? "" : (overrideText || simInput);
     const currentNode = overrideNode !== undefined ? overrideNode : simNode;
+    
+    // Merge manual overrides into session metadata
+    const baseMetadata = overrideMetadata !== undefined ? overrideMetadata : simMetadata;
+    const currentMetadata = {
+      ...(baseMetadata || {}),
+      ...(simOverrides || {})
+    };
 
     if (!isInitial) {
       setSimInput('');
@@ -551,7 +637,8 @@ function WorkflowEditor() {
         { nodes, edges }, 
         text, 
         currentNode, 
-        simVisitCounts
+        simVisitCounts,
+        currentMetadata // Pass the resolved metadata
       );
 
       if (res.status === 'success') {
@@ -573,7 +660,7 @@ function WorkflowEditor() {
             role: 'bot', 
             text: r, 
             nodeLabel: nodeLabel,
-            intent: res.intent  // Pass intent here
+            intent: res.intent
         }));
         setSimChat(prev => [...prev, ...newMsgs]);
 
@@ -587,9 +674,10 @@ function WorkflowEditor() {
               setCenter(targetNode.position.x + 100, targetNode.position.y + 50, { zoom: 1.2, duration: 800 });
             }
         }
-      }
-      if (res.yield_to_llm) {
-        setSimChat(prev => [...prev, { role: 'system', text: '— YIELDED TO FREEFORM LLM —' }]);
+
+        if (res.yield_to_llm) {
+          setSimChat(prev => [...prev, { role: 'system', text: '— YIELDED TO FREEFORM LLM —' }]);
+        }
       }
     } catch (err) {
       console.error("Simulation failed:", err);
@@ -760,12 +848,25 @@ function WorkflowEditor() {
             <Code className="size-5" />
           </button>
           <button
-            onClick={() => { 
+            onClick={async () => { 
               setSimChat([]); 
               const firstNodeId = nodes[0]?.id;
               setSimNode(firstNodeId); 
               setSimOpen(true); 
-              setTimeout(() => runSimulatorTurn("", firstNodeId), 100);
+              
+              // Fetch and set default user but DO NOT START CALL
+              try {
+                const res = await api.request('GET', '/test-customers');
+                const users = res.customers || [];
+                setTestCustomers(users);
+                if (users.length > 0 && !selectedTestUserId) {
+                  const firstUser = users[0];
+                  setSelectedTestUserId(firstUser.account_number);
+                  setSimMetadata(firstUser);
+                }
+              } catch (err) {
+                console.error("Test user fetch failed:", err);
+              }
             }}
             className="px-6 py-2.5 rounded-xl font-headline font-bold text-sm flex items-center gap-2 bg-surface-high text-emerald-400 hover:bg-emerald-500/10 hover:shadow-[0_0_20px_rgba(52,211,153,0.15)] transition-all ghost-border"
           >
@@ -1356,6 +1457,118 @@ function WorkflowEditor() {
               </div>
               <button onClick={() => setSimOpen(false)} className="text-outline hover:text-on-surface"><X className="size-4" /></button>
             </div>
+            
+            {/* User Selection */}
+            <div className="p-4 bg-surface-high/30 border-b border-outline-variant/5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-outline mb-2 block">Test Identity</label>
+                <select 
+                  className="w-full bg-surface-highest border border-outline-variant/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all"
+                  value={selectedTestUserId}
+                  onMouseDown={async () => {
+                    const res = await api.request('GET', '/test-customers');
+                    setTestCustomers(res.customers || []);
+                  }}
+                  onChange={(e) => {
+                    const accNum = e.target.value;
+                    setSelectedTestUserId(accNum);
+                    
+                    const user = testCustomers.find(c => c.account_number === accNum);
+                    const metadata = user || {};
+                    const label = user ? user.customer_name : 'Guest';
+                    
+                    setSimMetadata(metadata);
+                    
+                    // Parse DB metadata into overrides
+                    if (user?.test_meta_data) {
+                      try {
+                        setSimOverrides(JSON.parse(user.test_meta_data));
+                      } catch { setSimOverrides({}); }
+                    } else {
+                      setSimOverrides({});
+                    }
+                    
+                    // Reset UI but don't start call automatically
+                    setSimChat([{ role: 'system', text: `Identity switched to ${label}. Click Start Call to begin.` }]);
+                    const firstNodeId = nodes[0]?.id;
+                    setSimNode(firstNodeId);
+                    setSimVisitCounts({});
+                    setSimHistory([]);
+                  }}
+                >
+                  <option value="">Guest (No Metadata)</option>
+                  {testCustomers.map((user) => (
+                    <option key={user.account_number} value={user.account_number}>
+                      {user.customer_name} ({user.account_number})
+                    </option>
+                  ))}
+                </select>
+                {selectedTestUserId && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                     {Object.entries(simMetadata).filter(([k]) => ['balance', 'principal', 'outstanding'].includes(k)).map(([k, v]) => (
+                        <div key={k} className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold">
+                           {k}: {String(v)}
+                        </div>
+                     ))}
+                  </div>
+                )}
+            </div>
+
+            {/* Simulation Overrides Accordion */}
+            {detectedGraphVars.length > 0 && (
+              <div className="mx-4 mb-4 rounded-2xl bg-surface-container/30 border border-outline-variant/10 overflow-hidden">
+                <button 
+                  onClick={() => setShowOverrides(!showOverrides)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-surface-container/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Target className="size-3.5 text-primary" />
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-outline">Simulation Overrides</h4>
+                  </div>
+                  <ChevronDown className={cn("size-3.5 text-outline transition-transform duration-300", showOverrides && "rotate-180")} />
+                </button>
+                
+                {showOverrides && (
+                  <div className="px-4 pb-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                    {detectedGraphVars.map(v => (
+                      <div key={v} className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-outline uppercase px-1">{v}</label>
+                        <input 
+                          list="sim-db-columns"
+                          className="bg-surface-highest border border-outline-variant/10 rounded-xl p-2.5 text-xs text-primary focus:border-primary/50 outline-none transition-all"
+                          placeholder={`Value or DB Key for ${v}...`}
+                          value={simOverrides[v] || ''}
+                          onChange={(e) => setSimOverrides(prev => ({ ...prev, [v]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
+                    <datalist id="sim-db-columns">
+                      {dbColumns.map(col => <option key={col} value={col} />)}
+                    </datalist>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Manual Controls */}
+            <div className="px-4 py-2 border-b border-outline-variant/5">
+                <button 
+                  onClick={() => {
+                    const firstNodeId = nodes[0]?.id;
+                    setSimNode(firstNodeId);
+                    setSimVisitCounts({});
+                    setSimHistory([]);
+                    setSimChat([{ role: 'system', text: '— INITIALIZING CALL —' }]);
+                    
+                    const finalMetadata = { ...(simMetadata || {}), ...(simOverrides || {}) };
+                    runSimulatorTurn("", firstNodeId, finalMetadata);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                >
+                  <Phone className={cn("size-3", simRunning && "animate-spin")} />
+                  Start Call
+                </button>
+            </div>
+
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {simChat.length === 0 && (
                 <div className="text-center text-xs text-outline py-8">

@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
   { icon: GitBranch, label: 'Workflows', path: '/workflows' },
+  { icon: Database, label: 'Test User Vault', path: '/test-users' },
   // { icon: Database, label: 'Knowledge Base', path: '/knowledge' },
   // { icon: BarChart3, label: 'Analytics', path: '/analytics' },
   // { icon: Settings, label: 'Settings', path: '/settings' },
