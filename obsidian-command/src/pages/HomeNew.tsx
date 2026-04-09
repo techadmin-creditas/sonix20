@@ -28,7 +28,7 @@ function Block({ children, className }: { children: React.ReactNode; className?:
   );
 }
 
-export default function Home() {
+export default function HomeNew() {
   const reduce = useReducedMotion();
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#08090c] text-zinc-100">
@@ -53,62 +53,62 @@ export default function Home() {
         <section className="pt-10 sm:pt-14">
           <div className="rounded-3xl border border-zinc-800 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 p-6 sm:p-8">
             <div className="grid gap-8 lg:grid-cols-[1fr_0.95fr] lg:items-center">
-            <Block>
-              <span className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
-                <Sparkles className="size-3.5 text-orange-400" />
-                Voice agents / prod
-              </span>
-              <h1 className="mt-5 font-headline text-4xl font-extrabold leading-[1.04] sm:text-6xl">
-                Voice agents
-                <br />
-                that think,
-                <br />
-                speak, and ship.
-              </h1>
-              <p className="mt-4 max-w-md text-sm text-zinc-400">
-                Next-gen voice core with autonomous reasoning for enterprise calls, support, and secure workflows.
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <Link to="/login" className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-black">
-                  Try the voice core
-                  <ArrowRight className="size-4" />
-                </Link>
-                <a href="#build" className="rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
-                  View all features
-                </a>
-              </div>
-            </Block>
+              <Block>
+                <span className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
+                  <Sparkles className="size-3.5 text-orange-400" />
+                  Voice agents / prod
+                </span>
+                <h1 className="mt-5 font-headline text-4xl font-extrabold leading-[1.04] sm:text-6xl">
+                  Voice agents
+                  <br />
+                  that think,
+                  <br />
+                  speak, and ship.
+                </h1>
+                <p className="mt-4 max-w-md text-sm text-zinc-400">
+                  Next-gen voice core with autonomous reasoning for enterprise calls, support, and secure workflows.
+                </p>
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Link to="/login" className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-black">
+                    Try the voice core
+                    <ArrowRight className="size-4" />
+                  </Link>
+                  <a href="#build" className="rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+                    View all features
+                  </a>
+                </div>
+              </Block>
 
-            <motion.div
-              className="rounded-2xl border border-zinc-700/60 bg-zinc-900 p-4"
-              initial={reduce ? false : { opacity: 0, scale: 0.96 }}
-              animate={reduce ? undefined : { opacity: 1, scale: 1 }}
-              transition={{ duration: 0.55 }}
-            >
-              <div className="rounded-xl border border-zinc-700/50 bg-gradient-to-b from-zinc-800 to-zinc-900 px-5 py-8">
-                <p className="text-right text-[10px] uppercase tracking-[0.2em] text-zinc-500">voice session preview</p>
-                <p className="mt-8 text-center text-xl text-zinc-200">“How can I help you today?”</p>
-                <div className="mt-8 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 flex-1 rounded-full bg-zinc-700">
-                      <motion.div
-                        className="h-full rounded-full bg-orange-500"
-                        animate={reduce ? undefined : { width: ['22%', '64%', '40%', '79%', '58%'] }}
-                        transition={reduce ? undefined : { duration: 4.5, repeat: Infinity }}
-                      />
+              <motion.div
+                className="rounded-2xl border border-zinc-700/60 bg-zinc-900 p-4"
+                initial={reduce ? false : { opacity: 0, scale: 0.96 }}
+                animate={reduce ? undefined : { opacity: 1, scale: 1 }}
+                transition={{ duration: 0.55 }}
+              >
+                <div className="rounded-xl border border-zinc-700/50 bg-gradient-to-b from-zinc-800 to-zinc-900 px-5 py-8">
+                  <p className="text-right text-[10px] uppercase tracking-[0.2em] text-zinc-500">voice session preview</p>
+                  <p className="mt-8 text-center text-xl text-zinc-200">“How can I help you today?”</p>
+                  <div className="mt-8 rounded-lg border border-zinc-700 bg-zinc-900 p-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 flex-1 rounded-full bg-zinc-700">
+                        <motion.div
+                          className="h-full rounded-full bg-orange-500"
+                          animate={reduce ? undefined : { width: ['22%', '64%', '40%', '79%', '58%'] }}
+                          transition={reduce ? undefined : { duration: 4.5, repeat: Infinity }}
+                        />
+                      </div>
+                      <Play className="size-3.5 text-orange-400" />
                     </div>
-                    <Play className="size-3.5 text-orange-400" />
                   </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
             </div>
           </div>
         </section>
 
         <section className="mt-10">
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950/80 p-6 sm:p-8">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Sonix capabilities</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Sonix capabilities</p>
             <h2 className="mt-3 max-w-xl font-headline text-3xl font-extrabold leading-tight">
               The intersection of intelligence and execution.
             </h2>

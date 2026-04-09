@@ -18,6 +18,8 @@ import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
+import HomeOld from './pages/HomeOld';
+import HomeNew from './pages/HomeNew';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -52,7 +54,8 @@ function App() {
     return (
       <Router>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<HomeOld />} />
+          <Route path="/home" element={<HomeNew />} />
           <Route
             path="/login"
             element={
@@ -84,6 +87,7 @@ function App() {
           <main className="flex-1 flex flex-col ">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/home" element={<HomeNew />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/sessions/live" element={<SessionControl />} />
