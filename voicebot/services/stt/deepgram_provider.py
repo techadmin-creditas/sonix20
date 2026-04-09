@@ -25,6 +25,21 @@ except ImportError:
     wap = None
 from typing import Any, Callable, Optional
 
+try:
+    import webrtc_audio_processing as wap  # type: ignore
+except ImportError:  # optional native dep (requires swig to build on some platforms)
+    wap = None  # type: ignore
+
+
+class _PassthroughAudioProcessing:
+    """No-op when webrtc_audio_processing is not installed."""
+
+    def set_ns_level(self, _level: int) -> None:
+        pass
+
+    def process_stream(self, chunk: bytes) -> bytes:
+        return chunk
+
 
 from voicebot.shared.config import get_settings
 from voicebot.shared.logging.logger import setup_logger

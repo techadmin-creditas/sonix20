@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { api, Workflow } from '../lib/api';
 import {
@@ -22,6 +22,8 @@ import {
   Smartphone,
   Bot,
   Trash2,
+  Sparkles,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -52,6 +54,14 @@ export default function Workflows() {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  
+  // AI Magic states
+  const [showMagicModal, setShowMagicModal] = useState(false);
+  const [magicPrompt, setMagicPrompt] = useState('');
+  const [magicLoading, setMagicLoading] = useState(false);
+  const [magicStage, setMagicStage] = useState<'idle' | 'strategizing' | 'architecting' | 'redirecting'>('idle');
+
+  const navigate = useNavigate();
 
   const handleDelete = async (id: string) => {
     setDeleteLoadingId(id);
@@ -83,6 +93,36 @@ export default function Workflows() {
     }
   }
 
+  const handleMagicGenerate = async () => {
+    if (!magicPrompt.trim()) return;
+    setMagicLoading(true);
+    setMagicStage('strategizing');
+    
+    try {
+      // Simulate strategic thinking (Pass 1)
+      await new Promise(r => setTimeout(r, 1500));
+      setMagicStage('architecting');
+      
+      const generated = await api.generateWorkflowFromPrompt(magicPrompt);
+      
+      // Auto-save the generated workflow
+      setMagicStage('redirecting');
+      const res = await api.saveWorkflow(generated);
+      
+      // Short delay for the 'success' feel
+      await new Promise(r => setTimeout(r, 800));
+      
+      // Navigate to editor
+      navigate(`/workflows/${res.id}/edit`);
+    } catch (err) {
+      alert("Magic generation failed. Please try a different prompt.");
+      setMagicStage('idle');
+    } finally {
+      setMagicLoading(false);
+      setShowMagicModal(false);
+    }
+  };
+
   const filtered = workflows.filter(wf =>
     wf.name.toLowerCase().includes(search.toLowerCase()) ||
     wf.description?.toLowerCase().includes(search.toLowerCase())
@@ -107,6 +147,14 @@ export default function Workflows() {
                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
                   />
                 </div>
+                <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowMagicModal(true)}
+                  className="px-6 py-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.15)] hover:bg-primary/20 active:scale-95 transition-all"
+                >
+                  <Sparkles className="size-5" />
+                  AI Magic
+                </button>
                 <Link
                   to="/workflows/create"
                   className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
@@ -114,6 +162,7 @@ export default function Workflows() {
                   <PlusCircle className="size-5" />
                   Create Workflow
                 </Link>
+                </div>
               </>
 
             )}
@@ -198,12 +247,85 @@ export default function Workflows() {
           </div>
         )}
       </div>
+
+      {/* AI Magic Modal */}
+      {showMagicModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={() => !magicLoading && setShowMagicModal(false)} />
+          <div className="relative z-20 w-full max-w-xl glass-panel rounded-4xl p-8 border-primary/30 shadow-[0_0_50px_rgba(251,140,0,0.2)] overflow-hidden">
+            {/* Background Glow */}
+            <div className="absolute -top-24 -right-24 size-64 bg-primary/20 blur-[100px] rounded-full" />
+            
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
+                  <Sparkles className="size-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">AI Workflow Architect</h2>
+                  <p className="text-xs text-outline font-medium tracking-wide uppercase">Prompt to Graph</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowMagicModal(false)}
+                className="relative z-50 p-2 hover:bg-white/5 rounded-full transition-all cursor-pointer"
+                disabled={magicLoading}
+                aria-label="Close modal"
+              >
+                <X className="size-6" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-outline uppercase tracking-widest px-1">What should this workflow do?</label>
+                <textarea
+                  className="w-full h-40 bg-surface-low border border-outline-variant/10 rounded-2xl p-4 text-sm font-medium focus:ring-1 focus:ring-primary/50 transition-all resize-none"
+                  placeholder="e.g. Create a healthcare appointment reminder flow that handles rescheduling if the user is busy, and sends a confirmation link if they agree..."
+                  value={magicPrompt}
+                  onChange={(e) => setMagicPrompt(e.target.value)}
+                  disabled={magicLoading}
+                />
+              </div>
+
+              <button
+                onClick={handleMagicGenerate}
+                disabled={magicLoading || !magicPrompt.trim()}
+                className="w-full py-4 rounded-2xl ember-gradient text-on-primary-fixed font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/25 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+              >
+                {magicLoading ? (
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="size-5 animate-spin" />
+                    <span className="animate-pulse">
+                      {magicStage === 'strategizing' && 'Analyzing Blueprint...'}
+                      {magicStage === 'architecting' && 'Building Advanced Graph...'}
+                      {magicStage === 'redirecting' && 'Magic Ready! Redirecting...'}
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <Sparkles className="size-5" />
+                    <span>Generate Magic Workflow</span>
+                  </>
+                )}
+              </button>
+              
+              {!magicLoading && (
+                <p className="text-[10px] text-center text-outline font-medium uppercase tracking-tighter">
+                  Pro tip: Be specific about edge cases like "if user says no"
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 interface WorkflowCardProps {
-  flow: Workflow;
+  key?: React.Key;
+  flow: any; 
   view: 'grid' | 'list';
   isConfirming: boolean;
   isDeleting: boolean;
@@ -220,6 +342,8 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
 
   // Derive a status label from the workflow data
   const isActive = flow.is_active;
+  const isPersistent = (flow.nodes ?? []).some((n: any) => (n.data?.retry_limit ?? 0) > 0);
+
   const updatedAt = flow.updated_at
     ? new Date(flow.updated_at * 1000).toLocaleDateString()
     : flow.created_at
@@ -253,6 +377,12 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
           )}>
             {isActive ? 'Active' : 'Inactive'}
           </span>
+          {isPersistent && (
+            <span className="px-3 py-1 bg-amber-500/10 text-amber-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 shrink-0">
+                <RotateCcw className="size-3" />
+                Goal Persistence
+            </span>
+          )}
           {isConfirming ? (
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
               <span className="text-xs font-bold text-red-400">Delete?</span>
@@ -287,12 +417,20 @@ function WorkflowCard({ flow, view, isConfirming, isDeleting, onDeleteRequest, o
           <GitBranch className="size-8" />
         </div>
         <div className="flex flex-col items-end">
-          <span className={cn(
-            "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
-            isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-surface-highest text-outline"
-          )}>
-            {isActive ? 'Active' : 'Draft'}
-          </span>
+          <div className="flex flex-wrap gap-2 mb-4 justify-end">
+            <span className={cn(
+              "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
+              isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-surface-highest text-outline"
+            )}>
+              {isActive ? 'Active' : 'Inactive'}
+            </span>
+            {isPersistent && (
+              <span className="px-3 py-1 bg-amber-500/10 text-amber-500 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                  <RotateCcw className="size-3" />
+                  Goal Persistence
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1 mt-2 text-outline">
             <Clock className="size-3" />
             <span className="text-[10px] font-bold uppercase tracking-tighter">{updatedAt}</span>

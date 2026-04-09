@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { SESSIONS } from '../constants';
 import { cn } from '../lib/utils';
 import {
   Search, Filter, Download, MoreVertical,
@@ -194,6 +193,11 @@ export default function Sessions() {
                     {!session.ended_at ? 'Active' : 'Ended'}
                   </span>
                   <p className="text-sm font-medium">{session.metadata?.intent || 'Voice Session'}</p>
+                  {(session.metadata?.recording_url || session.metadata?.recording_path) && (
+                    <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full w-fit bg-primary/10 text-primary">
+                      Recording
+                    </span>
+                  )}
                 </div>
 
                 {/* Stats */}

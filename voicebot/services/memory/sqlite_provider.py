@@ -360,18 +360,21 @@ class SQLiteProvider:
         """)
         conn.commit()
 
-        # 3b. Migrate legacy workflows rows missing columns (table exists from CREATE above)
-        existing_workflow_cols = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
-        if "is_active" not in existing_workflow_cols:
+        # 3b. Migrate legacy rows missing columns
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
+        if "is_active" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
-        if "updated_at" not in existing_workflow_cols:
+        if "updated_at" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
             conn.execute("UPDATE workflows SET updated_at = created_at WHERE updated_at = 0")
-        if "owner_user_id" not in existing_workflow_cols:
+        if "owner_user_id" not in existing_cols:
             conn.execute("ALTER TABLE workflows ADD COLUMN owner_user_id TEXT REFERENCES users(id)")
         existing_kb_cols = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_base)").fetchall()}
         if "owner_user_id" not in existing_kb_cols:
             conn.execute("ALTER TABLE knowledge_base ADD COLUMN owner_user_id TEXT REFERENCES users(id)")
+        if "source" not in existing_kb_cols:
+            conn.execute("ALTER TABLE knowledge_base ADD COLUMN source TEXT")
+            logger.info("KB Migration: Added 'source' column for filename-based filtering.")
         conn.commit()
 
         admin_id = self._seed_default_admin()
@@ -791,9 +794,60 @@ class SQLiteProvider:
             if row:
                 res = dict(row)
                 res["metadata"] = json.loads(res["metadata"]) if res["metadata"] else {}
+                mrow = conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS n,
+                        AVG(json_extract(arguments, '$.stt_ms')) AS avg_stt,
+                        AVG(json_extract(arguments, '$.llm_ms')) AS avg_llm,
+                        AVG(json_extract(arguments, '$.tts_ms')) AS avg_tts,
+                        AVG(json_extract(arguments, '$.total_ms')) AS avg_total,
+                        AVG(json_extract(arguments, '$.first_audio_ms')) AS avg_first_audio
+                    FROM tool_logs
+                    WHERE session_id = ? AND tool_name = '__metrics__'
+                    """,
+                    (session_id,),
+                ).fetchone()
+                n = int(mrow["n"] or 0) if mrow else 0
+                metrics_patch: dict = {"metrics_turn_count": n}
+                if n > 0:
+                    metrics_patch.update(
+                        {
+                            "avg_stt_ms": round(mrow["avg_stt"] or 0, 1),
+                            "avg_llm_ms": round(mrow["avg_llm"] or 0, 1),
+                            "avg_tts_ms": round(mrow["avg_tts"] or 0, 1),
+                            "avg_total_ms": round(mrow["avg_total"] or 0, 1),
+                            "avg_first_audio_ms": round(
+                                mrow["avg_first_audio"] or 0, 1
+                            ),
+                        }
+                    )
+                res["metadata"] = {**res["metadata"], **metrics_patch}
                 return res
             return None
         return await self._run(_do)
+
+    async def merge_session_metadata(self, session_id: str, patch: dict) -> None:
+        """Merge ``patch`` into sessions.metadata JSON without changing ended_at / turn_count."""
+        if not patch:
+            return
+
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not row:
+                return
+            existing_meta = json.loads(row[0]) if row[0] else {}
+            existing_meta.update(patch)
+            conn.execute(
+                "UPDATE sessions SET metadata = ? WHERE id = ?",
+                (json.dumps(existing_meta), session_id),
+            )
+            conn.commit()
+
+        await self._run(_do)
 
     async def close_session(self, session_id: str, turn_count: int = 0, metadata: dict = None) -> None:
         """Mark session as ended and optionally append metadata (like generic summaries)."""
@@ -922,6 +976,42 @@ class SQLiteProvider:
         await self._run(_do)
         logger.info("User fact saved: %s", fact[:60])
 
+    async def replace_session_extracted_facts(
+        self,
+        session_id: str,
+        user_id: Optional[str],
+        rows: list[tuple[str, str]],
+    ) -> None:
+        """
+        Remove prior LLM-extracted entities for this session (category ``session_extracted.%``)
+        and insert fresh rows. Does not delete facts from ``remember_user_fact`` (other categories).
+        """
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                """
+                DELETE FROM user_facts
+                WHERE session_id = ? AND category LIKE 'session_extracted.%'
+                """,
+                (session_id,),
+            )
+            for fact, category in rows:
+                conn.execute(
+                    """
+                    INSERT INTO user_facts (session_id, user_id, fact, category)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (session_id, user_id, fact, category),
+                )
+            conn.commit()
+
+        await self._run(_do)
+        logger.debug(
+            "Session extracted facts replaced: session=%s count=%d",
+            session_id[:8],
+            len(rows),
+        )
+
     async def get_user_facts(self, user_id: Optional[str] = None, session_id: Optional[str] = None) -> list[dict]:
         """Get stored facts about a user."""
         def _do():
@@ -1004,7 +1094,7 @@ class SQLiteProvider:
         """
         Full-text search in the knowledge base.
         Searches across topic, question, answer, and keywords.
-        Optional data_access: max_kb_hits/max_rows, knowledge_topic_allowlist.
+        Optional data_access: max_kb_hits, knowledge_topic_allowlist, knowledge_source_allowlist.
         """
         da = data_access or {}
         try:
@@ -1012,51 +1102,68 @@ class SQLiteProvider:
             limit = max(1, min(limit, cap))
         except (TypeError, ValueError):
             pass
+            
         topic_allow = da.get("knowledge_topic_allowlist")
         if isinstance(topic_allow, list) and topic_allow:
             topic_allow = [str(t) for t in topic_allow if t]
         else:
             topic_allow = None
 
+        source_allow = da.get("knowledge_source_allowlist")
+        if isinstance(source_allow, list) and source_allow:
+            source_allow = [str(s) for s in source_allow if s]
+        else:
+            source_allow = None
+
         def _do():
             conn = self._get_conn()
             q = f"%{query.lower()}%"
+            
+            # Base conditions
+            conditions = ["(lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)"]
+            params = [q, q, q, q]
+            
+            # Bot ID grouping
             if bot_id:
-                if topic_allow:
-                    ph = ",".join("?" * len(topic_allow))
-                    rows = conn.execute(f"""
-                        SELECT topic, question, answer, priority FROM knowledge_base
-                        WHERE (bot_id = ? OR bot_id IS NULL)
-                        AND topic IN ({ph})
-                        AND (lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)
-                        ORDER BY priority DESC, id LIMIT ?
-                    """, (bot_id, *topic_allow, q, q, q, q, limit)).fetchall()
-                else:
-                    rows = conn.execute("""
-                        SELECT topic, question, answer, priority FROM knowledge_base
-                        WHERE (bot_id = ? OR bot_id IS NULL)
-                        AND (lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?)
-                        ORDER BY priority DESC, id LIMIT ?
-                    """, (bot_id, q, q, q, q, limit)).fetchall()
-            else:
-                rows = conn.execute("""
-                    SELECT topic, question, answer, priority FROM knowledge_base
-                    WHERE lower(topic) LIKE ? OR lower(question) LIKE ? OR lower(answer) LIKE ? OR lower(keywords) LIKE ?
-                    ORDER BY priority DESC, id LIMIT ?
-                """, (q, q, q, q, limit)).fetchall()
+                conditions.append("(bot_id = ? OR bot_id IS NULL)")
+                params.append(bot_id)
+            
+            # Topic Filter
+            if topic_allow:
+                ph = ",".join("?" * len(topic_allow))
+                conditions.append(f"topic IN ({ph})")
+                params.extend(topic_allow)
+                
+            # Source (Filename) Filter
+            if source_allow:
+                ph = ",".join("?" * len(source_allow))
+                conditions.append(f"source IN ({ph})")
+                params.extend(source_allow)
+                
+            where_clause = " AND ".join(conditions)
+            sql = f"""
+                SELECT topic, source, question, answer, priority 
+                FROM knowledge_base
+                WHERE {where_clause}
+                ORDER BY priority DESC, id LIMIT ?
+            """
+            params.append(limit)
+            
+            rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
+            
         return await self._run(_do)
 
     async def add_knowledge(self, topic: str, question: str, answer: str,
                              keywords: Optional[list] = None, bot_id: Optional[str] = None,
-                             priority: int = 0, owner_user_id: Optional[str] = None) -> None:
+                             priority: int = 0, owner_user_id: Optional[str] = None,source: Optional[str] = None) -> None:
         """Add a knowledge base entry."""
         def _do():
             conn = self._get_conn()
             conn.execute("""
-                INSERT INTO knowledge_base (bot_id, owner_user_id, topic, question, answer, keywords, priority)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, owner_user_id, topic, question, answer, json.dumps(keywords or []), priority))
+                INSERT INTO knowledge_base (bot_id, owner_user_id, topic,source, question, answer, keywords, priority)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, owner_user_id, topic,source, question, answer, json.dumps(keywords or []), priority))
             conn.commit()
         await self._run(_do)
 
