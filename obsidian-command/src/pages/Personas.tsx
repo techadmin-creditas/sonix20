@@ -20,12 +20,13 @@ import {
   Landmark,
   Trash2,
   GitBranch,
+  Copy,
 } from 'lucide-react';
 
 export default function Personas() {
   const [personas, setPersonas] = React.useState<Bot[]>([]);
-  const [botStats, setBotStats] = React.useState<Record<string, { sessions: number; completion: number }>>({});
-  const [loading, setLoading] = React.useState(true);
+  const [botStats, setBotStats] = React.useState<Record<string, { sessions: number; completion: number; dropoff: number; avgDuration: number }>>({});
+  const [botStatsLoading, setBotStatsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
@@ -58,27 +59,32 @@ export default function Personas() {
         ]);
         setPersonas(data);
 
-        const stats = sessions.reduce<Record<string, { sessions: number; completed: number }>>((acc, s) => {
+        const stats = sessions.reduce<Record<string, { sessions: number; completed: number; totalDuration: number }>>((acc, s) => {
           const botId = s.bot_id;
           if (!botId) return acc;
-          if (!acc[botId]) acc[botId] = { sessions: 0, completed: 0 };
+          if (!acc[botId]) acc[botId] = { sessions: 0, completed: 0, totalDuration: 0 };
           acc[botId].sessions += 1;
-          if (s.ended_at !== null) acc[botId].completed += 1;
+          if (s.ended_at !== null) {
+            acc[botId].completed += 1;
+            acc[botId].totalDuration += (s.ended_at - s.started_at);
+          }
           return acc;
         }, {});
 
-        const normalized: Record<string, { sessions: number; completion: number }> = {};
+        const normalized: Record<string, { sessions: number; completion: number; dropoff: number; avgDuration: number }> = {};
         for (const [botId, v] of Object.entries(stats)) {
           normalized[botId] = {
             sessions: v.sessions,
             completion: v.sessions > 0 ? (v.completed / v.sessions) * 100 : 0,
+            dropoff: v.sessions > 0 ? ((v.sessions - v.completed) / v.sessions) * 100 : 0,
+            avgDuration: v.completed > 0 ? (v.totalDuration / v.completed) : 0,
           };
         }
         setBotStats(normalized);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
-        setLoading(false);
+        setBotStatsLoading(false);
       }
     }
     loadBots();
@@ -118,7 +124,7 @@ export default function Personas() {
       />
 
       <div className="p-10 flex flex-col gap-10">
-        {loading && (
+        {botStatsLoading && (
           <div className="flex-1 flex flex-col items-center justify-center py-20">
             <Loader2 className="size-12 text-primary animate-spin" />
             <p className="text-outline mt-4 font-bold uppercase tracking-widest text-xs">Initializing Neural Links...</p>
@@ -140,7 +146,7 @@ export default function Personas() {
         )}
 
 
-        {!loading && !error && filteredPersonas.length === 0 && (
+        {!botStatsLoading && !error && filteredPersonas.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 gap-6">
             <div className="size-20 rounded-3xl bg-surface-high flex items-center justify-center text-outline">
               <BotIcon type="memory" />
@@ -170,7 +176,7 @@ export default function Personas() {
 
 
 
-        {!loading && !error && (
+        {!botStatsLoading && !error && (
           <>
             <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {/* {filteredPersonas.length === 0 && !loading && (
@@ -195,10 +201,10 @@ export default function Personas() {
                       )}>
                         {persona.is_active ? 'Active' : 'Inactive'}
                       </span>
-                      <div className="flex items-center gap-1 mt-2 text-primary">
+                      {/* <div className="flex items-center gap-1 mt-2 text-primary">
                         <Star className="size-3 fill-current" />
                         <span className="text-xs font-bold">4.8</span>
-                      </div>
+                      </div> */}
                     </div>
                   </div>
 
@@ -206,16 +212,34 @@ export default function Personas() {
                     <h3 className="text-2xl font-headline font-extrabold text-on-surface">{persona.name}</h3>
                     <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
                     <p className="text-sm text-outline mt-4 leading-relaxed line-clamp-2">{persona.description}</p>
+                    <div className="flex items-center gap-1.5 mt-3 opacity-60">
+                      <Calendar className="size-3 text-outline" />
+                      <span className="text-[10px] font-bold text-outline uppercase tracking-tight">
+                        {new Date(persona.created_at * 1000).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          dateStyle: 'medium',
+                          timeStyle: 'short'
+                        })}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 py-3 border-y border-outline-variant/10">
+                  <div className="grid grid-cols-2 gap-4 py-5 border-y border-outline-variant/10">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
                       <span className="text-lg font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
-                      <span className="text-lg font-bold">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
+                      <span className="text-lg font-bold text-emerald-500">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Drop-off Rate</span>
+                      <span className="text-lg font-bold text-red-400">{`${Math.round(botStats[persona.id]?.dropoff ?? 0)}%`}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Avg Duration</span>
+                      <span className="text-lg font-bold">{Math.round(botStats[persona.id]?.avgDuration ?? 0)}s</span>
                     </div>
                   </div>
 
@@ -251,14 +275,18 @@ export default function Personas() {
                     ) : (
                       <>
                         <Link
-                          to={`/personas/${persona.id}/config/debug`}
+                          to={`/personas/${persona.id}/config`}
                           className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
                         >
                           Configure
                         </Link>
-                        {/* <button className="px-4 py-3 rounded-xl bg-surface-high text-on-surface hover:bg-surface-highest transition-all border border-outline-variant/10">
-                          <Settings2 className="size-5" />
-                        </button> */}
+                        <Link
+                          to={`/personas/create?clone=${persona.id}`}
+                          className="px-4 py-3 rounded-xl bg-surface-high text-on-surface hover:bg-surface-highest transition-all border border-outline-variant/10"
+                          title="Clone bot"
+                        >
+                          <Copy className="size-5" />
+                        </Link>
                         <button
                           onClick={() => setDeletingId(persona.id)}
                           className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"

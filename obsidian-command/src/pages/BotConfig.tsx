@@ -34,6 +34,8 @@ import {
   CheckCircle,
   XCircle,
   Mic,
+  Wand2,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, Bot, GuardrailMetadata, SandboxStageResult } from '../lib/api';
@@ -199,7 +201,9 @@ function SectionAccordion({
 export default function BotConfig() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const isCreateMode = !id;
+  const query = new URLSearchParams(window.location.search);
+  const cloneId = query.get('clone');
+  const isCreateMode = !id || !!cloneId;
   const isDebug = window.location.pathname.endsWith('/debug');
 
   React.useMemo(() => {
@@ -248,6 +252,41 @@ export default function BotConfig() {
     conversation: '{}',
     agent_task_spec: '{}',
   });
+
+  const [suggestingPrompt, setSuggestingPrompt] = React.useState(false);
+  const [aiAnalysis, setAiAnalysis] = React.useState<string | null>(null);
+  const [aiRevisedPrompt, setAiRevisedPrompt] = React.useState<string | null>(null);
+  const [aiProvider, setAiProvider] = React.useState<string | null>(null);
+
+  const handleAISuggestion = async () => {
+    setSuggestingPrompt(true);
+    setAiAnalysis(null);
+    setAiRevisedPrompt(null);
+    setAiProvider(null);
+    try {
+      const result = await api.suggestSystemPrompt(
+        formData.name || 'AI Assistant',
+        formData.role || 'General Purpose Assistant',
+        formData.persona,
+        formData.system_prompt
+      );
+
+      if (result.suggested_prompt) {
+        // Generation mode (was empty)
+        setFormData(prev => ({ ...prev, system_prompt: result.suggested_prompt }));
+        setAiProvider(result.provider || null);
+      } else if (result.revised_prompt) {
+        // Refinement mode
+        setAiAnalysis(result.analysis || 'Analysis complete.');
+        setAiRevisedPrompt(result.revised_prompt);
+        setAiProvider(result.provider || null);
+      }
+    } catch (err) {
+      console.error('Failed to suggest prompt:', err);
+    } finally {
+      setSuggestingPrompt(false);
+    }
+  };
 
   // Sandbox panel state
   const [sandboxOpen, setSandboxOpen] = React.useState(false);
@@ -388,8 +427,9 @@ export default function BotConfig() {
         setVoices(voicesData);
         setWorkflows(workflowData);
 
-        if (!isCreateMode && id) {
-          const botData = await api.getBot(id);
+        const effectiveId = id || cloneId;
+        if (effectiveId) {
+          const botData = await api.getBot(effectiveId);
 
           // Auto-sync provider with voice engine if they mismatch in DB
           let tts_provider = botData.tts_provider;
@@ -402,6 +442,7 @@ export default function BotConfig() {
 
           setFormData({
             ...botData,
+            name: cloneId ? `${botData.name}_1` : botData.name,
             tts_provider,
             pipeline_mode: botData.pipeline_mode || 'classic',
             guardrails: botData.guardrail_policy?.negative_constraints || '',
@@ -535,9 +576,8 @@ console.log("workflowVars",workflowVars)
   }, [formData.system_prompt, formData.greeting, formData.persona, formData.description, formData.proactive_prompts, workflowVars]);
 
   const handleSave = async () => {
-    // 1. Basic Field Validation
-    if ((!formData.name || !formData.system_prompt)) {
-      alert('Name and System Instructions are required');
+    if (isCreateMode && (!formData.name || !formData.system_prompt)) {
+      alert('Name and System Promt are required');
       return;
     }
 
@@ -708,7 +748,28 @@ console.log("workflowVars",workflowVars)
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">System Prompt</label>
+              <div className="flex items-center justify-between px-1">
+                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">System Prompt</label>
+                <button
+                  type="button"
+                  onClick={handleAISuggestion}
+                  disabled={suggestingPrompt}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-all text-[10px] font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                  {suggestingPrompt ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Wand2 className="size-3 group-hover:scale-110 transition-transform" />
+                  )}
+                  {suggestingPrompt ? 'Generating...' : 'AI Suggestion'}
+                </button>
+              </div>
+              {aiProvider && !aiAnalysis && (
+                <div className="px-1 -mt-1 mb-2 flex items-center gap-1.5 opacity-60">
+                  <Sparkles className="size-2.5 text-primary" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">Generated by {aiProvider}</span>
+                </div>
+              )}
               <div className="relative">
                 <textarea
                   className="w-full h-80 bg-surface-container-highest border border-outline-variant/10 font-mono text-sm leading-relaxed p-6 rounded-2xl resize-none text-primary/90 focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
@@ -718,6 +779,70 @@ console.log("workflowVars",workflowVars)
                 />
                 <div className="absolute top-4 right-4 text-[10px] font-mono text-on-surface-variant/40 uppercase tracking-widest">Neural Logic Matrix</div>
               </div>
+
+              {aiAnalysis && (
+                <div className="mt-4 p-6 rounded-2xl bg-primary/5 border border-primary/20 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <BrainCircuit className="size-4 text-primary" />
+                      <h4 className="text-xs font-bold uppercase tracking-widest text-primary">AI Optimization Analysis</h4>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {aiProvider && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20">
+                          <Sparkles className="size-2.5 text-primary" />
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-primary">Powered by {aiProvider}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAiAnalysis(null);
+                          setAiProvider(null);
+                        }}
+                        className="text-on-surface-variant hover:text-on-surface transition-colors"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-sm text-on-surface-variant leading-relaxed mb-6 whitespace-pre-wrap">
+                    {aiAnalysis}
+                  </div>
+                  <div className="relative">
+                    <div className="absolute -top-3 left-4 px-2 bg-background-surface text-[10px] font-bold text-primary uppercase tracking-widest">Suggested Revision</div>
+                    <div className="w-full p-4 rounded-xl bg-surface-container-high border border-outline-variant/10 font-mono text-xs leading-relaxed text-on-surface-variant max-h-40 overflow-y-auto mb-4">
+                      {aiRevisedPrompt}
+                    </div>
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={handleAISuggestion}
+                        disabled={suggestingPrompt}
+                        className="flex-1 py-3 rounded-xl bg-surface-container-highest text-on-surface font-bold text-sm hover:bg-surface-container-low transition-all flex items-center justify-center gap-2 border border-outline-variant/20 group"
+                      >
+                        <RefreshCw className={cn("size-4 text-primary group-hover:rotate-180 transition-transform duration-500", suggestingPrompt && "animate-spin")} />
+                        Re-suggest
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (aiRevisedPrompt) {
+                            setFormData(prev => ({ ...prev, system_prompt: aiRevisedPrompt }));
+                            setAiAnalysis(null);
+                            setAiRevisedPrompt(null);
+                            setAiProvider(null);
+                          }
+                        }}
+                        className="flex-[2] py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                      >
+                        <CheckCircle2 className="size-4" />
+                        Apply AI Improvements
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">

@@ -1518,6 +1518,27 @@ async def suggest_bot_rules(bot_id: str):
         "library_rules": [r.dict() for r in library]
     }
 
+@router.post("/bots/suggest-prompt", tags=["bots"])
+async def suggest_bot_prompt(data: dict):
+    """Generate a high-quality system prompt based on bot identity and role."""
+    name = str(data.get("name") or "").strip()
+    role = str(data.get("role") or "").strip()
+    persona = str(data.get("persona") or "").strip()
+    
+    if not name or not role:
+        raise HTTPException(status_code=422, detail="'name' and 'role' are required for suggestion")
+    
+    from voicebot.core.guardrails.prompt_suggestor import SystemPromptSuggestor
+    suggestor = SystemPromptSuggestor()
+    suggested = await suggestor.suggest_prompt(
+        name=name, 
+        role=role, 
+        persona=persona, 
+        current_prompt=data.get("current_prompt")
+    )
+    
+    return suggested
+
 
 @router.get("/scopes", tags=["bots"])
 async def list_scopes():
