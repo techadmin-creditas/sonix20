@@ -8,7 +8,7 @@ import {
   ArrowLeft, Play, Pause, Download,
   MessageSquare, BarChart3, FileText, Lightbulb,
   Clock, Timer, Zap, ShieldCheck, Cpu,
-  User, Bot, Calendar, Smile, Loader2, Tags, Languages
+  User, Bot, Calendar, Smile, Loader2, Tags, Languages, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -214,6 +214,7 @@ export default function SessionDetail() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [originalTranscript, setOriginalTranscript] = useState<any[]>([]);
   const [translationCache, setTranslationCache] = useState<Record<string, any[]>>({});
+  const abortControllerRef = useRef<AbortController | null>(null);
   const routeSessionIdRef = useRef<string | undefined>(undefined);
   routeSessionIdRef.current = id;
 
@@ -431,6 +432,12 @@ export default function SessionDetail() {
     }
 
     if (!id) return;
+
+    // Abort existing if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     const cached = translationCache[langName];
     if (cached) {
       setTargetLanguage(langName);
@@ -440,8 +447,11 @@ export default function SessionDetail() {
 
     setTargetLanguage(langName);
     setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const translatedRaw = await api.translateSession(id, langName);
+      const translatedRaw = await api.translateSession(id, langName, controller.signal);
       let translatedTexts: string[] = [];
 
       try {
@@ -466,11 +476,27 @@ export default function SessionDetail() {
         setTranslationCache(prev => ({ ...prev, [langName]: newTranscript }));
         setSession((prev: any) => ({ ...prev, transcript: newTranscript }));
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
       console.error(e);
       alert('Translation failed.');
     } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
       setIsTranslating(false);
+      setTargetLanguage('');
     }
   };
 
@@ -695,17 +721,28 @@ export default function SessionDetail() {
                         )}
                         <span className="text-[10px] font-bold uppercase tracking-wider text-outline">Transcript Translation</span>
                       </div>
-                      <select
-                        value={targetLanguage}
-                        onChange={(e) => handleTranslate(e.target.value)}
-                        disabled={isTranslating}
-                        className="bg-surface-low border-none text-[10px] font-bold py-1 px-3 rounded-lg outline-none focus:ring-1 focus:ring-primary transition-all cursor-pointer"
-                      >
-                        <option value="">Original Language</option>
-                        {SUPPORTED_LANGUAGES.map(l => (
-                          <option key={l.code} value={l.name}>{l.name}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={targetLanguage}
+                          onChange={(e) => handleTranslate(e.target.value)}
+                          disabled={isTranslating}
+                          className="bg-surface-low border-none text-[10px] font-bold py-1 px-3 rounded-lg outline-none focus:ring-1 focus:ring-primary transition-all cursor-pointer"
+                        >
+                          <option value="">Original Language</option>
+                          {SUPPORTED_LANGUAGES.map(l => (
+                            <option key={l.code} value={l.name}>{l.name}</option>
+                          ))}
+                        </select>
+                        {isTranslating && (
+                          <button
+                            onClick={cancelTranslate}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                          >
+                            <X className="size-3" />
+                            Cancel
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 

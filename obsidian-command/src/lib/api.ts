@@ -557,10 +557,11 @@ export const api = {
     return res.json();
   },
 
-  async translateSession(sessionId: string, targetLang: string): Promise<string> {
+  async translateSession(sessionId: string, targetLang: string, signal?: AbortSignal): Promise<string> {
     const response = await fetch(`${BASE_URL}/sessions/${sessionId}/translate?target_lang=${encodeURIComponent(targetLang)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal,
     });
     const data = await response.json();
     return data.translated_text || '';

@@ -20,7 +20,7 @@ import {
   UserCircle2,
   Tags,
   Brain,
-  Languages
+  Languages,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -94,6 +94,7 @@ export default function SessionControl() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [originalTranscripts, setOriginalTranscripts] = useState<TranscriptEntry[]>([]);
   const [translationCache, setTranslationCache] = useState<Record<string, TranscriptEntry[]>>({});
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const transcriptRef = React.useRef<HTMLDivElement>(null);
   const logRef = React.useRef<HTMLDivElement>(null);
@@ -417,6 +418,10 @@ export default function SessionControl() {
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
     const cached = translationCache[langName];
     // Only use cache if the length matches (live session transcripts might have grown)
     if (cached && cached.length === transcripts.length) {
@@ -427,13 +432,16 @@ export default function SessionControl() {
 
     setTargetLanguage(langName);
     setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     // Keep a copy of originals if not already kept
     if (originalTranscripts.length === 0) {
       setOriginalTranscripts(transcripts);
     }
 
     try {
-      const translatedRaw = await api.translateSession(sessionId, langName);
+      const translatedRaw = await api.translateSession(sessionId, langName, controller.signal);
       let translatedTexts: string[] = [];
       try {
         const cleanJson = translatedRaw.replace(/```json|```/g, '').trim();
@@ -458,11 +466,27 @@ export default function SessionControl() {
         setTranslationCache(prev => ({ ...prev, [langName]: newTranscripts }));
         setTranscripts(newTranscripts);
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
       console.error(e);
       alert('Translation failed.');
     } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
       setIsTranslating(false);
+      setTargetLanguage('');
     }
   };
 
@@ -1377,6 +1401,15 @@ export default function SessionControl() {
                           <option key={l.code} value={l.name} className="bg-surface-low text-on-surface">{l.name}</option>
                         ))}
                       </select>
+                      {isTranslating && (
+                        <button
+                          onClick={cancelTranslate}
+                          className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-0.5 rounded transition-all ml-1"
+                          title="Cancel Translation"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      )}
                     </div>
                   )}
                   {isLive && (
