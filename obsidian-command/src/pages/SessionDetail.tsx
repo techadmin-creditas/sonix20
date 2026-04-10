@@ -8,7 +8,7 @@ import {
   ArrowLeft, Play, Pause, Download,
   MessageSquare, BarChart3, FileText, Lightbulb,
   Clock, Timer, Zap, ShieldCheck, Cpu,
-  User, Bot, Calendar, Smile, Loader2, Tags,
+  User, Bot, Calendar, Smile, Loader2, Tags, Languages, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -23,6 +23,17 @@ const SUMMARY_PLACEHOLDERS = new Set([
   'No summary generated for this session.',
   'No meaningful conversation occurred.',
 ]);
+
+const SUPPORTED_LANGUAGES = [
+  { code: 'hi', name: 'Hindi' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'bn', name: 'Bengali' },
+];
 
 function needsGeneratedSummary(summary: string | undefined): boolean {
   const t = (summary ?? '').trim();
@@ -199,6 +210,11 @@ export default function SessionDetail() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'insights' | 'stats' | 'entities'>('transcript');
   const [sessionAnalysisBinding, setSessionAnalysisBinding] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [originalTranscript, setOriginalTranscript] = useState<any[]>([]);
+  const [translationCache, setTranslationCache] = useState<Record<string, any[]>>({});
+  const abortControllerRef = useRef<AbortController | null>(null);
   const routeSessionIdRef = useRef<string | undefined>(undefined);
   routeSessionIdRef.current = id;
 
@@ -212,6 +228,7 @@ export default function SessionDetail() {
     setIsPlaying(false);
     setPlaybackCurrentSec(0);
     setPlaybackDurationSec(0);
+    setTranslationCache({});
 
     async function loadData() {
       let details: Awaited<ReturnType<typeof api.getSessionDetails>> | null = null;
@@ -236,7 +253,19 @@ export default function SessionDetail() {
         const metrics = buildLatencyMetrics(meta);
         const sentimentScore = meta.sentiment_score ?? null;
 
-        const stData = {
+        setRecordingUnavailable(false);
+        const processedTranscript = transcript.map((msg: any) => {
+          const atSec = toEpochSeconds(msg.timestamp);
+          return ({
+            role: msg.role === 'assistant' ? 'bot' : msg.role,
+            content: msg.content,
+            atSec,
+            timestamp: new Date((atSec ?? 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            sentiment: (msg.metadata as any)?.sentiment as string | undefined,
+          });
+        });
+
+        const sessionObj = {
           id: details.id,
           user_id: details.user_id,
           startedAtSec: toEpochSeconds(details.started_at),
@@ -244,16 +273,7 @@ export default function SessionDetail() {
           date: new Date(details.started_at * 1000).toLocaleDateString(),
           time: new Date(details.started_at * 1000).toLocaleTimeString(),
           duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
-          transcript: transcript.map((msg: any) => {
-            const atSec = toEpochSeconds(msg.timestamp);
-            return ({
-            role: msg.role === 'assistant' ? 'bot' : msg.role,
-            content: msg.content,
-            atSec,
-            timestamp: new Date((atSec ?? 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            sentiment: (msg.metadata as any)?.sentiment as string | undefined,
-            });
-          }),
+          transcript: processedTranscript,
           summary: meta.summary || 'No summary generated for this session.',
           intent: meta.intent || 'Unknown Intent',
           insights: normalizeInsights(meta.insights),
@@ -263,8 +283,9 @@ export default function SessionDetail() {
           sentimentScore,
           metrics,
         };
-        setRecordingUnavailable(false);
-        setSession(stData);
+
+        setOriginalTranscript(processedTranscript);
+        setSession(sessionObj);
       } catch (e) {
         console.error("Failed to load session details", e);
         details = null;
@@ -301,11 +322,11 @@ export default function SessionDetail() {
             setSession((prev) =>
               prev && prev.id === routeId
                 ? {
-                    ...prev,
-                    summary: out.summary,
-                    intent: out.intent || prev.intent,
-                    insights: normalizeInsights(out.insights),
-                  }
+                  ...prev,
+                  summary: out.summary,
+                  intent: out.intent || prev.intent,
+                  insights: normalizeInsights(out.insights),
+                }
                 : prev
             );
             try {
@@ -400,6 +421,82 @@ export default function SessionDetail() {
   const handleEscalate = () => {
     if (confirm('Are you sure you want to escalate this session to a human agent?')) {
       alert('Session escalated. A team member will be notified.');
+    }
+  };
+
+  const handleTranslate = async (langName: string) => {
+    if (!langName) {
+      setTargetLanguage('');
+      setSession((prev: any) => ({ ...prev, transcript: originalTranscript }));
+      return;
+    }
+
+    if (!id) return;
+
+    // Abort existing if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const cached = translationCache[langName];
+    if (cached) {
+      setTargetLanguage(langName);
+      setSession((prev: any) => ({ ...prev, transcript: cached }));
+      return;
+    }
+
+    setTargetLanguage(langName);
+    setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const translatedRaw = await api.translateSession(id, langName, controller.signal);
+      let translatedTexts: string[] = [];
+
+      try {
+        const cleanJson = translatedRaw.replace(/```json|```/g, '').trim();
+        translatedTexts = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.error("Translation JSON parse failed", parseErr, translatedRaw);
+        translatedTexts = translatedRaw.split('\n').filter(l => l.trim()).map(l => l.replace(/^[-\*\s]+/, '').trim());
+      }
+
+      if (Array.isArray(translatedTexts)) {
+        let translatedIdx = 0;
+        const newTranscript = session.transcript.map((msg: any) => {
+          const checkRole = msg.role === 'bot' ? 'assistant' : msg.role;
+          if (['user', 'assistant', 'bot'].includes(checkRole) && translatedIdx < translatedTexts.length) {
+            const newContent = translatedTexts[translatedIdx];
+            translatedIdx++;
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+        setTranslationCache(prev => ({ ...prev, [langName]: newTranscript }));
+        setSession((prev: any) => ({ ...prev, transcript: newTranscript }));
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
+      console.error(e);
+      alert('Translation failed.');
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsTranslating(false);
+      setTargetLanguage('');
     }
   };
 
@@ -612,41 +709,78 @@ export default function SessionDetail() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="p-8 flex flex-col gap-8"
+                  className="flex flex-col h-[calc(100vh-250px)]"
                 >
-                  {session.transcript.map((msg: any, i: number) => (
-                    <div key={i} className={cn(
-                      "flex gap-4 max-w-[80%]",
-                      msg.role === 'bot' ? "self-start" : "self-end flex-row-reverse"
-                    )}>
-                      <div className={cn(
-                        "size-10 rounded-xl flex items-center justify-center shrink-0",
-                        msg.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-highest text-outline"
-                      )}>
-                        {msg.role === 'bot' ? <Bot className="size-5" /> : <User className="size-5" />}
+                  <div className="sticky top-0 z-10 bg-surface-low p-5">
+                    <div className="flex items-center justify-between bg-surface-high/50 p-4 rounded-2xl ghost-border">
+                      <div className="flex items-center gap-2">
+                        {isTranslating ? (
+                          <Loader2 className="size-4 text-primary animate-spin" />
+                        ) : (
+                          <Languages className="size-4 text-primary" />
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">Transcript Translation</span>
                       </div>
-                      <div className="flex flex-col gap-1.5">
-                        <div className={cn(
-                          "p-4 rounded-2xl text-sm leading-relaxed transition-all",
-                          msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium",
-                          i === activeTranscriptIndex && "ring-2 ring-primary/70 shadow-lg shadow-primary/15"
-                        )}>
-                          {msg.content}
-                        </div>
-                        <div className={cn("flex items-center gap-2 px-1", msg.role === 'user' && "flex-row-reverse")}>
-                          <span className="text-[10px] font-bold text-outline uppercase tracking-widest">
-                            {msg.timestamp}
-                          </span>
-                          {msg.sentiment && (
-                            <div
-                              className={cn("size-1.5 rounded-full", SENTIMENT_COLOR[msg.sentiment] ?? 'bg-outline')}
-                              title={`Sentiment: ${msg.sentiment}`}
-                            />
-                          )}
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={targetLanguage}
+                          onChange={(e) => handleTranslate(e.target.value)}
+                          disabled={isTranslating}
+                          className="bg-surface-low border-none text-[10px] font-bold py-1 px-3 rounded-lg outline-none focus:ring-1 focus:ring-primary transition-all cursor-pointer"
+                        >
+                          <option value="">Original Language</option>
+                          {SUPPORTED_LANGUAGES.map(l => (
+                            <option key={l.code} value={l.name}>{l.name}</option>
+                          ))}
+                        </select>
+                        {isTranslating && (
+                          <button
+                            onClick={cancelTranslate}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                          >
+                            <X className="size-3" />
+                            Cancel
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-8 custom-scrollbar pt-4">
+                    {session.transcript.map((msg: any, i: number) => (
+                      <div key={i} className={cn(
+                        "flex gap-4 max-w-[98%]",
+                        msg.role === 'bot' ? "self-start" : "self-end flex-row-reverse"
+                      )}>
+                        <div className={cn(
+                          "size-10 rounded-xl flex items-center justify-center shrink-0",
+                          msg.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-highest text-outline"
+                        )}>
+                          {msg.role === 'bot' ? <Bot className="size-5" /> : <User className="size-5" />}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className={cn(
+                            "p-4 rounded-2xl text-sm leading-relaxed transition-all",
+                            msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium",
+                            i === activeTranscriptIndex && "ring-2 ring-primary/70 shadow-lg shadow-primary/15"
+                          )}>
+                            {msg.content}
+                          </div>
+                          <div className={cn("flex items-center gap-2 px-1", msg.role === 'user' && "flex-row-reverse")}>
+                            <span className="text-[10px] font-bold text-outline uppercase tracking-widest">
+                              {msg.timestamp}
+                            </span>
+                            {msg.sentiment && (
+                              <div
+                                className={cn("size-1.5 rounded-full", SENTIMENT_COLOR[msg.sentiment] ?? 'bg-outline')}
+                                title={`Sentiment: ${msg.sentiment}`}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </motion.div>
               )}
 
