@@ -8,6 +8,7 @@ import {
   Settings,
   Database,
   Bot,
+  Sparkles,
   LogOut,
   PlusCircle,
   GitBranch,
@@ -21,7 +22,9 @@ import { ThemeToggle } from './ThemeToggle';
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
+  { icon: Sparkles, label: 'DIY With AI', path: '/diy-with-ai' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
+  { icon: Sparkles, label: 'Persona Builder', path: '/persona' },
   { icon: GitBranch, label: 'Workflows', path: '/workflows' },
   // { icon: Database, label: 'Knowledge Base', path: '/knowledge' },
   // { icon: BarChart3, label: 'Analytics', path: '/analytics' },

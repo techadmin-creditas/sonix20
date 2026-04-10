@@ -20,6 +20,9 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
 import HomeOld from './pages/HomeOld';
 import HomeNew from './pages/HomeNew';
+import DiyWithAI from './pages/DiyWithAI';
+import DiyPersonaPresets from './pages/DiyPersonaPresets';
+import DiyPersonaBuilder from './pages/DiyPersonaBuilder';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -92,6 +95,9 @@ function App() {
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/sessions/live" element={<SessionControl />} />
               <Route path="/sessions/:id" element={<SessionDetail />} />
+              <Route path="/diy-with-ai" element={<DiyWithAI />} />
+              <Route path="/diy-with-ai/personas" element={<DiyPersonaPresets />} />
+              <Route path="/persona" element={<DiyPersonaBuilder />} />
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
               <Route path="/personas/create/debug" element={<BotConfig />} />

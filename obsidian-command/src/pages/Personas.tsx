@@ -20,6 +20,10 @@ import {
   Landmark,
   Trash2,
   GitBranch,
+  UserRound,
+  Smile,
+  Angry,
+  Focus,
 } from 'lucide-react';
 
 export default function Personas() {
@@ -182,12 +186,7 @@ export default function Personas() {
               {filteredPersonas.map((persona) => (
                 <div key={persona.id} className="glass-panel rounded-3xl p-8 flex flex-col gap-6 group hover:border-primary/30 transition-all">
                   <div className="flex justify-between items-start">
-                    <div className={cn(
-                      "size-16 rounded-2xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
-                      persona.color === 'secondary' ? "bg-secondary/10 text-secondary" : "bg-primary/10 text-primary"
-                    )}>
-                      <BotIcon type={persona.icon} />
-                    </div>
+                    <PersonaTileAvatar bot={persona} />
                     <div className="flex flex-col items-end">
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
@@ -285,6 +284,35 @@ function BotIcon({ type }: { type: string }) {
   if (type === 'event_busy') return <Calendar className="size-8" />;
   if (type === 'account_balance') return <Landmark className="size-8" />;
   return <BotIconFallback className="size-8" />;
+}
+
+function PersonaTileAvatar({ bot }: { bot: Bot }) {
+  const text = `${bot.name || ''} ${bot.persona || ''} ${bot.description || ''}`.toLowerCase();
+  const isFemale = /\bfemale\b|\bwomen\b|\bgirl\b/.test(text);
+  const isMale = /\bmale\b|\bman\b|\bboy\b/.test(text);
+  const style: 'soft' | 'firm' | 'focus' =
+    /focus|focused/.test(text) ? 'focus' : /firm|direct|hard|collections/.test(text) ? 'firm' : 'soft';
+
+  const AccentIcon = style === 'firm' ? Angry : style === 'focus' ? Focus : Smile;
+  const accent = style === 'firm' ? 'from-red-500/20 to-amber-500/10' : style === 'focus' ? 'from-sky-500/20 to-indigo-500/10' : 'from-emerald-500/20 to-primary/10';
+  const badge = isFemale ? 'F' : isMale ? 'M' : 'AI';
+
+  return (
+    <div className="relative">
+      <div className={cn(
+        "size-16 rounded-2xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
+        "bg-gradient-to-br",
+        accent,
+        bot.color === 'secondary' ? "text-secondary" : "text-primary"
+      )}>
+        <UserRound className="size-8" />
+      </div>
+      <div className="absolute -bottom-2 -right-2 flex items-center gap-1 rounded-full border border-outline-variant/20 bg-surface-highest px-2 py-1 shadow-lg">
+        <span className="text-[10px] font-extrabold uppercase tracking-widest text-on-surface">{badge}</span>
+        <AccentIcon className="size-3 text-primary" />
+      </div>
+    </div>
+  );
 }
 
 function BotIconFallback({ className }: { className?: string }) {
