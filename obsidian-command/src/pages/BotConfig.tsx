@@ -9,6 +9,9 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Search,
+  Shuffle,
+  Target,
+  X,
   CalendarPlus,
   CalendarDays,
   BrainCircuit,
@@ -28,10 +31,8 @@ import {
   ShieldAlert,
   FlaskConical,
   Send,
-  X,
   CheckCircle,
   XCircle,
-  Shuffle,
   Mic,
   Wand2,
   RefreshCw,
@@ -150,7 +151,7 @@ function SectionAccordion({
   return (
     <section className={cn(
       "glass-panel rounded-3xl flex flex-col border transition-all duration-300 ",
-      isOpen ? "bg-surface-low border-primary/20 shadow-inner bg-white" : "bg-surface-low/30 bg-white hover:bg-surface-low/50 border-outline-variant/10 ",
+      isOpen ? "bg-surface-base border-primary/20 shadow-inner" : "bg-surface-low/30 hover:bg-surface-low/50 border-outline-variant/10 ",
       className
     )}>
       <div className="flex items-center justify-between w-full min-h-[72px] px-6">
@@ -238,9 +239,13 @@ export default function BotConfig() {
     actions_webhook_url: '',
     post_call_webhook_url: '',
     min_stt_confidence: 0.6,
+    tts_provider: 'deepgram_ws',
+    tts_model: '',
     topic_restriction: '',
     refuse_off_topic: false,
     guardrails: '',
+    variable_mappings: {},
+    metadata_defaults: {},
   });
 
   const [policyDraft, setPolicyDraft] = React.useState({
@@ -430,17 +435,25 @@ export default function BotConfig() {
 
           // Auto-sync provider with voice engine if they mismatch in DB
           let tts_provider = botData.tts_provider;
+          let tts_model = botData.tts_model || '';
           const voice = voicesData.find(v => v.id === botData.voice_id);
-          if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
+          
+          if (voice?.provider === 'gemini') {
+            if (tts_provider !== 'gemini') tts_provider = 'gemini';
+            if (!tts_model) tts_model = 'gemini-2.5-flash-preview-tts';
+          } else if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
             tts_provider = 'elevenlabs';
-          } else if (voice?.provider === 'deepgram' && tts_provider === 'elevenlabs') {
+            tts_model = '';
+          } else if (voice?.provider === 'deepgram' && (tts_provider === 'elevenlabs' || tts_provider === 'gemini')) {
             tts_provider = 'deepgram_ws';
+            tts_model = '';
           }
 
           setFormData({
             ...botData,
             name: cloneId ? `${botData.name}_1` : botData.name,
             tts_provider,
+            tts_model,
             pipeline_mode: botData.pipeline_mode || 'classic',
             guardrails: botData.guardrail_policy?.negative_constraints || '',
           });
@@ -471,12 +484,125 @@ export default function BotConfig() {
       }
     }
     loadData();
+    loadSchema();
   }, [id, isCreateMode]);
+
+  const [dbColumns, setDbColumns] = React.useState<string[]>([]);
+  const loadSchema = async () => {
+    try {
+      const resp = await api.request('GET', '/test-customers/schema');
+      if (resp?.columns) {
+        // Extract names from schema objects (PRAGMA table_info returns objects)
+        const names = resp.columns.map((c: any) => c.name);
+        setDbColumns(names);
+      }
+    } catch (err) {
+      console.error("Failed to load DB schema:", err);
+    }
+  };
+console.log("dbColumns",dbColumns)
+  // --- Auto-detect variables from prompts & workflows ---
+  const [detectedVars, setDetectedVars] = React.useState<string[]>([]);
+  const [workflowVars, setWorkflowVars] = React.useState<string[]>([]);
+  
+  // Fetch and scan workflow nodes for variables
+  const scanWorkflowForVars = React.useCallback(async (wfId: string) => {
+    if (!wfId) {
+      setWorkflowVars([]);
+      return;
+    }
+    
+    // Recursive helper to find labels and speech strings
+    function findStrings(obj: any): string[] {
+      if (typeof obj === 'string') return [obj];
+      if (Array.isArray(obj)) return obj.flatMap(findStrings);
+      if (obj && typeof obj === 'object') return Object.values(obj).flatMap(findStrings);
+      return [];
+    }
+
+    try {
+      const wf = await api.getWorkflow(wfId);
+      const nodes = (wf as any).nodes || [];
+      
+      // Extract all strings from node data to look for [Variables]
+      const textToScan = nodes.map((n: any) => findStrings(n.data || {}).join(' ')).join(' ');
+      const matches = textToScan.match(/\[(.*?)\]/g) || [];
+      // Keep brackets for clarity and ensure it's longer than just "[]"
+      const unique = Array.from(new Set(matches.map(m => m.trim()))).filter((v: string) => v.length > 2);
+      setWorkflowVars(unique);
+    } catch (err) {
+      console.error("Failed to scan workflow for variables:", err);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (formData.workflow_id) {
+      scanWorkflowForVars(formData.workflow_id);
+    } else {
+      setWorkflowVars([]);
+    }
+  }, [formData.workflow_id, scanWorkflowForVars]);
+console.log("workflowVars",workflowVars)
+  React.useEffect(() => {
+    const textToScan = [
+      formData.system_prompt || '',
+      formData.greeting || '',
+      formData.persona || '',
+      formData.description || '',
+      ...(formData.proactive_prompts || []),
+      ...workflowVars.map(v => `[${v}]`) // Add workflow variables to scan
+    ].join(' ');
+
+    const matches = textToScan.match(/\[([^\[\]]+)\]/g) || [];
+    const uniqueVars = Array.from(new Set(matches.map(m => m.trim()))).filter(v => v.length > 2);
+    setDetectedVars(uniqueVars);
+
+    // Sync mapping table: Add new ones, but also CLEAR orphaned ones that were never configured
+    setFormData(prev => {
+      const currentMappings = { ...(prev.variable_mappings || {}) };
+      let changed = false;
+      
+      // 1. ADD newly detected variables (Keeping brackets)
+      uniqueVars.forEach(v => {
+        if (!currentMappings[v] && !prev.metadata_defaults?.[v]) {
+          currentMappings[v] = '';
+          changed = true;
+        }
+      });
+      
+      // 2. REMOVE orphaned auto-detections 
+      Object.keys(currentMappings).forEach(existingKey => {
+        const isCurrentlyInText = uniqueVars.includes(existingKey);
+        const isUntouched = currentMappings[existingKey] === '';
+        
+        if (!isCurrentlyInText && isUntouched) {
+          delete currentMappings[existingKey];
+          changed = true;
+        }
+      });
+      
+      return changed ? { ...prev, variable_mappings: currentMappings } : prev;
+    });
+  }, [formData.system_prompt, formData.greeting, formData.persona, formData.description, formData.proactive_prompts, workflowVars]);
 
   const handleSave = async () => {
     if (isCreateMode && (!formData.name || !formData.system_prompt)) {
       alert('Name and System Promt are required');
       return;
+    }
+
+    // 2. Variable Mapping Validation
+    const unmapped = detectedVars.filter(v => {
+      const isMapped = !!formData.variable_mappings?.[v]?.trim();
+      const isDefault = !!formData.metadata_defaults?.[v]?.trim();
+      return !isMapped && !isDefault;
+    });
+
+    if (unmapped.length > 0) {
+      const confirmSave = window.confirm(
+        `⚠️ Unmapped Variables Detected:\n\n${unmapped.join('\n')}\n\nThese variables will not be replaced during live calls. Are you sure you want to save?`
+      );
+      if (!confirmSave) return;
     }
 
     setSaving(true);
@@ -718,7 +844,7 @@ export default function BotConfig() {
                             setAiProvider(null);
                           }
                         }}
-                        className="flex-[2] py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                        className="flex-2 py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
                       >
                         <CheckCircle2 className="size-4" />
                         Apply AI Improvements
@@ -784,6 +910,217 @@ export default function BotConfig() {
               />
             </div>
           </section>
+
+          {/* Variable Mappings & Defaults */}
+          <section className="glass-panel rounded-3xl p-8 flex flex-col gap-6 ghost-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Shuffle className="size-5 text-primary" />
+                <h3 className="font-headline font-bold text-lg">Variable Discovery & Routing</h3>
+              </div>
+              <div className="text-[10px] font-mono text-outline uppercase tracking-widest bg-surface-highest px-2 py-1 rounded">Injection Engine v2</div>
+            </div>
+
+            {/* Discovered Variables Shelf */}
+            <div className="p-5 rounded-3xl bg-surface-container/30 border border-outline-variant/10">
+              <div className="flex items-center justify-between mb-4">
+                 <div className="flex items-center gap-2">
+                   <Target className="size-3.5 text-primary" />
+                   <h4 className="text-[10px] font-black uppercase tracking-widest text-outline">Detected Placeholders</h4>
+                 </div>
+                 <p className="text-[10px] text-outline italic">Click a badge to route it to a category</p>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                {detectedVars.length === 0 ? (
+                  <div className="text-[10px] text-outline italic py-2">No [Variables] detected in your current prompts or workflow.</div>
+                ) : (
+                  detectedVars.map((v, i) => {
+                    const isMapped = !!formData.variable_mappings?.[v];
+                    const isDefault = !!formData.metadata_defaults?.[v];
+                    
+                    return (
+                      <div key={i} className={cn(
+                        "group relative flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all cursor-default",
+                        isMapped ? "bg-primary/10 border-primary/20 text-primary" :
+                        isDefault ? "bg-secondary/10 border-secondary/20 text-secondary" :
+                        "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                      )}>
+                        <span className="text-[10px] font-bold">{v}</span>
+                        {(isMapped || isDefault) ? (
+                          <CheckCircle2 className="size-3" />
+                        ) : (
+                          <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all">
+                             <button 
+                                onClick={() => setFormData(prev => ({ ...prev, variable_mappings: { ...prev.variable_mappings, [v]: "" } }))}
+                                className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
+                              >+ DB</button>
+                             <div className="w-px h-2 bg-current/20" />
+                             <button 
+                                onClick={() => setFormData(prev => ({ ...prev, metadata_defaults: { ...prev.metadata_defaults, [v]: "" } }))}
+                                className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
+                              >+ Default</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              {/* Mappings */}
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-on-surface mb-1">Database Links</h4>
+                  <p className="text-[10px] text-outline leading-tight">Map your script placeholders like <b>[POS Amount]</b> to real database keys.</p>
+                </div>
+                
+                <div className="space-y-3">
+                  {Object.entries(formData.variable_mappings || {}).map(([key, value], idx) => {
+                    const isDetected = detectedVars.includes(key);
+                    const isConfigured = (value as string).trim().length > 0;
+                    
+                    return (
+                      <div key={idx} className={cn(
+                        "flex items-center gap-2 group p-2 rounded-2xl transition-all",
+                        isDetected && !isConfigured ? "bg-amber-500/5 border border-amber-500/20" : "bg-transparent"
+                      )}>
+                        <div className="relative flex-1">
+                           <input 
+                            className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs font-bold focus:ring-1 focus:ring-primary/30"
+                            placeholder="Placeholder Name"
+                            value={key}
+                            onChange={(e) => {
+                              const newMappings = { ...formData.variable_mappings };
+                              const oldVal = newMappings[key];
+                              delete newMappings[key];
+                              newMappings[e.target.value] = oldVal;
+                              setFormData(prev => ({ ...prev, variable_mappings: newMappings }));
+                            }}
+                          />
+                          {isDetected && (
+                            <div className="absolute -top-2 -left-1 px-1.5 py-0.5 rounded-md bg-amber-500 text-[8px] font-black text-white uppercase shadow-sm">Detected</div>
+                          )}
+                        </div>
+                        <ArrowLeft className="size-3 text-outline" />
+                        <div className="relative flex-1">
+                          <input 
+                            list="db-columns-list"
+                            className={cn(
+                              "w-full bg-surface-container-highest border rounded-xl p-3 text-xs font-mono transition-all",
+                              isConfigured ? "border-outline-variant/10 text-primary" : "border-amber-500/50 text-amber-500 animate-pulse"
+                            )}
+                            placeholder="Select database column..."
+                            value={value as string}
+                            onChange={(e) => {
+                              // Validation: auto-convert to underscore_separated
+                              const validated = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                              const newMappings = { ...formData.variable_mappings };
+                              newMappings[key] = validated;
+                              setFormData(prev => ({ ...prev, variable_mappings: newMappings }));
+                            }}
+                          />
+                          <datalist id="db-columns-list">
+                            {dbColumns.map(col => <option key={col} value={col} />)}
+                          </datalist>
+                           {!isConfigured && (
+                             <span className="absolute -top-2 right-2 text-[8px] font-bold text-amber-500 uppercase bg-background px-1">Mapping Required</span>
+                           )}
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const newMappings = { ...formData.variable_mappings };
+                            delete newMappings[key];
+                            setFormData(prev => ({ ...prev, variable_mappings: newMappings }));
+                          }}
+                          className="p-2 opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button 
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        variable_mappings: { ...prev.variable_mappings, "New Variable": "" }
+                      }));
+                    }}
+                    className="w-full py-2 border-2 border-dashed border-outline-variant/20 rounded-xl text-[10px] font-bold text-outline hover:border-primary/50 hover:text-primary transition-all flex items-center justify-center gap-2"
+                  >
+                    <PlusCircle className="size-3" /> Manual Mapping
+                  </button>
+                </div>
+              </div>
+
+              {/* Defaults */}
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-on-surface mb-1">Global Fallbacks</h4>
+                  <p className="text-[10px] text-outline leading-tight">Permanent values used if no test user is found (e.g. <b>[Company Name]</b>).</p>
+                </div>
+
+                <div className="space-y-3">
+                   {Object.entries(formData.metadata_defaults || {}).map(([key, value], idx) => (
+                    <div key={idx} className="flex items-center gap-2 group">
+                      <input 
+                        className="flex-1 bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs font-bold"
+                        value={key}
+                        onChange={(e) => {
+                          const newDefaults = { ...formData.metadata_defaults };
+                          const oldVal = newDefaults[key];
+                          delete newDefaults[key];
+                          newDefaults[e.target.value] = oldVal;
+                          setFormData(prev => ({ ...prev, metadata_defaults: newDefaults }));
+                        }}
+                      />
+                      <div className="text-outline font-black">=</div>
+                      <input 
+                        className="flex-1 bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs text-primary"
+                        value={value as string}
+                        onChange={(e) => {
+                          const newDefaults = { ...formData.metadata_defaults };
+                          newDefaults[key] = e.target.value;
+                          setFormData(prev => ({ ...prev, metadata_defaults: newDefaults }));
+                        }}
+                      />
+                      <button 
+                        onClick={() => {
+                          const newDefaults = { ...formData.metadata_defaults };
+                          delete newDefaults[key];
+                          setFormData(prev => ({ ...prev, metadata_defaults: newDefaults }));
+                        }}
+                        className="p-2 opacity-0 group-hover:opacity-100 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button 
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        metadata_defaults: { ...prev.metadata_defaults, "Company Name": "Creditas Solutions" }
+                      }));
+                    }}
+                    className="w-full py-2 border-2 border-dashed border-outline-variant/20 rounded-xl text-[10px] font-bold text-outline hover:border-primary/50 hover:text-primary transition-all flex items-center justify-center gap-2"
+                  >
+                    <PlusCircle className="size-3" /> Add Default Value
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex items-start gap-3">
+              <Info className="size-4 text-primary mt-0.5 shrink-0" />
+              <p className="text-[10px] text-primary/70 italic">
+                <b>Pro Tip:</b> Use placeholders like <b>[POS Amount]</b> in your system prompt or greeting. The engine will automatically try to find a value in your Mappings, then your Database, and finally use your Global Fallbacks.
+              </p>
+            </div>
+          </section>
         </div>
         {/* Right Column (Config & Advanced) */}
         <div className="col-span-12 lg:col-span-4 flex flex-col gap-8  lg:h-[calc(100vh-0px)] lg:overflow-y-auto">
@@ -826,11 +1163,29 @@ export default function BotConfig() {
                     onChange={e => {
                       const vid = e.target.value;
                       const voice = voices.find(v => v.id === vid);
-                      setFormData(prev => ({
-                        ...prev,
-                        voice_id: vid,
-                        tts_provider: voice?.provider === 'elevenlabs' ? 'elevenlabs' : (prev.tts_provider === 'elevenlabs' ? 'deepgram_ws' : prev.tts_provider)
-                      }));
+                      
+                      setFormData(prev => {
+                        let newProv = prev.tts_provider;
+                        let newModel = prev.tts_model;
+
+                        if (voice?.provider === 'gemini') {
+                          newProv = 'gemini';
+                          newModel = 'gemini-2.5-flash-preview-tts';
+                        } else if (voice?.provider === 'elevenlabs') {
+                          newProv = 'elevenlabs';
+                          newModel = '';
+                        } else if (voice?.provider === 'deepgram') {
+                          newProv = 'deepgram_ws';
+                          newModel = '';
+                        }
+
+                        return {
+                          ...prev,
+                          voice_id: vid,
+                          tts_provider: newProv,
+                          tts_model: newModel
+                        };
+                      });
                     }}
                   >
                     {voices.length === 0 ? (
@@ -872,8 +1227,32 @@ export default function BotConfig() {
                   >
                     ElevenLabs (Multilingual)
                   </option>
+                  <option
+                    value="gemini"
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider !== 'gemini' && !!voices.find(v => v.id === formData.voice_id)}
+                  >
+                    Gemini (Native Audio)
+                  </option>
                 </select>
               </div>
+
+              {formData.tts_provider === 'gemini' && (
+                <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10 animate-in fade-in slide-in-from-top-1">
+                  <label className="text-xs font-bold uppercase tracking-widest text-primary px-1 flex items-center gap-1.5">
+                    <Sparkles className="size-3" /> TTS Native Model (Free Preview)
+                  </label>
+                  <select
+                    className="w-full bg-surface-container-highest border border-primary/30 rounded-2xl p-4 font-bold text-primary h-14 cursor-pointer transition-all hover:bg-surface-container-high"
+                    value={formData.tts_model || 'gemini-2.5-flash-preview-tts'}
+                    onChange={e => setFormData(prev => ({ ...prev, tts_model: e.target.value }))}
+                  >
+                    <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash (TTS Preview)</option>
+                    {/* <option value="gemini-2.5-flash">Gemini 2.5 Flash (Performance)</option>
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option> */}
+                  </select>
+                  <p className="text-[10px] text-primary/70 px-1 italic">Selecting a Pro model for TTS provides human-like prosody without conversational overhead.</p>
+                </div>
+              )}
               <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
                 <select

@@ -201,6 +201,9 @@ class SQLiteProvider:
             ("refuse_off_topic", "INTEGER DEFAULT 0"),
             ("owner_user_id", "TEXT REFERENCES users(id)"),
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
+            ("variable_mappings", "TEXT DEFAULT '{}'"),
+            ("metadata_defaults", "TEXT DEFAULT '{}'"),
+            ("tts_model", "TEXT DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -338,6 +341,7 @@ class SQLiteProvider:
                 email           TEXT,
                 balance         REAL NOT NULL DEFAULT 0.0,
                 account_type    TEXT DEFAULT 'savings',
+                test_meta_data  TEXT DEFAULT '{}',
                 is_active       INTEGER NOT NULL DEFAULT 1,
                 created_at      REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
@@ -358,6 +362,14 @@ class SQLiteProvider:
             CREATE INDEX IF NOT EXISTS idx_customers_account ON customer_accounts(account_number);
             CREATE INDEX IF NOT EXISTS idx_loans_account ON loans(account_number);
         """)
+        # Ensure test_meta_data exists in customer_accounts
+        existing_customer_cols = {row[1] for row in conn.execute("PRAGMA table_info(customer_accounts)").fetchall()}
+        if "test_meta_data" not in existing_customer_cols:
+            try:
+                conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            except sqlite3.OperationalError:
+                pass
+
         conn.commit()
 
         # 3b. Migrate legacy rows missing columns
@@ -447,6 +459,14 @@ class SQLiteProvider:
             ),
         )
         conn.commit()
+        
+        # Add test_meta_data for persistent simulator overrides if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         logger.info("Seeded default bot: %s (%s)", name, bot_id)
 
     def _hash_password_seed(self, password: str, *, iterations: int = 150_000) -> str:
@@ -592,16 +612,17 @@ class SQLiteProvider:
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
                          owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35,
-                         workflow_id: Optional[str] = None) -> dict:
+                         workflow_id: Optional[str] = None,
+                         tts_model: Optional[str] = None) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -624,6 +645,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -643,6 +666,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -678,19 +703,18 @@ class SQLiteProvider:
                 "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
+                "variable_mappings", "metadata_defaults", "tts_model",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
-            if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
-                updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
-            if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
-                updates["proactive_prompts"] = json.dumps(updates["proactive_prompts"])
+            for field in ("tools_enabled", "proactive_prompts", "agent_task_spec", 
+                          "variable_mappings", "metadata_defaults",
+                          "guardrail_policy", "data_access_policy", "conversation_policy"):
+                if field in updates and (isinstance(updates[field], (dict, list))):
+                    updates[field] = json.dumps(updates[field])
+
             if "refuse_off_topic" in updates:
                 updates["refuse_off_topic"] = 1 if updates["refuse_off_topic"] else 0
-            if "agent_task_spec" in updates and isinstance(updates["agent_task_spec"], dict):
-                updates["agent_task_spec"] = json.dumps(updates["agent_task_spec"])
-            for pol in ("guardrail_policy", "data_access_policy", "conversation_policy"):
-                if pol in updates and isinstance(updates[pol], dict):
-                    updates[pol] = json.dumps(updates[pol])
+            
             updates["updated_at"] = time.time()
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             values = list(updates.values()) + [bot_id]
@@ -759,24 +783,27 @@ class SQLiteProvider:
     # ─── Session Management ───────────────────────────────────────────────────
 
     async def create_session(self, session_id: str, bot_id: Optional[str] = None,
-                             user_id: Optional[str] = None, language: str = "hi") -> None:
+                             user_id: Optional[str] = None, language: str = "hi",
+                             metadata: Optional[dict] = None) -> None:
         """Register or update a session in SQLite."""
+        meta_json = json.dumps(metadata or {})
         def _do():
             conn = self._get_conn()
             # 1. Insert session record if it doesn't exist yet
             conn.execute("""
-                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, started_at)
-                VALUES (?, ?, ?, ?, strftime('%s','now'))
-            """, (session_id, bot_id, user_id, language))
+                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, metadata, started_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+            """, (session_id, bot_id, user_id, language, meta_json))
             
             # 2. Update existing session fields (except started_at)
             conn.execute("""
                 UPDATE sessions 
                 SET bot_id = COALESCE(?, bot_id),
                     user_id = COALESCE(?, user_id),
-                    language = ?
+                    language = ?,
+                    metadata = ?
                 WHERE id = ?
-            """, (bot_id, user_id, language, session_id))
+            """, (bot_id, user_id, language, meta_json, session_id))
             
             conn.commit()
         await self._run(_do)
@@ -1438,6 +1465,8 @@ class SQLiteProvider:
         first_audio_ms: float = 0.0,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
+        sentiment_score: float = 0.0,
+        interrupt_type: str = "clean",
     ) -> None:
         """Persist per-turn pipeline latency and token metrics."""
         def _do():
@@ -1453,7 +1482,9 @@ class SQLiteProvider:
                 "first_audio_ms": round(first_audio_ms, 1),
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens
+                "total_tokens": prompt_tokens + completion_tokens,
+                "sentiment_score": round(sentiment_score, 2),
+                "interrupt_type": interrupt_type
             })))
             conn.commit()
         await self._run(_do)
@@ -1735,7 +1766,125 @@ class SQLiteProvider:
             conn.commit()
         return await self._run(_do)
 
+    async def get_customer(self, account_number: str) -> Optional[dict]:
+        """Fetch a single customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM customer_accounts WHERE account_number = ?",
+                (account_number.upper().strip(),)
+            ).fetchone()
+            return dict(row) if row else None
+        return await self._run(_do)
+    
+    async def get_customer_schema(self) -> list[dict]:
+        """Return the current columns and types of the customer_accounts table."""
+        def _do():
+            conn = self._get_conn()
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def add_customer_column(self, name: str, data_type: str = "TEXT") -> tuple[bool, str]:
+        """
+        Dynamically add a new column to the customer_accounts table.
+        Returns (success, message).
+        """
+        # 1. Auto-correction: Replace spaces/hyphens with underscores, lowercase everything
+        clean_name = name.strip().replace(" ", "_").replace("-", "_").lower()
+        
+        # 2. Strict Validation: Alphanumeric and underscores only
+        if not clean_name:
+            return False, "Column name cannot be empty"
+            
+        if not clean_name[0].isalpha() and clean_name[0] != "_":
+            return False, "Column name must start with a letter or underscore"
+            
+        if not all(c.isalnum() or c == "_" for c in clean_name):
+            return False, "Column name can only contain letters, numbers, and underscores"
+
+        # Valid SQLite types
+        valid_types = {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
+        clean_type = data_type.upper() if data_type.upper() in valid_types else "TEXT"
+        
+        def _do():
+            conn = self._get_conn()
+            try:
+                conn.execute(f"ALTER TABLE customer_accounts ADD COLUMN {clean_name} {clean_type}")
+                conn.commit()
+                return True, f"Column '{clean_name}' added successfully"
+            except sqlite3.OperationalError as e:
+                error_str = str(e).lower()
+                if "duplicate column name" in error_str:
+                    return False, f"Column '{clean_name}' already exists"
+                return False, f"Database error: {str(e)}"
+        return await self._run(_do)
+
+    async def list_customers_dynamic(self, limit: int = 200) -> list[dict]:
+        """Fetch all customer records with all columns dynamically."""
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute(f"SELECT * FROM customer_accounts ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def upsert_customer_dynamic(self, data: dict[str, Any]) -> str:
+        """Upsert a customer record using all provided keys as columns."""
+        if not data.get("account_number"):
+            raise ValueError("account_number is required for dynamic upsert")
+        
+        account_number = data["account_number"].upper().strip()
+        
+        def _do():
+            conn = self._get_conn()
+            # 1. Get current columns
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            columns = {r["name"] for r in cursor.fetchall()}
+            
+            # 2. Filter data for only valid columns
+            valid_data = {k: v for k, v in data.items() if k in columns}
+            valid_data["account_number"] = account_number
+            
+            keys = list(valid_data.keys())
+            placeholders = ", ".join(["?" for _ in keys])
+            cols_clause = ", ".join(keys)
+            
+            # 3. Handle conflict (Update everything except account_number)
+            update_clause = ", ".join([f"{k} = excluded.{k}" for k in keys if k != "account_number"])
+            
+            sql = f"""
+                INSERT INTO customer_accounts ({cols_clause})
+                VALUES ({placeholders})
+                ON CONFLICT(account_number) DO UPDATE SET
+                    {update_clause}
+            """
+            conn.execute(sql, list(valid_data.values()))
+            conn.commit()
+            return account_number
+        return await self._run(_do)
+
+    async def delete_customer(self, account_number: str) -> bool:
+        """Delete a customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("DELETE FROM customer_accounts WHERE account_number = ?", (account_number,))
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
     # ─── Cleanup ─────────────────────────────────────────────────────────────
+    async def update_customer_metadata(self, account_number: str, metadata: dict) -> bool:
+        """Update the test_meta_data JSON for a customer."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE customer_accounts SET test_meta_data = ? WHERE account_number = ?",
+                (json.dumps(metadata), account_number.upper().strip())
+            )
+            conn.commit()
+            return True
+        return await self._run(_do)
 
     async def close(self) -> None:
         """Close the connection pool."""

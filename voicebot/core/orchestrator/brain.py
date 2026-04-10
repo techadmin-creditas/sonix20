@@ -45,6 +45,79 @@ def _suspicious_prefix_length(text: str) -> int:
                 return length
     return 0
 
+# ─── Dynamic Response Pools (To prevent robotic repetition) ────────────────
+_DYNAMIC_RESPONSES = {
+    "low_confidence_reprompt": {
+        "en": [
+            "I didn't quite catch that. Could you say that again?",
+            "Sorry, I missed that. Can you please repeat it?",
+            "I'm sorry, I didn't hear you clearly. Could you say that once more?",
+            "Excuse me, I missed the last part. What was that?"
+        ],
+        "hi": [
+            "Maaf kijiye, main sun nahi paaya. Kya aap phir se kahenge?",
+            "Sorry, mujhe samajh nahi aaya. Ek baar phir bolenge?",
+            "Kshama kijiye, main sun nahi saka. Dobara bol sakte hain?",
+            "Aapki awaaz thodi kat gayi thi. Phir se batayiye?"
+        ]
+    },
+    "sentiment_escalation": {
+        "en": [
+            "I can hear this is frustrating. Let me connect you with a team member who can help you directly.",
+            "I understand your frustration. I'm transferring you to a senior advisor now.",
+            "I'm sorry this is difficult. Let me get a specialist on the line for you.",
+            "I want to make sure you get the right help. Let me connect you with one of our managers."
+        ],
+        "hi": [
+            "Main samajh sakta hoon ki aap pareshaan hain. Main aapki baat apne senior se karwata hoon.",
+            "Maaf kijiye, main aapko senior advisor se connect kar raha hoon jo isme behtar madad kar sakein.",
+            "Main aapka frustration samajh sakta hoon. Line par rahiye, main call transfer kar raha hoon.",
+            "Main chahta hoon aapki poori madad ho. Main call senior team member ko de raha hoon."
+        ]
+    },
+    "topic_violation": {
+        "en": [
+            "I am specialized in {topic}. Is there something related to that I can help with?",
+            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
+            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
+            "My expertise is limited to {topic}. Happy to help you with that!"
+        ],
+        "hi": [
+            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
+            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
+            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
+            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
+        ]
+    },
+    "security_block": {
+        "en": [
+            "I'm sorry, I can't process that request.",
+            "I am unable to perform that action for security reasons.",
+            "That request goes beyond what I'm allowed to do.",
+            "I'm unable to fulfill that specific request."
+        ],
+        "hi": [
+            "Maaf kijiye, main yeh nahi kar sakta.",
+            "Suraksha kaarno se main yeh request poori nahi kar sakta.",
+            "Kshama kijiye, yeh mere adhikaar kshetra se bahar hai.",
+            "Main is request ko poora karne mein asamarth hoon."
+        ]
+    },
+    "topic_violation": {
+        "en": [
+            "I am specialized in {topic}. Is there something related to that I can help with?",
+            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
+            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
+            "My expertise is limited to {topic}. Happy to help you with that!"
+        ],
+        "hi": [
+            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
+            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
+            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
+            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
+        ]
+    },
+}
 # ─── End Constants ───────────────────────────────────────────────────
 
 from voicebot.shared.config import get_settings
@@ -160,6 +233,27 @@ _SCOPE_TOOL_NAMES = {
     "weather": ("get_weather",),
     "banking": ("verify_customer", "get_account_balance", "get_loan_status"),
 }
+
+# 🧠 SELF-LEARNING: Post-Call Reflection Prompt
+_POST_CALL_REFLECTION_PROMPT = """
+You are a Senior Conversation Analyst. Your goal is to review a voice conversation and extract deep insights for future use.
+
+### ANALYSIS GOALS:
+1.  **USER FACTS**: Identify specific facts about the user (preferences, account details mentioned, constraints, personality traits).
+2.  **SUCCESSFUL TACTICS**: Identify specifically what the bot did that worked well (e.g., "Used a calm tone during frustration," "Offered a discount").
+3.  **SUMMARY**: A concise 1-2 sentence summary of the call outcome.
+4.  **CONFIDENCE**: For each fact/tactic, provide a confidence score between 0.0 and 1.0.
+
+### OUTPUT FORMAT (JSON ONLY):
+{{
+    "user_facts": [{{"fact": "...", "confidence": 0.95}}, ...],
+    "successful_tactics": [{{"tactic": "...", "confidence": 0.8}}, ...],
+    "outcome_summary": "Summary text..."
+}}
+
+### CONVERSATION TRANSCRIPT:
+{transcript}
+"""
 
 
 class BotState(str, Enum):
@@ -371,6 +465,34 @@ class AgenticBrain:
         
         # Extensible dynamic node workflow
         self.workflow_engine = None
+
+    def _get_dynamic_response(self, category: str, **kwargs) -> str:
+        """Picks a random, non-repeating human-like response based on session language."""
+        user_lang = self.session.detected_language or "en"
+        lang_key = "hi" if ("hi" in user_lang.lower() or user_lang.lower().startswith("hi")) else "en"
+        
+        pool = _DYNAMIC_RESPONSES.get(category, {}).get(lang_key, [])
+        if not pool:
+            return "..." # Ultimate fallback
+
+        # Prevent immediate repetition
+        history_key = f"_last_{category}"
+        last_used = getattr(self, history_key, "")
+        
+        choices = [phrase for phrase in pool if phrase != last_used]
+        if not choices:
+            choices = pool # Fallback if pool is too small
+
+        selected = random.choice(choices)
+        
+        # Inject dynamic variables like {topic}
+        try:
+            selected = selected.format(**kwargs)
+        except KeyError:
+            pass
+
+        setattr(self, history_key, selected)
+        return selected
 
     def _apply_conversation_policy_derived(self) -> None:
         """Load timing, TTS chunking, and streaming options from conversation_policy."""
@@ -588,26 +710,35 @@ class AgenticBrain:
             meta["call_phase"] = "pitch"
 
     def _format_task_phase_hint(self) -> str:
-        if not self._agent_task_spec:
-            return ""
-        meta = self.session.metadata
-        phase = meta.get("call_phase")
-        if not phase:
-            return ""
-        parts = [f"\n\n[Session hint: call_phase={phase}"]
-        if meta.get("user_stance"):
-            parts.append(f", user_stance={meta.get('user_stance')}")
-        if meta.get("objection_round") is not None:
-            parts.append(f", objection_round={meta.get('objection_round')}")
-        parts.append("]")
-        if phase == "handle_objection":
+        """Provide a mission-critical context hint to the LLM about the current state/workflow."""
+        parts = []
+        
+        # 1. Prioritize Context from WorkflowEngine
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            wf_status = self.workflow_engine.get_context_status()
+            parts.append(f"\n\n[WORKFLOW STATE: {wf_status}]")
             parts.append(
-                " Respond with empathy; offer one alternative angle from value_props or objection_handling; stay polite."
+                "\nINSTRUCTION: You are in a structured logic flow. If the user asks an unrelated question, "
+                "answer it briefly and then bridge back to the CURRENT TASK."
             )
-        elif phase == "closing":
-            parts.append(
-                " User has declined repeatedly or exit conditions met: give a brief polite goodbye, then call end_voice_session."
-            )
+
+        # 2. Add Agent Task Spec hints (Call Phase / Objection Round)
+        if self._agent_task_spec:
+            meta = self.session.metadata
+            phase = meta.get("call_phase")
+            if phase:
+                parts.append(f"\n[Session hint: call_phase={phase}")
+                if meta.get("user_stance"):
+                    parts.append(f", user_stance={meta.get('user_stance')}")
+                if meta.get("objection_round") is not None:
+                    parts.append(f", objection_round={meta.get('objection_round')}")
+                parts.append("]")
+                
+                if phase == "handle_objection":
+                    parts.append(" Respond with empathy; offer one alternative angle; stay polite.")
+                elif phase == "closing":
+                    parts.append(" User exit conditions met: give a brief polite goodbye.")
+
         return "".join(parts)
 
     # ─── Audio Input Handling ────────────────────────────────────────────
@@ -655,6 +786,10 @@ class AgenticBrain:
                 logger.error("🛑 STT Terminal Error signaled: %s", error_msg)
                 await self._handle_fatal_error(VoiceBotError(error_msg), context="stt_terminal_error")
                 return
+
+            # Track VAD timing locally to assist with barge-in decision logic
+            if msg_type == "speech_started":
+                self._last_vad_signal_time = time.time()
 
             confidence = kwargs.get("confidence", 1.0)
             
@@ -708,16 +843,31 @@ class AgenticBrain:
                         logger.debug("🧠 Barge-in Ignored: Within post-turn guard window (%.0fms < %dms)", _elapsed, self._barge_in_grace_ms)
                         return
 
-                    # Signal the frontend to MUTE audio playback instantly (can be reversed if it was noise)
+                    # Signal the frontend to MUTE audio playback instantly
                     if self._on_audio_interrupt:
                         await self._on_audio_interrupt()
 
                     # Short confirmation window — distinguishes real speech from single noise burst.
-                    # Value from conversation_policy (set in _apply_conversation_policy_derived).
                     await asyncio.sleep(self._barge_in_debounce_ms / 1000.0)
                     
                     if self.state in (BotState.SPEAKING, BotState.PROCESSING):
                         snapshot = (self._partial_buffer or text).strip()
+                        
+                        # 🛡️ LATENCY FIX: Extended Grace Window
+                        # If the STT endpoint triggered a VAD signal but hasn't returned text yet, 
+                        # hold the mute state for an extra 300ms to allow the network to catch up.
+                        if not snapshot:
+                            logger.debug("🧠 Barge-in: VAD triggered but text is empty. Holding mute for 300ms grace window...")
+                            await asyncio.sleep(0.3)
+                            # Re-fetch the snapshot after waiting
+                            snapshot = (self._partial_buffer or text).strip()
+                            
+                        # If STILL no text after the extended wait, it was just a noise burst. Resume playback.
+                        if not snapshot:
+                            logger.info("🧠 Barge-in Suppressed: No text arrived during extended grace window. Resuming.")
+                            if self._on_audio_resume:
+                                await self._on_audio_resume()
+                            return
                         
                         # 🛡️ New meaningful barge-in check (Deduplication + Backchannel)
                         if not self.turn_detector.is_meaningful_barge_in(snapshot, self._last_processed_text):
@@ -1109,7 +1259,7 @@ class AgenticBrain:
     async def start_conversation(self) -> None:
         """
         Trigger the initial greeting from the bot.
-        Uses bot-specific greeting from DB config if available.
+        Handles Workflow nodes, Static Configured Greetings, and Dynamic LLM Greetings.
         """
         logger.info("🎬 Starting conversation (session=%s)", self.session.session_id[:8])
 
@@ -1120,41 +1270,53 @@ class AgenticBrain:
             await self._set_state(BotState.PROCESSING)
             self._interrupt_event.clear()
             
-            # Load Workflow Engine if applicable
+            custom_greeting = self._bot_config.get("greeting") or ""
+
+            # ── SCENARIO 1: WORKFLOW ENGINE ATTACHED ──
             if self._bot_config.get("workflow_id") and self.db:
                 wf_data = await self.db.get_workflow(self._bot_config["workflow_id"])
                 if wf_data:
                     from voicebot.core.orchestrator.workflow_engine import WorkflowEngine
                     self.workflow_engine = WorkflowEngine(self, wf_data)
                     logger.info("Loaded generic workflow engine: %s", wf_data.get('name', 'Unknown'))
-                else:
-                    self.workflow_engine = None
+                    
+                    # 1a. Speak the custom DB greeting if it exists (e.g. "Hello, this is X.")
+                    if custom_greeting:
+                        await self._generate_and_speak(custom_greeting)
 
-            # Use custom greeting from bot config if set
-            custom_greeting = self._bot_config.get("greeting")
+                    # 1b. Kick off the workflow engine naturally
+                    logger.info("🎬 Starting WorkflowEngine execution...")
+                    await self.workflow_engine.evaluate("")
+                    
+                    # Exit out, the engine handles the state and proactive timers from here
+                    return 
+
+            # ── SCENARIO 2: STANDARD BOT (NO WORKFLOW) ──
+            self.workflow_engine = None
+            
             if custom_greeting:
-                logger.info("Using bot greeting (session=%s): %s", self.session.session_id[:8], custom_greeting[:60])
-                # We try to speak, but if it fails, we still want the transcript
-                try:
-                    await self._stream_text_to_tts(custom_greeting, time.time())
-                except Exception as tts_err:
-                    logger.warning("Greeting TTS failed: %s", tts_err)
-                    await self._log_event("[SYSTEM]", "Voice greeting failed. Continuing with text.", "text-yellow-400")
-
-                if self._on_bot_transcript:
-                    await self._on_bot_transcript(custom_greeting, True)
+                # Path A: We have a static greeting configured in the DB
+                logger.info("Using static config greeting: %s", custom_greeting[:60])
                 
+                await self._generate_and_speak(custom_greeting)
                 await self._set_state(BotState.LISTENING)
-                # Log the greeting as an assistant turn
+                
+                # Log to session history since we aren't routing through the LLM
                 self.session.add_turn(TurnRole.ASSISTANT, custom_greeting)
                 if self.db:
                     await self.db.log_turn(self.session.session_id, "assistant", custom_greeting)
             else:
-                # LLM-generated greeting based on persona
+                # Path B: No static greeting, let the LLM generate one dynamically
+                logger.info("No static greeting found. Generating dynamic persona greeting.")
                 bot_name = self._bot_config.get("name", "Assistant")
                 persona = self._bot_config.get("persona", "helpful and friendly")
-                intro_instruction = f"You are {bot_name}, a {persona} AI assistant. Greet the user warmly in one sentence and invite them to speak."
+                
+                intro_instruction = (
+                    f"You are {bot_name}, a {persona} AI assistant. "
+                    f"Greet the user warmly in one sentence and invite them to speak."
+                )
                 await self._run_llm_turn(intro_instruction, override_system_prompt=True)
+
         except Exception as e:
             await self._handle_fatal_error(e, "conversation_startup_failed")
 
@@ -1637,9 +1799,8 @@ class AgenticBrain:
                 
                 # Immediate refusal — beats the rest of the current turn's LLM generation
                 await asyncio.sleep(0.05) # Yield to allow cancel to propagate
-                await self._generate_and_speak(
-                    f"I am specialized in {topic}. Is there something related to that I can help with?"
-                )
+                msg = self._get_dynamic_response("topic_violation", topic=topic)
+                await self._generate_and_speak(msg)
         except asyncio.CancelledError:
             pass  # Normal closure when turn completes on-topic
         except Exception as e:
@@ -1648,17 +1809,76 @@ class AgenticBrain:
     async def _generate_and_speak(self, text: str) -> None:
         """Speak fixed text (workflows, rejection messages). Logs assistant turn via _finalize_turn."""
         try:
-            t = self._strip_technical_artifacts(text or "")
+            # 1. Resolve variables [Placeholders]
+            t = self._inject_variables(text or "")
+            # 2. Cleanup artifacts
+            t = self._strip_technical_artifacts(t)
             if not t:
                 return
             if self.output_guard:
                 t = self.output_guard.validate_and_mask(t)["masked_text"]
+            
             turn_start = time.time()
             self._interrupt_event.clear()
             await self._stream_text_to_tts(t, turn_start)
             await self._finalize_turn(t, turn_start)
         except Exception as e:
             await self._handle_fatal_error(e, "tts_reply_failed")
+
+    def _inject_variables(self, text: str) -> str:
+        """Replace [Variable Name] placeholders from session data, metadata, mappings, or bot defaults."""
+        if not text: return ""
+        
+        import re
+        # 1. Gather all data sources
+        metadata = getattr(self.session, "metadata", {}) if self.session else {}
+        # Also check WorkflowEngine's local session_data if available
+        workflow_data = {}
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            workflow_data = getattr(self.workflow_engine, "session_data", {})
+            
+        bot_cfg = self._bot_config or {}
+        mappings = bot_cfg.get("variable_mappings", {})
+        defaults = bot_cfg.get("metadata_defaults", {})
+        
+        # Regex to find [Bracked Variables]
+        pattern = re.compile(r'\[(.*?)\]')
+        
+        def _repl(match):
+            key = match.group(1).strip()
+            bracketed_key = f"[{key}]"
+            
+            # Helper to check if a value is actually another key in metadata
+            def _resolve_pointer(v):
+                if isinstance(v, str) and (v in metadata or v in workflow_data):
+                    return str(metadata.get(v) or workflow_data.get(v))
+                return str(v)
+
+            # A. Check explicit mappings (e.g. "[POS Amount]" -> "balance")
+            mapped_key = mappings.get(bracketed_key) or mappings.get(key)
+            if mapped_key:
+                val = metadata.get(mapped_key) or workflow_data.get(mapped_key)
+                if val is not None: return _resolve_pointer(val)
+                
+            # B. Check direct metadata/workflow_data (exact, bracketed, and snake_case)
+            val = metadata.get(bracketed_key) or workflow_data.get(bracketed_key) or \
+                  metadata.get(key) or workflow_data.get(key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # C. Check snake_case variant
+            sc_key = key.lower().replace(" ", "_").replace("-", "_")
+            val = metadata.get(sc_key) or workflow_data.get(sc_key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # D. Check bot config defaults
+            val = defaults.get(bracketed_key) or defaults.get(key) or \
+                  defaults.get(sc_key) or bot_cfg.get(sc_key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # E. Fallback to the original tag if nothing found
+            return match.group(0)
+            
+        return pattern.sub(_repl, text)
 
     async def _process_user_turn(self, user_text: str) -> None:
         try:
@@ -1667,6 +1887,7 @@ class AgenticBrain:
             self._interrupt_event.clear()
             self._last_call_sig = None  # Reset tool-loop tracking for new turn
             self._barge_in_buffer = ""  # Clear any leftover barge-in content from previous turn
+            self.session.is_interrupted = False  # Reset for telemetry auditing
 
             turn_start = time.time()
             self._turn_start_ref = turn_start
@@ -1691,9 +1912,9 @@ class AgenticBrain:
                     self._last_stt_confidence, _min_confidence, user_text,
                 )
                 await self._set_state(BotState.LISTENING)
-                await self._generate_and_speak(
-                    "I didn't quite catch that. Could you say that again?"
-                )
+                # -> NEW DYNAMIC REPROMPT
+                reprompt = self._get_dynamic_response("low_confidence_reprompt")
+                await self._generate_and_speak(reprompt)
                 return
 
             self._completed_user_turns += 1
@@ -1724,10 +1945,8 @@ class AgenticBrain:
             if self._injection_detector:
                 inj = self._injection_detector.check(current_text)
                 if inj["detected"] and self._guardrail_policy.get("injection_action", "log") == "block":
-                    msg = self._guardrail_policy.get(
-                        "injection_block_message",
-                        "I can't process that request.",
-                    )
+                    # -> NEW DYNAMIC SECURITY BLOCK
+                    msg = self._guardrail_policy.get("injection_block_message") or self._get_dynamic_response("security_block")
                     logger.warning("Injection block (session=%s)", self.session.session_id[:8])
                     self.session.add_turn(TurnRole.USER, current_text)
                     if self.memory:
@@ -1753,7 +1972,8 @@ class AgenticBrain:
                     await self._log_event("[BRAIN]", f"Verifying topic relevance for '{self._topic_restriction}'...", "text-indigo-400")
                     is_on_topic = await self._check_topic_relevance(current_text, self._topic_restriction)
                     if not is_on_topic:
-                        msg = f"I am specialized in {self._topic_restriction}. Is there something related to that I can help with?"
+                        # -> NEW DYNAMIC TOPIC BLOCK
+                        msg = self._get_dynamic_response("topic_violation", topic=self._topic_restriction)
                         logger.warning("Topic guardrail triggered (session=%s)", self.session.session_id[:8])
                         self.session.add_turn(TurnRole.USER, current_text)
                         if self.memory:
@@ -1922,9 +2142,9 @@ class AgenticBrain:
                     self.session.session_id[:8],
                 )
                 self.request_voice_session_end("escalated_sentiment")
-                await self._generate_and_speak(
-                    "I can hear this is frustrating. Let me connect you with a team member who can help you directly."
-                )
+                # -> NEW DYNAMIC ESCALATION
+                msg = self._get_dynamic_response("sentiment_escalation")
+                await self._generate_and_speak(msg)
 
             await self._log_event(
                 "[SENTIMENT]",
@@ -2053,7 +2273,8 @@ class AgenticBrain:
 
     async def _emit_tts_audio_stream(self, text: str, turbo: bool = False) -> None:
         """Stream one TTS synthesis to the client; one short log per segment."""
-        t = (text or "").strip()
+        # 1. Resolve variables [Placeholders]
+        t = self._inject_variables(text or "").strip()
         if not self.tts or not t:
             return
         # Clear interrupt event explicitly before starting synthesis loop
@@ -2148,26 +2369,6 @@ class AgenticBrain:
             if cache_key:
                 await self.memory.set_cache(cache_key, clean_response, ttl=cache_ttl_seconds)
 
-        # Store in semantic QA cache (Disabled per user request)
-        # if (
-        #     _qa_question
-        #     and full_response
-        #     and len(full_response.split()) > 10
-        #     and self._vector_memory
-        #     and getattr(self._vector_memory, "_available", False)
-        #     and self._bot_id
-        # ):
-        #     try:
-        #         asyncio.create_task(
-        #             self._vector_memory.cache_qa(
-        #                 bot_id=str(self._bot_id),
-        #                 question=_qa_question,
-        #                 answer=full_response,
-        #             )
-        #         )
-        #     except Exception:
-        #         pass
-
         # Log to SQLite long-term memory
         if self.db:
             await self.db.log_turn(self.session.session_id, "assistant", clean_response)
@@ -2176,6 +2377,20 @@ class AgenticBrain:
         total_latency = (time.time() - turn_start) * 1000
         self.session.last_total_latency_ms = total_latency
         
+        # 🧪 [TELEMETRY] Sentiment Score Mapping (-1 to 1)
+        _sentiment_map = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
+        current_sentiment = self._sentiment_history[-1] if self._sentiment_history else "neutral"
+        sentiment_score = _sentiment_map.get(current_sentiment, 0.0)
+
+        # Audit last interrupt type: Differentiate Barge-in from Noise
+        interrupt_type = "clean"
+        if self.session.is_interrupted:
+             interrupt_type = "barge_in"
+        elif self.session.false_interruption_count > 0:
+             # Basic heuristic: if we had a false interrupt this turn, let the dashboard know
+             interrupt_type = "noise_filter"
+
+
         # Emit structured metrics for the dashboard
         if self._on_metrics:
             _tts_name = type(self.tts).__name__ if self.tts else "none"
@@ -2189,6 +2404,8 @@ class AgenticBrain:
                 "false_interruptions": self.session.false_interruption_count,
                 "tts_provider": _tts_name,
                 "total": round(total_latency, 0),
+                "sentiment_score": sentiment_score,
+                "interrupt_type": interrupt_type,
                 # Token usage fields (Aggregated for obsidian-command)
                 "tokens_input": usage.get("prompt_tokens", 0) if usage else 0,
                 "tokens_output": usage.get("completion_tokens", 0) if usage else 0,
@@ -2215,7 +2432,9 @@ class AgenticBrain:
                     total_ms=total_latency,
                     first_audio_ms=self.session.first_audio_latency_ms,
                     prompt_tokens=prompt,
-                    completion_tokens=completion
+                    completion_tokens=completion,
+                    sentiment_score=sentiment_score,
+                    interrupt_type=interrupt_type
                 ))
             except Exception:
                 pass
@@ -3037,6 +3256,113 @@ class AgenticBrain:
         except Exception as e:
             logger.error("Failed to load custom tools: %s", e)
 
+    async def _post_call_reflection(self) -> None:
+        """
+        Extract insights from the finished conversation to update long-term memory.
+        Uses a 'Heavy' model (GPT-4 / Gemini Pro) for high-quality extraction.
+        """
+        if not self._vector_memory or not self.session.conversation_history:
+            return
+            
+        logger.info("🧠 [REFLECTION] Starting post-call analysis for user %s", self.session.user_id)
+        
+        try:
+            # 1. Prepare history for the analyst
+            transcript_lines = []
+            for turn in self.session.conversation_history:
+                role = turn.role.upper()
+                content = turn.content or "[Action Taken]"
+                transcript_lines.append(f"{role}: {content}")
+            
+            full_transcript = "\n".join(transcript_lines)
+            
+            # 2. Call the reflection engine (Non-streaming, high-intelligence)
+            # NOTE: We use the direct provider call to avoid speech/guardrail overhead.
+            prompt = _POST_CALL_REFLECTION_PROMPT.format(transcript=full_transcript)
+            
+            # Try to pick a 'Heavy' model if using OpenRouter
+            heavy_model = "google/gemini-2.0-flash-001" 
+            if hasattr(self.llm, "provider") and self.llm.provider == "openrouter":
+                 # Use a reasoning-heavy or high-context model for post-call analysis
+                 reflection_resp = await self.llm.complete(
+                     system_prompt="You are an expert conversation analyst.",
+                     messages=[{"role": "user", "content": prompt}]
+                 )
+            else:
+                 # Fallback to current provider's default complete if available
+                 if hasattr(self.llm, "complete"):
+                     reflection_resp = await self.llm.complete(
+                         system_prompt="You are an expert conversation analyst.",
+                         messages=[{"role": "user", "content": prompt}]
+                     )
+                 else:
+                     logger.warning("[REFLECTION] LLM provider does not support non-streaming '.complete()'")
+                     return
+
+            # 3. Parse and Store
+            try:
+                # Extract JSON from potential markdown wrapping
+                json_match = re.search(r"\{.*\}", reflection_resp, re.DOTALL)
+                if not json_match:
+                    logger.warning("[REFLECTION] No JSON found in response")
+                    return
+                
+                insights = json.loads(json_match.group(0))
+                
+                # A. Store Call Summary
+                summary = insights.get("outcome_summary", "")
+                if summary:
+                    try:
+                        await self._vector_memory.store_conversation(
+                            session_id=self.session.session_id,
+                            summary=summary,
+                            user_id=self.session.user_id
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store summary: %s", e)
+                
+                # B. Store User Facts
+                for item in insights.get("user_facts", []):
+                    fact = item.get("fact") if isinstance(item, dict) else str(item)
+                    conf = item.get("confidence", 0.7) if isinstance(item, dict) else 0.7
+                    if not fact: continue
+                    
+                    try:
+                        await self._vector_memory.store_fact(
+                            bot_id=str(self._bot_id),
+                            fact=fact,
+                            source="reflection",
+                            category="user_context",
+                            confidence=conf # Pass to metadata
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store fact: %s", e)
+                
+                # C. Store Successful Tactics (learned behavior)
+                for item in insights.get("successful_tactics", []):
+                    tactic = item.get("tactic") if isinstance(item, dict) else str(item)
+                    conf = item.get("confidence", 0.7) if isinstance(item, dict) else 0.7
+                    if not tactic: continue
+                    
+                    try:
+                        await self._vector_memory.store_fact(
+                            bot_id=str(self._bot_id),
+                            fact=f"Tactical Insight: {tactic}",
+                            source="reflection",
+                            category="successful_tactics",
+                            confidence=conf
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store tactic: %s", e)
+                    
+                logger.info("✅ [REFLECTION] Complete for user %s. Insights stored.", self.session.user_id)
+                
+            except (json.JSONDecodeError, KeyError) as parse_err:
+                logger.error("[REFLECTION] Failed to parse model output: %s", parse_err)
+                
+        except Exception as e:
+            logger.error("[REFLECTION] Error during analysis: %s", e)
+
     async def cleanup(self) -> None:
         """Clean up resources when the session ends."""
         self._cancel_all_latency_watchdogs()
@@ -3072,6 +3398,16 @@ class AgenticBrain:
                 pass
 
         logger.info("Brain cleanup complete — session=%s", self.session.session_id[:8])
+        
+        # 🧠 PHASE 5: Post-Call Reflection (Self-Learning)
+        # We run this in the background after the session is closed to the user.
+        if self.session.user_id:
+             reflection_task = asyncio.create_task(self._post_call_reflection())
+             # Ensure the task is not garbage collected early and is tracked
+             if not hasattr(self, "_background_tasks"):
+                 self._background_tasks = set()
+             self._background_tasks.add(reflection_task)
+             reflection_task.add_done_callback(self._background_tasks.discard)
 
     # ─── Logic Helpers (Delegated to TurnDetector) ───────────────────
 

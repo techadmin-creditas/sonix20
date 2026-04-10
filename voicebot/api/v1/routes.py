@@ -293,13 +293,46 @@ async def create_session(
         if bot_lang:
             session_language = bot_lang
 
+    # Hydrate metadata if this user_id is a customer account
+    metadata = {}
+    if owner_user_id:
+        customer = await db.get_customer(owner_user_id)
+        if customer:
+            # Map database columns to standard metadata keys
+            metadata = {
+                # Display-friendly keys (for [Customer Name])
+                "Customer Name": customer.get("customer_name"),
+                "Account Number": customer.get("account_number"),
+                "Balance": customer.get("balance"),
+                "Account Type": customer.get("account_type"),
+                "Due Date": customer.get("emi_due_date") or customer.get("next_due"),
+                "EMI Amount": customer.get("emi_amount"),
+                # Database-style keys (for [customer_name] or pointers)
+                "customer_name": customer.get("customer_name"),
+                "account_number": customer.get("account_number"),
+                "balance": customer.get("balance"),
+                "account_type": customer.get("account_type"),
+                "emi_due_date": customer.get("emi_due_date"),
+                "next_due": customer.get("next_due"),
+                "emi_amount": customer.get("emi_amount"),
+            }
+            # Also include any custom metadata stored in the customer record
+            test_meta = customer.get("test_meta_data")
+            if test_meta:
+                 try:
+                     metadata.update(json.loads(test_meta))
+                 except:
+                     pass
+
     await db.create_session(
         session_id,
         bot_id=bot_id,
         user_id=owner_user_id,
         language=session_language,
+        metadata=metadata
     )
-    logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], owner_user_id, bot_id, transport)
+    logger.info("Created session %s for user %s (bot=%s, metadata_keys=%s) transport=%s", 
+                session_id[:8], owner_user_id, bot_id, list(metadata.keys()), transport)
 
     ws_url = f"/ws/voice/{session_id}"
     if bot_id:
@@ -568,6 +601,7 @@ async def create_bot(data: dict, request: Request):
             proactive_prompts=data.get("proactive_prompts", []),
             owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id),
             min_stt_confidence=data.get("min_stt_confidence", 0.35),
+            tts_model=data.get("tts_model"),
         )
         bid = result.get("id")
         if bid:
@@ -726,6 +760,62 @@ async def delete_session(session_id: str, request: Request):
     return {"status": "deleted", "session_id": session_id}
 
 
+# ─── Dynamic Test Customer Management ──────────────────────────────────────────
+@router.get("/test-customers/schema", tags=["testing"])
+async def get_test_customer_schema():
+    """Get the current structure of the customer_accounts table."""
+    db = await get_db()
+    schema = await db.get_customer_schema()
+    return {"columns": schema}
+
+@router.post("/test-customers/schema/columns", tags=["testing"])
+async def add_test_customer_column(data: dict):
+    """Dynamically add a new column to the test database."""
+    name = data.get("name")
+    data_type = data.get("type", "TEXT")
+    if not name:
+        raise HTTPException(status_code=422, detail="Column 'name' is required")
+    db = await get_db()
+    ok, message = await db.add_customer_column(name, data_type)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"status": "success", "column": name, "message": message}
+
+@router.get("/test-customers", tags=["testing"])
+async def list_test_customers():
+    """List all test customer accounts with their current data."""
+    db = await get_db()
+    customers = await db.list_customers_dynamic()
+    return {"customers": customers, "count": len(customers)}
+
+@router.post("/test-customers", tags=["testing"])
+async def upsert_test_customer(data: dict):
+    """Create or update a test customer record."""
+    if "account_number" not in data:
+         raise HTTPException(status_code=422, detail="account_number is required")
+    db = await get_db()
+    try:
+        account_number = await db.upsert_customer_dynamic(data)
+        return {"status": "success", "account_number": account_number}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/test-customers/{account_number}", tags=["testing"])
+async def delete_test_customer(account_number: str):
+    """Remove a test customer account."""
+    db = await get_db()
+    ok = await db.delete_customer(account_number)
+    return {"status": "deleted" if ok else "not_found"}
+
+
+@router.put("/test-customers/{account_number}/metadata", tags=["testing"])
+async def update_test_customer_metadata(account_number: str, data: dict):
+    """Update simulation overrides (test_meta_data) in the database."""
+    db = await get_db()
+    metadata = data.get("metadata", {})
+    await db.update_customer_metadata(account_number, metadata)
+    return {"status": "updated"}
+
 # ─── Workflow Endpoints ───────────────────────────────────────────────────────
 
 # Icon mapping: node type → icon name (matches mock structure)
@@ -807,11 +897,15 @@ async def test_workflow(data: dict):
     user_input = data.get("user_input", "")
     current_node_id = data.get("current_node_id")
     node_visit_counts = data.get("node_visit_counts", {})
+    metadata = data.get("metadata", {}) # Allow injecting test variables
 
     if current_node_id:
         workflow_data["start_node_id"] = current_node_id
 
     session = SessionState(session_id="test_simulator")
+    if metadata:
+        session.metadata.update(metadata) # Inject the test data
+        
     llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
 
     brain = AgenticBrain(
@@ -1302,6 +1396,15 @@ async def get_supported_models():
                 "tags": ["fastest", "realtime"]
             },
             {
+                "id": "gemini-2.5-flash-preview-tts",
+                "name": "Gemini 2.5 Flash (TTS Preview)",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00002,
+                "tags": ["premium", "native-audio"]
+            },
+            {
                 "id": "gemini-2.5-flash",
                 "name": "Gemini 2.5 Flash (Production)",
                 "provider": "gemini",
@@ -1426,6 +1529,15 @@ async def get_supported_voices():
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
             {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
+        ]
+
+    # ✅ GEMINI (Native TTS)
+    if is_valid_key(settings.gemini_api_key):
+        voices += [
+            {"id": "Zephyr", "name": "Zephyr (Warm / Gemini)", "provider": "gemini"},
+            {"id": "Puck", "name": "Puck (Energetic / Gemini)", "provider": "gemini"},
+            {"id": "Charon", "name": "Charon (Deep / Gemini)", "provider": "gemini"},
+            {"id": "Corey", "name": "Corey (Natural / Gemini)", "provider": "gemini"},
         ]
 
     # ✅ ELEVENLABS (Dynamic Fetch)

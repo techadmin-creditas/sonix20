@@ -99,11 +99,10 @@ class VectorMemoryProvider:
         fact: str,
         source: Optional[str] = None,
         category: str = "general",
+        **kwargs
     ) -> str:
         """
-        Store a summarized knowledge fact from an external source (like Google)
-        into the persistent vector store.
-        Returns the unique fact_id (MD5 hash of the content).
+        Store a summarized knowledge fact into the persistent vector store.
         """
         if not self._available or not self._collection or not fact.strip():
             return ""
@@ -116,6 +115,10 @@ class VectorMemoryProvider:
                 "type": "fact",
                 "timestamp": str(logging.time.time()),
             }
+            # Add any extra kwargs to metadata
+            for k, v in kwargs.items():
+                metadata[k] = str(v)
+
             self._collection.upsert(
                 ids=[fact_id],
                 documents=[fact],

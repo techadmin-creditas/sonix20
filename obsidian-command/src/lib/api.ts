@@ -106,6 +106,7 @@ export interface Bot {
   /** Min Deepgram confidence (0-1). Below this on short utterances, bot asks to repeat */
   min_stt_confidence?: number;
   tts_provider?: string;
+  tts_model?: string;
   default_language?: string;
   proactive_prompts?: string[];
   topic_restriction?: string;
@@ -277,6 +278,13 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch users');
     const data = await res.json();
     return data.users || [];
+  },
+
+  async getTestCustomers(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/test-customers`);
+    if (!res.ok) throw new Error('Failed to fetch test customers');
+    const data = await res.json();
+    return data.customers || [];
   },
 
   async createUser(data: { username: string; password: string; role?: 'admin' | 'user' }): Promise<any> {
@@ -495,11 +503,11 @@ export const api = {
     return res.json();
   },
 
-  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>): Promise<any> {
+  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>, metadata?: any): Promise<any> {
     const res = await fetch(`${BASE_URL}/workflows/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts }),
+      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts, metadata }),
     });
     if (!res.ok) throw new Error('Failed to test workflow');
     return res.json();
@@ -766,6 +774,18 @@ export const api = {
       body: fd,
     });
     if (!res.ok) throw new Error('Failed to upload PDF');
+    return res.json();
+  },
+
+  /** Generic request helper for dynamic features */
+  async request(method: string, path: string, body?: any): Promise<any> {
+    const url = path.startsWith('http') ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, `API ${method} ${path} failed`));
     return res.json();
   },
 

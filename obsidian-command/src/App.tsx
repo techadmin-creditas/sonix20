@@ -18,6 +18,7 @@ import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
+import TestUserManagement from './pages/TestUserManagement';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -107,6 +108,7 @@ function App() {
                   currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/dashboard" replace />
                 }
               />
+              <Route path="/test-users" element={<TestUserManagement />} />
               <Route path="/login" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
