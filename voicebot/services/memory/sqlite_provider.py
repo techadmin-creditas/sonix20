@@ -203,6 +203,7 @@ class SQLiteProvider:
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
             ("variable_mappings", "TEXT DEFAULT '{}'"),
             ("metadata_defaults", "TEXT DEFAULT '{}'"),
+            ("tts_model", "TEXT DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -610,16 +611,17 @@ class SQLiteProvider:
                          temperature: float = 0.7,
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
-                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35) -> dict:
+                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35,
+                         tts_model: Optional[str] = None) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -700,7 +702,7 @@ class SQLiteProvider:
                 "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
-                "variable_mappings", "metadata_defaults",
+                "variable_mappings", "metadata_defaults", "tts_model",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             for field in ("tools_enabled", "proactive_prompts", "agent_task_spec", 
@@ -1308,6 +1310,8 @@ class SQLiteProvider:
         first_audio_ms: float = 0.0,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
+        sentiment_score: float = 0.0,
+        interrupt_type: str = "clean",
     ) -> None:
         """Persist per-turn pipeline latency and token metrics."""
         def _do():
@@ -1323,7 +1327,9 @@ class SQLiteProvider:
                 "first_audio_ms": round(first_audio_ms, 1),
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens
+                "total_tokens": prompt_tokens + completion_tokens,
+                "sentiment_score": round(sentiment_score, 2),
+                "interrupt_type": interrupt_type
             })))
             conn.commit()
         await self._run(_do)

@@ -26,6 +26,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PERSONAS } from '../constants';
 import { Room as LiveKitRoom, createLocalAudioTrack } from 'livekit-client';
 import { api, Bot, getVoiceWebSocketUrl } from '../lib/api';
+import { TelemetryCharts } from '../components/TelemetryCharts';
+
 
 type SentimentLabel = 'positive' | 'neutral' | 'negative';
 interface Entity { key: string; value: string; }
@@ -66,6 +68,8 @@ export default function SessionControl() {
   });
   const [tokenPulse, setTokenPulse] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({ input: 0, output: 0, total: 0 });
+  const [historicalMetrics, setHistoricalMetrics] = useState<any[]>([]);
+
   const [modelLimits, setModelLimits] = useState<any[]>([]);
   const [toolSuccessRate, setToolSuccessRate] = useState(100.0);
 
@@ -540,6 +544,17 @@ export default function SessionControl() {
           tts: msg.tts || 0,
           total: msg.total || 0
         });
+
+        // 📈 [TELEMETRY] Append to historical timeline
+        setHistoricalMetrics((prev: any[]) => [...prev, {
+          turn: prev.length + 1,
+          stt: msg.stt || 0,
+          llm: msg.llm || 0,
+          tts: msg.tts || 0,
+          total: msg.total || 0,
+          sentiment: msg.sentiment_score ?? 0,
+          interruptType: msg.interrupt_type
+        }]);
 
         if (msg.tool_success_rate !== undefined) {
           setToolSuccessRate(msg.tool_success_rate);
@@ -1226,6 +1241,11 @@ export default function SessionControl() {
               <MetricCard label="TTS Latency" value={metrics.tts.toString()} unit="ms" color="border-indigo-500/40" />
               <MetricCard label="Total RTT" value={metrics.total.toString()} unit="ms" color="border-white/20" highlight />
             </div>
+            
+            {/* Real-time Performance Visualization */}
+            <div className="mt-4 sm:mt-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <TelemetryCharts data={historicalMetrics} />
+            </div>
           </div>
 
           {/* Right Panel */}
@@ -1484,7 +1504,15 @@ export default function SessionControl() {
                 ref={logRef}
                 className="flex-1 overflow-y-auto space-y-1 custom-scrollbar"
               >
-                {activeLogTab === 'entities' ? (
+                {activeLogTab === 'vitals' ? (
+                  <div className="py-2 flex flex-col items-center justify-center h-full text-outline/30 space-y-2">
+                    <Zap className="size-8 opacity-20" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-center">
+                      Telemetry Active<br/>
+                      <span className="font-normal normal-case">Charts moved to primary status display</span>
+                    </p>
+                  </div>
+                ) : activeLogTab === 'entities' ? (
                   entities.length === 0 ? (
                     <div className="text-outline/40 italic flex items-center justify-center h-full pt-10">
                       {isLive ? 'Listening for entities...' : 'No entities extracted yet'}
@@ -1504,7 +1532,6 @@ export default function SessionControl() {
                     const filtered = optimizedLogs.filter(log => {
                       if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]', '[THINKING]'].includes(log.tag);
                       if (activeLogTab === 'tools') return ['[TOOL]', '[RESULT]', '[PLAN]'].includes(log.tag);
-                      if (activeLogTab === 'vitals') return ['[STT]', '[STREAM]', '[METRIC]'].includes(log.tag);
                       return true;
                     });
 

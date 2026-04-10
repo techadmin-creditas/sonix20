@@ -85,6 +85,29 @@ class FallbackStreamingProvider:
         if last:
             raise last
 
+    async def complete(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, str]],
+    ) -> str:
+        """Delegates completion to the primary provider; retries on failure."""
+        last: Optional[Exception] = None
+        for i, prov in enumerate(self._providers):
+            if not hasattr(prov, "complete"):
+                continue
+            label = self._labels[i] if i < len(self._labels) else str(i)
+            try:
+                return await prov.complete(system_prompt=system_prompt, messages=messages)
+            except (ServiceExhaustedError, AuthError, VoiceBotError) as e:
+                last = e
+                if i + 1 < len(self._providers):
+                    logger.warning("LLM provider %s .complete() failed, trying fallback", label)
+                    continue
+                raise
+        if last:
+            raise last
+        raise VoiceBotError("No provider in fallback chain supports .complete()")
+
     async def disconnect(self) -> None:
         for p in self._providers:
             if hasattr(p, "disconnect"):

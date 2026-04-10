@@ -190,31 +190,10 @@ class LiveKitVoiceAgent:
 
         llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
 
-        # 3. TTS Provider (Hindi-Aware)
-        _voice_id = bot_config.get("voice_id") or "aura-asteria-en"
-        _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
-        _is_hindi_bot = _session_lang.startswith("hi")
-
-        if _is_hindi_bot or _tts_prov_name == "elevenlabs":
-            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-            tts_provider = ElevenLabsStreamingProvider(
-                voice_id=_voice_id,
-                model_id="eleven_multilingual_v2"
-            )
-            logger.info("Using ElevenLabs TTS (Multilingual v2) ✅")
-        elif _tts_prov_name == "deepgram_http":
-            tts_provider = DeepgramTTSProvider(model=_voice_id)
-            logger.info("Using Deepgram HTTP TTS ✅")
-        else:
-            # Default to WebSocket for lowest latency
-            from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
-            tts_provider = DeepgramWSTTSProvider(model=_voice_id)
-            try:
-                await asyncio.wait_for(tts_provider.connect(), timeout=5.0)
-                logger.info("Using Deepgram WS TTS (model=%s) ✅", _voice_id)
-            except Exception as _tts_err:
-                logger.warning("TTS WS failed, falling back to HTTP: %s", _tts_err)
-                tts_provider = DeepgramTTSProvider(model=_voice_id)
+        # 3. TTS Provider (Hindi-Aware & Factory-Based)
+        from voicebot.services.tts.voice_tts_factory import create_voice_tts
+        tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
+        logger.info("TTS stack initialized via factory ✅")
 
         # 4. Optional: Guardrails & Caching (Parity with main.py)
         from voicebot.services.memory.redis_provider import RedisSessionProvider

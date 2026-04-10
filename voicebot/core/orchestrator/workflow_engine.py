@@ -46,9 +46,11 @@ PROMPT_TEMPLATES = {
         "Reply STRICTLY with ONE word.\n\nTranscript: \"{text}\""
     ),
     "logic_intent": (
+        "User Language Context: {user_lang}\n"
         "Classify the following user input into EXACTLY ONE of: [{ops_str}].\n"
+        "Rule: Map the user's input (whether in English, Hindi, or Hinglish) to the closest semantic English intent label from the available English Intents list.\n"
         "CRITICAL: You must output ONLY the raw string label. Do not output conversational text or preamble.\n"
-        "If no match is found, output \"NONE\".\n\n"
+        "If no match is found or it is irrelevant, output \"NONE\".\n\n"
         "User Input: \"{text}\""
     ),
     "sentiment": (
@@ -74,11 +76,106 @@ PROMPT_TEMPLATES = {
     )
 }
 
+# --- Dynamic Response Pools (To prevent robotic repetition) ---
+_DYNAMIC_RESPONSES = {
+    "hurry_ack": {
+        "en": [
+            "Got it, I'll be quick.",
+            "Sure, getting straight to the point.",
+            "Understood, let's move fast.",
+            "Okay, I'll keep this short."
+        ],
+        "hi": [
+            "Bilkul, main seedhe point par aata hoon.",
+            "Theek hai, jaldi se batata hoon.",
+            "Samajh gaya, thoda fast chalte hain.",
+            "Ji, bina ghumaaye batata hoon."
+        ]
+    },
+    "knowledge_miss": {
+        "en": [
+            "I don't have that exact info right now, but I can find out.",
+            "Let me check on that for you.",
+            "I'm not completely sure, let me verify that.",
+            "Good question. I'll need to look that up."
+        ],
+        "hi": [
+            "Abhi mere paas iski poori jankari nahi hai, par main check kar sakta hoon.",
+            "Mujhe confirm karna padega, ek second.",
+            "Iski details main nikalwa leta hoon.",
+            "Yeh mujhe check karna padega."
+        ]
+    },
+    "disconnect": {
+        "en": [
+            "I understand. Thank you for your time. This is {name}. Have a good day.",
+            "Thanks for speaking with me, {name} here. Take care and goodbye.",
+            "Alright, I'll note that down. Thanks for your time today. Goodbye."
+        ],
+        "hi": [
+            "Theek hai, samay dene ke liye shukriya. Main {name} baat kar raha tha. Aapka din shubh ho.",
+            "Baat karne ke liye dhanyawad. Namaste.",
+            "Theek hai, main update kar deta hoon. Apna khayal rakhiye, goodbye."
+        ]
+    },
+    "escalate": {
+        "en": [
+            "I understand. Please hold for a moment while I connect you with a senior advisor.",
+            "Let me get a team member on the line who can help you directly. Please hold.",
+            "I'm transferring you to a specialist now. Just a moment."
+        ],
+        "hi": [
+            "Main samajh gaya. Line par bane rahiye, main aapki baat apne senior se karwata hoon.",
+            "Kripya hold karein, main call transfer kar raha hoon.",
+            "Main ek senior team member ko connect kar raha hoon, bas ek second."
+        ]
+    },
+    "reprompt_error": {
+        "en": [
+            "I'm sorry, I seem to be having technical issues. Let's talk again later. Goodbye.",
+            "Apologies, my connection seems a bit unstable right now. We'll reach out later."
+        ],
+        "hi": [
+            "Maaf kijiye, mujhe kuch technical problem aa rahi hai. Hum baad mein baat karenge. Namaste.",
+            "Sorry, network mein kuch issue lag raha hai. Main baad mein call karunga."
+        ]
+    },
+    "notification_sent": {
+        "en": [
+            "I've sent that information to your registered mobile number.",
+            "I've dispatched the details to your phone. Let me know if you get it.",
+            "Done. You should receive an SMS with those details shortly.",
+            "I've sent that over to you now."
+        ],
+        "hi": [
+            "Mainne woh jankari aapke mobile number par bhej di hai.",
+            "Details aapke phone par bhej diye gaye hain. Check kar lijiye.",
+            "Theek hai, sms bhej diya gaya hai.",
+            "Ji, mainne details aapko forward kar diye hain."
+        ]
+    },
+    "grounding_bridge": {
+        "en": [
+            "Anyway, going back to what we were discussing...",
+            "Coming back to our conversation...",
+            "Right, moving back to where we were...",
+            "Anyway, let's get back on track."
+        ],
+        "hi": [
+            "Khair, wapas aate hain hamari baat par...",
+            "Haan, toh hum baat kar rahe thhe...",
+            "Anyway, main wapas topic par aata hoon...",
+            "Theek hai, main wapas point par aata hoon..."
+        ]
+    }
+}
+
+
 # --- Node Handlers (Strategy Pattern) ---
 
 class BaseNodeHandler:
     """Base interface for all workflow conversation blocks."""
-    async def handle(self, engine: "WorkflowEngine", node: dict[str, Any], user_text: str, is_initial: bool = False) -> bool:
+    async def handle(self, engine: "WorkflowEngine", node: dict[str, Any], user_text: str) -> bool:
         """
         Execute the node logic.
         Returns:
@@ -88,7 +185,7 @@ class BaseNodeHandler:
         raise NotImplementedError()
 
 class SpeechHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         data = node.get("data") or {}
         mode = data.get("mode", "direct")
         text = _node_speech(node)
@@ -97,13 +194,11 @@ class SpeechHandler(BaseNodeHandler):
             text = await engine._generate_dynamic_speech(node, user_text)
 
         if text:
-            text = engine.brain._inject_variables(text)
-            if not is_initial:
-                await engine.brain._generate_and_speak(text)
+            # Note: Variables are injected centrally in Brain._generate_and_speak
+            await engine.brain._generate_and_speak(text)
         else:
             logger.warning("[WorkflowEngine] Speech node %s has no text configured.", node['id'])
-            if not is_initial:
-                await engine.brain._generate_and_speak("...")
+            await engine.brain._generate_and_speak("...")
         
         engine._mark_spoken()
         if node['id'] not in engine.history:
@@ -125,12 +220,12 @@ class SpeechHandler(BaseNodeHandler):
             return True # Yield/End
 
 class UserInputHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         # userInput always pauses the flow execution for the next turn
         return True
 
 class LogicHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         if not user_text:
             # If no input yet, wait for the user to respond to the previous prompt
             return True
@@ -247,7 +342,7 @@ class LogicHandler(BaseNodeHandler):
         return False
 
 class SentimentHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         if not user_text:
             return True
             
@@ -281,7 +376,7 @@ class SentimentHandler(BaseNodeHandler):
         return False
 
 class LanguageHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         language = await engine._detect_language(user_text)
         await engine._log("[WORKFLOW]", f"Language detected: {language}", "text-blue-400")
         
@@ -308,7 +403,7 @@ class LanguageHandler(BaseNodeHandler):
         return False
 
 class BacktrackHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         await engine._log("[WORKFLOW]", "Backtrack point reached.", "text-purple-300")
         edges = engine._get_outgoing_edges(node['id'])
         if edges:
@@ -318,8 +413,9 @@ class BacktrackHandler(BaseNodeHandler):
             engine.current_node_id = None
             return True
 
+
 class ActionHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         action_type = _node_action_type(node)
         data = node.get("data") or node.get("config") or {}
         label = (node.get("data") or {}).get("label") or action_type
@@ -349,10 +445,8 @@ class ActionHandler(BaseNodeHandler):
         
         elif action_type in ("sms", "email"):
             actions_url = bot_config.get("actions_webhook_url", "")
-            spoken_msg = data.get("speech") or data.get("message") or (
-                "I've sent that information to your registered mobile number." if action_type == "sms"
-                else "I've sent you an email with the details."
-            )
+            spoken_msg = data.get("speech") or data.get("message") or engine._get_dynamic_response("notification_sent")
+            
             if actions_url:
                 async def _dispatch():
                     try:
@@ -366,7 +460,7 @@ class ActionHandler(BaseNodeHandler):
                 _background_tasks.add(task)
                 task.add_done_callback(_background_tasks.discard)
             
-            if spoken_msg and not is_initial:
+            if spoken_msg:
                 await engine.brain._generate_and_speak(spoken_msg)
 
         edges = engine._get_outgoing_edges(node['id'])
@@ -377,18 +471,19 @@ class ActionHandler(BaseNodeHandler):
         return True # Yield after action
 
 class KnowledgeHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         query = _node_knowledge_query(node)
         await engine._log("[WORKFLOW]", f"RAG lookup: '{query}'", "text-indigo-400")
         try:
             results = await engine.brain.db.search_knowledge(query, limit=2)
             if results:
                 answer = results[0].get("answer", "")
-                if answer and not is_initial:
+                if answer:
                     await engine.brain._generate_and_speak(answer)
             else:
-                if not is_initial:
-                    await engine.brain._generate_and_speak("I don't have that info yet, but I can check for you.")
+                # -> NEW DYNAMIC FALLBACK
+                miss_msg = engine._get_dynamic_response("knowledge_miss")
+                await engine.brain._generate_and_speak(miss_msg)
         except Exception as e:
             logger.warning("[WorkflowEngine] RAG failed: %s", e)
         
@@ -400,7 +495,7 @@ class KnowledgeHandler(BaseNodeHandler):
         return True
 
 class FallbackHandler(BaseNodeHandler):
-    async def handle(self, engine, node, user_text, is_initial: bool = False):
+    async def handle(self, engine, node, user_text):
         await engine._log("[WORKFLOW]", "Yielding to agentic LLM.", "text-indigo-400")
         edges = engine._get_outgoing_edges(node['id'])
         engine.current_node_id = edges[0].get("target") if edges else None
@@ -626,17 +721,47 @@ class WorkflowEngine:
             )
             logger.debug("[WorkflowEngine] Synced current_node_id %s to DB", self.current_node_id)
 
-    async def evaluate(self, user_text: str, is_initial: bool = False) -> bool:
+    def _get_dynamic_response(self, category: str, **kwargs) -> str:
+        """Picks a random, non-repeating human-like response based on session language."""
+        user_lang = self.session_data.get("language", "en").lower()
+        lang_key = "hi" if ("hi" in user_lang or user_lang.startswith("hi")) else "en"
+        
+        pool = _DYNAMIC_RESPONSES.get(category, {}).get(lang_key, [])
+        if not pool:
+            return "..." # Ultimate fallback
+
+        # Prevent immediate repetition
+        history_key = f"_last_{category}"
+        last_used = getattr(self, history_key, "")
+        
+        choices = [phrase for phrase in pool if phrase != last_used]
+        if not choices:
+            choices = pool # Fallback if pool is too small
+
+        import random
+        selected = random.choice(choices)
+        
+        # Inject dynamic variables like {name}
+        try:
+            selected = selected.format(**kwargs)
+        except KeyError:
+            pass
+
+        setattr(self, history_key, selected)
+        return selected
+
+    async def evaluate(self, user_text: str) -> bool:
         """
         Process the workflow. 
-        If is_initial is True, it advances the engine past initial speech nodes
-        without re-triggering audio (used for session startup greetings).
         """
         if not self.current_node_id or self.current_node_id not in self.nodes:
             return True
 
         user_text = user_text.strip()
-        if user_text and not is_initial:
+        if user_text:
+            # Globally detect and update session language context on every turn
+            await self._detect_language(user_text)
+
             # 1. Global Interceptors (Disconnect/Escalate)
             global_intent = await self._check_global_interceptor(user_text)
             if global_intent in ("DISCONNECT", "ESCALATE"):
@@ -656,13 +781,20 @@ class WorkflowEngine:
                 return False # MUST return False to prevent double-speech
 
             if global_intent == "HURRY":
-                await self._log("[INTERCEPTOR]", "Detected impatience: HURRY. Skipping to next step.", "text-amber-400 font-bold")
+                await self._log("[INTERCEPTOR]", "Detected impatience: HURRY. Accelerating.", "text-amber-400 font-bold")
+                
+                # -> NEW DYNAMIC ACKNOWLEDGMENT
+                ack_msg = self._get_dynamic_response("hurry_ack")
+                await self.brain._generate_and_speak(ack_msg)
+
+                # 2. Flag the session to force the next LLM generation to be ultra-short
+                self.session_data["hurry_mode"] = True
+
+                # 3. Advance the workflow
                 edges = self._get_outgoing_edges(self.current_node_id)
                 if edges:
-                    # Filter for non-retry edges first
                     best_edges = [e for e in edges if "retry" not in (e.get("label") or "").lower()]
                     self.current_node_id = (best_edges or edges)[0].get("target")
-                    # Advance to next node immediately
                     return await self.evaluate("")
 
             # 2. Navigation / Context Switching (Backtrack or Jump)
@@ -771,24 +903,25 @@ class WorkflowEngine:
 
                 self.current_node_id = target_id
 
-        return await self._execute_node_chain(user_text, is_initial=is_initial)
+        return await self._execute_node_chain(user_text)
 
     def _resolve_farewell(self, key: str) -> str:
-        """Get farewell/escalation message from bot config or persona-aware fallback."""
+        """Get farewell/escalation message dynamically based on detected language."""
         bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
-        
-        # Try multiple potential config keys
         msg = bot_cfg.get(f"{key}_message") or bot_cfg.get("farewell_message") or bot_cfg.get("farewell")
         if msg:
             return msg
             
-        # Persona-aware dynamic fallback
         name = bot_cfg.get("name", "Assistant")
+        
+        # -> NEW DYNAMIC FAREWELLS
         if key == "disconnect":
-            return f"I understand. Thank you for your time. This is {name} from the bank. We look forward to your payment. Have a good day."
-        return f"I understand. Please hold for a moment while I connect you with a senior advisor."
+            return self._get_dynamic_response("disconnect", name=name)
+            
+        # Escalation Handshake (Warm Transfer)
+        return self._get_dynamic_response("escalate")
 
-    async def _execute_node_chain(self, user_text: str = "", is_initial: bool = False) -> bool:
+    async def _execute_node_chain(self, user_text: str = "") -> bool:
         """
         Walk the graph executing deterministic nodes until a blocking point.
         Returns True if the caller should yield to the main LLM (free-form fallback).
@@ -810,7 +943,7 @@ class WorkflowEngine:
             
             try:
                 handler = HANDLER_REGISTRY.get(node_type) or HANDLER_REGISTRY["llm_fallback"]
-                should_pause = await handler.handle(self, node, user_text, is_initial=is_initial)
+                should_pause = await handler.handle(self, node, user_text)
                 if should_pause:
                     break
             except Exception as e:
@@ -870,12 +1003,16 @@ class WorkflowEngine:
 
         if escalate_url:
             try:
+                # Add workflow session data to give the live agent instant context
+                wf_data = getattr(self, "session_data", {})
+                
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.post(escalate_url, json={
                         "session_id": session_id,
                         "user_id": user_id,
                         "reason": "user_requested_escalation",
                         "transcript": transcript_text,
+                        "extracted_data": wf_data
                     })
                 await self._log("[ESCALATE]", f"Escalation webhook fired → {escalate_url}", "text-orange-400")
             except Exception as e:
@@ -1059,9 +1196,14 @@ class WorkflowEngine:
                     if aff_key in opt_low and any(k == text_lower for k in keywords):
                         return opt
 
+        user_lang = self.session_data.get("language", "en")
         ops_str = ", ".join([f'"{opt}"' for opt in options])
         try:
-            prompt = PROMPT_TEMPLATES["logic_intent"].format(ops_str=ops_str, text=text)
+            prompt = PROMPT_TEMPLATES["logic_intent"].format(
+                user_lang=user_lang,
+                ops_str=ops_str,
+                text=text
+            )
             response = await self._classifier_complete(
                 "You are an intent classifier. Output exactly the label and nothing else.",
                 prompt,
@@ -1082,13 +1224,13 @@ class WorkflowEngine:
         # Use LLM to generate a smart clarification. 
         # If the user is asking a relevant question (e.g. "What is your bank name?"), 
         # the LLM should answer it first, then re-ask the original question.
+        lang_instruction = self._get_lang_instruction()
         clarification_prompt = (
             f"The user said '{last_input}' while the bot's current objective is: {base_speech}.\n\n"
             f"TASK:\n"
-            f"1. If the user is asking a question or seeking information, ANSWER IT briefly and professionally based on your general knowledge. "
-            f"If it's just a greeting or off-topic, acknowledge it warmly.\n"
+            f"1. If the user asked a relevant question, ANSWER IT briefly.\n"
             f"2. Then, RE-ASK the original question to get the workflow back on track.\n\n"
-            f"CRITICAL: Keep your total response under 2 sentences. Use natural, conversational voice-suitable language."
+            f"CRITICAL: {lang_instruction} Keep your total response under 2 sentences."
         )
         
         try:
@@ -1105,8 +1247,9 @@ class WorkflowEngine:
             self._spoke = True
         except Exception as e:
             logger.error("[WorkflowEngine] Reprompt generation failed: %s", e)
-            # Give a proper reply and end call safely if we can't recover
-            await self.brain._generate_and_speak("I'm sorry, I seem to be having some technical issues. Let's talk again later. Goodbye.")
+            # -> NEW DYNAMIC ERROR MESSAGE
+            err_msg = self._get_dynamic_response("reprompt_error")
+            await self.brain._generate_and_speak(err_msg)
             self.brain.request_voice_session_end("reprompt_error")
             self._spoke = True
 
@@ -1139,32 +1282,54 @@ class WorkflowEngine:
 
     async def _detect_language(self, text: str) -> str:
         """
-        Detect language via cheap Groq classifier.
-        Short texts default to 'en' without any LLM call.
+        Stateful language detection optimized for English, Hindi, and Hinglish.
+        Short texts inherit the session language to prevent amnesia.
         """
-        if not text or len(text.strip()) < 3:
-            return "en"
-        # Simple heuristic: if text is entirely ASCII it's almost certainly English
-        try:
-            text.encode("ascii")
-            return "en"
-        except UnicodeEncodeError:
-            pass  # Non-ASCII → run classifier
+        # 1. Fetch existing language from session (default to 'en')
+        current_lang = self.session_data.get("language", "en")
+
+        if not text:
+            return current_lang
+            
+        # 2. Don't waste LLM tokens on short utterances (e.g., "haan", "yes", "theek hai").
+        if len(text.split()) < 3:
+            return current_lang
 
         try:
             prompt = (
-                f'What language is this text written in?\n'
-                f'Reply with a 2-letter ISO 639-1 code only (e.g. en, es, fr, hi, ta).\n\n'
+                f'Identify the primary language of this text. It will be one of: English, pure Hindi (Devanagari), or Hinglish (Hindi words written in English script, or a mix).\n'
+                f'Reply STRICTLY with exactly one word: "en" for English, "hi" for Hindi, or "hinglish" for Hinglish.\n\n'
                 f'Text: "{text}"'
             )
             result = await self._classifier_complete(
-                "You are a language detector. Reply with a 2-letter ISO code only.",
+                "You are a language detector. Reply ONLY with 'en', 'hi', or 'hinglish'.",
                 prompt,
             )
-            return result.lower()[:2] or "en"
+            detected = result.lower().strip()
+            
+            # Clean up punctuation just in case
+            detected = re.sub(r'[^a-z]', '', detected)
+            
+            # 3. Save to state if valid
+            if detected in ["en", "hi", "hinglish"]:
+                self.session_data["language"] = detected
+                if self.brain and self.brain.session:
+                    self.brain.session.detected_language = detected
+                return detected
+                
+            return current_lang
         except Exception as e:
             logger.error("[WorkflowEngine] Language detection error: %s", e)
-            return "en"
+            return current_lang
+
+    def _get_lang_instruction(self) -> str:
+        """Get prompt directive for the current session language script."""
+        user_lang = self.session_data.get("language", "en")
+        if user_lang == "hinglish":
+            return "Respond in HINGLISH (conversational Hindi written entirely in the Latin/English alphabet)."
+        elif user_lang == "hi":
+            return "Respond in pure Hindi (Devanagari script)."
+        return "Respond in professional English."
 
     # ─── Advanced AI Orchestration ──────────────────────────────────────────
 
@@ -1181,12 +1346,20 @@ class WorkflowEngine:
         except Exception:
             pass
 
+        lang_instruction = self._get_lang_instruction()
+        
+        # Apply hurry modifier if the user is impatient
+        hurry_modifier = ""
+        if self.session_data.pop("hurry_mode", None):
+            hurry_modifier = "\nCRITICAL: The user is in a rush. Skip all pleasantries, empathy, and filler words. Deliver the core information in maximum 1 short sentence."
+
         prompt = PROMPT_TEMPLATES["dynamic_speech"].format(
             label=label,
             base_text=base_text,
             context_str=context_str,
             last_user_text=last_user_text or "None"
         )
+        prompt += f"\n\nCRITICAL LANGUAGE RULE: {lang_instruction}{hurry_modifier}"
 
         try:
             chunks = []
@@ -1226,7 +1399,7 @@ class WorkflowEngine:
             prompt = PROMPT_TEMPLATES["knowledge_intent"].format(text=text)
             resp = await self._classifier_complete("Classify intent as FAQ or not.", prompt)
             return "YES" in resp.upper()
-        except:
+        except Exception:
             return False
 
     async def _execute_knowledge_jump(self, user_text: str) -> bool:
@@ -1279,10 +1452,12 @@ class WorkflowEngine:
             full_context = "\n---\n".join(context_blocks)
 
             # 4. LLM Grounding Verification
+            lang_instruction = self._get_lang_instruction()
             prompt = PROMPT_TEMPLATES["knowledge_grounding"].format(
                 text=user_text,
                 context=full_context
             )
+            prompt += f"\n\nCRITICAL: {lang_instruction}"
             
             rephrased_resp = await self._classifier_complete("Verify and rephrase RAG context.", prompt)
             rephrased_resp = rephrased_resp.strip()
@@ -1299,7 +1474,8 @@ class WorkflowEngine:
             current_speech = _node_speech(current_node)
             final_output = rephrased_resp
             if current_speech:
-                final_output += f" Anyway, going back to what we were discussing: {current_speech}"
+                bridge = self._get_dynamic_response("grounding_bridge")
+                final_output = f"{rephrased_resp} {bridge} {current_speech}"
             
             await self.brain._generate_and_speak(final_output)
             return True

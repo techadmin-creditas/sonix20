@@ -106,6 +106,7 @@ export interface Bot {
   /** Min Deepgram confidence (0-1). Below this on short utterances, bot asks to repeat */
   min_stt_confidence?: number;
   tts_provider?: string;
+  tts_model?: string;
   default_language?: string;
   proactive_prompts?: string[];
   topic_restriction?: string;

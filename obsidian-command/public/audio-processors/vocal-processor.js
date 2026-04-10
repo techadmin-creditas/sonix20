@@ -21,8 +21,10 @@ class VocalProcessor extends AudioWorkletProcessor {
 
     // Single channel (mono) is sufficient for voice AI
     const channelData = input[0];
+    if (!channelData) return true;
     const length = channelData.length;
     
+    // Safety check for absolute silence (could happen if mic is blocked or device disconnected)
     if (length === 0) return true;
 
     // 1. Convert Float32 [-1.0, 1.0] to Int16 [-32768, 32767]

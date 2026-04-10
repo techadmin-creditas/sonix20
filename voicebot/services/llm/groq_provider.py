@@ -56,6 +56,25 @@ class GroqStreamingProvider:
             self._client = AsyncGroq(api_key=self.api_key)
         return self._client
 
+    async def warm(self) -> None:
+        """
+        Pre-establish TLS connection and warm up the client.
+        Fires a tiny zero-token request to prime the provider's connection pool.
+        """
+        try:
+            client = await self._get_client()
+            # Minimal "ping" completion to establish a warm TCP/TLS pool
+            # We use a very low temperature and max_tokens=1 for speed.
+            await client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "."}],
+                max_tokens=1,
+                temperature=0.0
+            )
+            logger.info("🚀 Groq client pre-warmed (Connection Pool active)")
+        except Exception as e:
+            logger.debug("Groq pre-warm failed (non-critical): %s", e)
+
     async def stream_completion(
         self,
         system_prompt: str,
@@ -216,6 +235,25 @@ class GroqStreamingProvider:
                 raise ServiceExhaustedError("Groq rate limit reached or quota exhausted.")
                 
             raise VoiceBotError(f"Groq report: {error_details[:200]}")
+
+
+    async def complete(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, str]],
+    ) -> str:
+        """Non-streaming completion for reflection and analysis."""
+        client = await self._get_client()
+        full_messages = [{"role": "system", "content": system_prompt}]
+        full_messages.extend(messages)
+        
+        response = await client.chat.completions.create(
+            model=self.model,
+            messages=full_messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        return response.choices[0].message.content or ""
 
 
     async def disconnect(self) -> None:

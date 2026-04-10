@@ -20,5 +20,13 @@ DEFAULT_SEMANTIC_AFFINITIES = {
     "callback": [
         "call back", "later", "busy", "driving", "meeting", 
         "thodi der baad", "after some time"
+    ],
+    "already_paid": [
+        "paid", "already paid", "pay kar diya", "bhar diya", 
+        "done already", "clear kar diya"
+    ],
+    "dispute": [
+        "wrong amount", "galat amount", "itna nahi hai", 
+        "fraud", "scam", "i don't owe"
     ]
 }

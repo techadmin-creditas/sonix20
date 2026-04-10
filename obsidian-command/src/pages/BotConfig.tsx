@@ -239,6 +239,8 @@ export default function BotConfig() {
     actions_webhook_url: '',
     post_call_webhook_url: '',
     min_stt_confidence: 0.6,
+    tts_provider: 'deepgram_ws',
+    tts_model: '',
     topic_restriction: '',
     refuse_off_topic: false,
     guardrails: '',
@@ -433,17 +435,25 @@ export default function BotConfig() {
 
           // Auto-sync provider with voice engine if they mismatch in DB
           let tts_provider = botData.tts_provider;
+          let tts_model = botData.tts_model || '';
           const voice = voicesData.find(v => v.id === botData.voice_id);
-          if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
+          
+          if (voice?.provider === 'gemini') {
+            if (tts_provider !== 'gemini') tts_provider = 'gemini';
+            if (!tts_model) tts_model = 'gemini-2.5-flash-preview-tts';
+          } else if (voice?.provider === 'elevenlabs' && tts_provider !== 'elevenlabs') {
             tts_provider = 'elevenlabs';
-          } else if (voice?.provider === 'deepgram' && tts_provider === 'elevenlabs') {
+            tts_model = '';
+          } else if (voice?.provider === 'deepgram' && (tts_provider === 'elevenlabs' || tts_provider === 'gemini')) {
             tts_provider = 'deepgram_ws';
+            tts_model = '';
           }
 
           setFormData({
             ...botData,
             name: cloneId ? `${botData.name}_1` : botData.name,
             tts_provider,
+            tts_model,
             pipeline_mode: botData.pipeline_mode || 'classic',
             guardrails: botData.guardrail_policy?.negative_constraints || '',
           });
@@ -518,7 +528,7 @@ console.log("dbColumns",dbColumns)
       const textToScan = nodes.map((n: any) => findStrings(n.data || {}).join(' ')).join(' ');
       const matches = textToScan.match(/\[(.*?)\]/g) || [];
       // Keep brackets for clarity and ensure it's longer than just "[]"
-      const unique = Array.from(new Set(matches.map(m => m.trim()))).filter(v => v.length > 2);
+      const unique = Array.from(new Set(matches.map(m => m.trim()))).filter((v: string) => v.length > 2);
       setWorkflowVars(unique);
     } catch (err) {
       console.error("Failed to scan workflow for variables:", err);
@@ -549,7 +559,7 @@ console.log("workflowVars",workflowVars)
 
     // Sync mapping table: Add new ones, but also CLEAR orphaned ones that were never configured
     setFormData(prev => {
-      const currentMappings = { ...prev.variable_mappings } || {};
+      const currentMappings = { ...(prev.variable_mappings || {}) };
       let changed = false;
       
       // 1. ADD newly detected variables (Keeping brackets)
@@ -834,7 +844,7 @@ console.log("workflowVars",workflowVars)
                             setAiProvider(null);
                           }
                         }}
-                        className="flex-[2] py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                        className="flex-2 py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
                       >
                         <CheckCircle2 className="size-4" />
                         Apply AI Improvements
@@ -945,7 +955,7 @@ console.log("workflowVars",workflowVars)
                                 onClick={() => setFormData(prev => ({ ...prev, variable_mappings: { ...prev.variable_mappings, [v]: "" } }))}
                                 className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
                               >+ DB</button>
-                             <div className="w-[1px] h-2 bg-current/20" />
+                             <div className="w-px h-2 bg-current/20" />
                              <button 
                                 onClick={() => setFormData(prev => ({ ...prev, metadata_defaults: { ...prev.metadata_defaults, [v]: "" } }))}
                                 className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
@@ -1153,11 +1163,29 @@ console.log("workflowVars",workflowVars)
                     onChange={e => {
                       const vid = e.target.value;
                       const voice = voices.find(v => v.id === vid);
-                      setFormData(prev => ({
-                        ...prev,
-                        voice_id: vid,
-                        tts_provider: voice?.provider === 'elevenlabs' ? 'elevenlabs' : (prev.tts_provider === 'elevenlabs' ? 'deepgram_ws' : prev.tts_provider)
-                      }));
+                      
+                      setFormData(prev => {
+                        let newProv = prev.tts_provider;
+                        let newModel = prev.tts_model;
+
+                        if (voice?.provider === 'gemini') {
+                          newProv = 'gemini';
+                          newModel = 'gemini-2.5-flash-preview-tts';
+                        } else if (voice?.provider === 'elevenlabs') {
+                          newProv = 'elevenlabs';
+                          newModel = '';
+                        } else if (voice?.provider === 'deepgram') {
+                          newProv = 'deepgram_ws';
+                          newModel = '';
+                        }
+
+                        return {
+                          ...prev,
+                          voice_id: vid,
+                          tts_provider: newProv,
+                          tts_model: newModel
+                        };
+                      });
                     }}
                   >
                     {voices.length === 0 ? (
@@ -1199,8 +1227,32 @@ console.log("workflowVars",workflowVars)
                   >
                     ElevenLabs (Multilingual)
                   </option>
+                  <option
+                    value="gemini"
+                    disabled={voices.length > 0 && voices.find(v => v.id === formData.voice_id)?.provider !== 'gemini' && !!voices.find(v => v.id === formData.voice_id)}
+                  >
+                    Gemini (Native Audio)
+                  </option>
                 </select>
               </div>
+
+              {formData.tts_provider === 'gemini' && (
+                <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10 animate-in fade-in slide-in-from-top-1">
+                  <label className="text-xs font-bold uppercase tracking-widest text-primary px-1 flex items-center gap-1.5">
+                    <Sparkles className="size-3" /> TTS Native Model (Free Preview)
+                  </label>
+                  <select
+                    className="w-full bg-surface-container-highest border border-primary/30 rounded-2xl p-4 font-bold text-primary h-14 cursor-pointer transition-all hover:bg-surface-container-high"
+                    value={formData.tts_model || 'gemini-2.5-flash-preview-tts'}
+                    onChange={e => setFormData(prev => ({ ...prev, tts_model: e.target.value }))}
+                  >
+                    <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash (TTS Preview)</option>
+                    {/* <option value="gemini-2.5-flash">Gemini 2.5 Flash (Performance)</option>
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash (Stable)</option> */}
+                  </select>
+                  <p className="text-[10px] text-primary/70 px-1 italic">Selecting a Pro model for TTS provides human-like prosody without conversational overhead.</p>
+                </div>
+              )}
               <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
                 <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Default Language</label>
                 <select

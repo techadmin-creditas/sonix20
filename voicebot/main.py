@@ -542,45 +542,10 @@ async def voice_websocket(
         _is_hindi_bot = (bot_config.get("default_language") or "").lower().startswith("hi")
         
         # 🚀 HIGH-LEVEL OPTIMIZATION: Automatic Hindi routing to ElevenLabs
-        # Deepgram Aura does not support Hindi. If bot is Hindi, force ElevenLabs.
-        if _is_hindi_bot:
-             # Fix for invalid IDs: If database holds a Deepgram Aura ID, map to an ElevenLabs default ID
-             if "aura" in voice_id.lower() or len(voice_id) < 18:
-                 logger.warning(f"Invalid ElevenLabs voice ID '{voice_id}' detected for Hindi bot. Using fallback.")
-                 voice_id = "BKAA4PPBFfn6s91XfihW"  # Default ElevenLabs Hindi voice (Roopa)
-                 
-             from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-             tts_provider = ElevenLabsStreamingProvider(
-                 voice_id=voice_id,
-                 model_id="eleven_flash_v2_5"
-             )
-             logger.info("Hindi Bot detected: Forcing ElevenLabs Multilingual ✅")
-        elif _tts_prov_name == "elevenlabs":
-            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-            tts_provider = ElevenLabsStreamingProvider(
-                voice_id=voice_id,
-                model_id="eleven_flash_v2_5"
-            )
-            logger.info("Using ElevenLabs TTS (Multilingual v2) ✅")
-        elif _tts_prov_name == "deepgram_http":
-            from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
-            tts_provider = DeepgramTTSProvider(model=voice_id)
-            logger.info("Using Deepgram HTTP TTS ✅")
-        else:
-            # Default to WebSocket for Deepgram (lowest latency)
-            from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
-            tts_provider = DeepgramWSTTSProvider(model=voice_id)
-            try:
-                await asyncio.wait_for(tts_provider.connect(), timeout=5.0)
-                logger.info("Using Deepgram WS TTS (model=%s) ✅", voice_id)
-            except Exception as _tts_err:
-                # Per user request: Don't fall back to silent low-quality. Raise error if WS fails.
-                from voicebot.shared.exceptions import HandshakeError
-                raise HandshakeError(f"TTS WebSocket connection failed: {_tts_err}")
-
-        # 🛡️ RESILIENCE: Wrap TTS with fallback chain (e.g. ElevenLabs -> Deepgram)
-        from voicebot.services.tts.voice_tts_factory import wrap_tts_with_fallbacks
-        tts_provider = await wrap_tts_with_fallbacks(tts_provider, bot_config, settings, on_log_fn=on_log)
+        # 3. TTS Provider (Hindi-Aware & Factory-Based)
+        from voicebot.services.tts.voice_tts_factory import create_voice_tts
+        tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
+        logger.info("TTS stack initialized via factory ✅")
 
         # Attach Redis cache for high-frequency phrase caching
         memory_local = RedisSessionProvider(redis_url=settings.redis_url)
@@ -634,6 +599,13 @@ async def voice_websocket(
         user_id=resolved_user_id,
         metadata=db_metadata
     )
+
+    # 🚀 SPECULATIVE WARMING: Trigger provider clients pre-emptively
+    if hasattr(llm_provider, "warm"):
+        asyncio.create_task(llm_provider.warm())
+    if hasattr(tts_provider, "warm"):
+        asyncio.create_task(tts_provider.warm())
+
     vector_memory = locals().get("vector_memory")
     brain = AgenticBrain(
         session=session,

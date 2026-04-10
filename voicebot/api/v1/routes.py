@@ -579,6 +579,7 @@ async def create_bot(data: dict, request: Request):
             proactive_prompts=data.get("proactive_prompts", []),
             owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id),
             min_stt_confidence=data.get("min_stt_confidence", 0.35),
+            tts_model=data.get("tts_model"),
         )
         bid = result.get("id")
         if bid:
@@ -1373,6 +1374,15 @@ async def get_supported_models():
                 "tags": ["fastest", "realtime"]
             },
             {
+                "id": "gemini-2.5-flash-preview-tts",
+                "name": "Gemini 2.5 Flash (TTS Preview)",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00002,
+                "tags": ["premium", "native-audio"]
+            },
+            {
                 "id": "gemini-2.5-flash",
                 "name": "Gemini 2.5 Flash (Production)",
                 "provider": "gemini",
@@ -1497,6 +1507,15 @@ async def get_supported_voices():
             {"id": "aura-luna-en", "name": "Luna (Deepgram)", "provider": "deepgram"},
             {"id": "aura-stella-en", "name": "Stella (Hinglish / Deepgram)", "provider": "deepgram"},
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
+        ]
+
+    # ✅ GEMINI (Native TTS)
+    if is_valid_key(settings.gemini_api_key):
+        voices += [
+            {"id": "Zephyr", "name": "Zephyr (Warm / Gemini)", "provider": "gemini"},
+            {"id": "Puck", "name": "Puck (Energetic / Gemini)", "provider": "gemini"},
+            {"id": "Charon", "name": "Charon (Deep / Gemini)", "provider": "gemini"},
+            {"id": "Corey", "name": "Corey (Natural / Gemini)", "provider": "gemini"},
         ]
 
     # ✅ ELEVENLABS (Dynamic Fetch)
