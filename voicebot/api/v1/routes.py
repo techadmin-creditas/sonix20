@@ -347,6 +347,28 @@ async def list_sessions(request: Request, limit: int = 50):
     return {"sessions": sessions, "count": len(sessions)}
 
 
+@router.post("/sessions/{session_id}/translate", tags=["sessions"])
+async def translate_session_transcript(
+    session_id: str,
+    request: Request,
+    target_lang: str = Query(..., description="Target language for translation"),
+):
+    from voicebot.core.translation import translate_transcript
+    db = await get_db()
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    bot_config = await db.get_bot(session['bot_id']) or {}
+    log_entries = await db.get_session_log(session_id)
+    
+    if not log_entries:
+        return {"translated_text": ""}
+        
+    translated = await translate_transcript(log_entries, target_lang, bot_config)
+    return {"translated_text": translated}
+
+
 @router.get("/sessions/{session_id}", tags=["sessions"])
 async def get_session(session_id: str, request: Request):
     """Get metadata details for a specific voice session."""

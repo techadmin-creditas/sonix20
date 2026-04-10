@@ -591,7 +591,8 @@ class SQLiteProvider:
                          temperature: float = 0.7,
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
-                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35) -> dict:
+                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35,
+                         workflow_id: Optional[str] = None) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
@@ -600,7 +601,7 @@ class SQLiteProvider:
             conn.execute("""
                 INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -1231,25 +1232,179 @@ class SQLiteProvider:
                 peak_hours = conn.execute("""
                     SELECT strftime('%H', datetime(started_at, 'unixepoch')) as hour, COUNT(*) as count
                     FROM sessions
-                    WHERE started_at > strftime('%s', 'now', '-1 day')
+                    WHERE started_at > strftime('%s', 'now', 'start of day')
                     GROUP BY hour
                     ORDER BY hour
                 """).fetchall()
             hour_data = [{"hour": r["hour"] + ":00", "sessions": r["count"]} for r in peak_hours]
             
-            # 7. Sentiment — not computed from DB yet; UI can hide or show placeholder
-            sentiment = {"positive": 0, "neutral": 0, "negative": 0, "note": "unavailable"}
+            # 7. Session History (last 8 days)
+            if owner_user_id:
+                history = conn.execute("""
+                    SELECT strftime('%m-%d', datetime(started_at, 'unixepoch')) as day, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-8 days') AND user_id = ?
+                    GROUP BY day
+                    ORDER BY day
+                """, (owner_user_id,)).fetchall()
+            else:
+                history = conn.execute("""
+                    SELECT strftime('%m-%d', datetime(started_at, 'unixepoch')) as day, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-8 days')
+                    GROUP BY day
+                    ORDER BY day
+                """).fetchall()
+            history_data = [{"name": r["day"], "value": r["count"]} for r in history]
+            
+            # 8. Tool Usage Breakdown (with Bot Context)
+            if owner_user_id:
+                tool_usage = conn.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN tl.tool_name = 'search_knowledge' THEN 'Knowledge (' || b.name || ')'
+                            ELSE tl.tool_name 
+                        END as display_name,
+                        COUNT(*) as count
+                    FROM tool_logs tl
+                    JOIN sessions s ON tl.session_id = s.id
+                    JOIN bots b ON s.bot_id = b.id
+                    WHERE tl.tool_name != '__metrics__' AND s.user_id = ?
+                    GROUP BY display_name
+                    ORDER BY count DESC
+                """, (owner_user_id,)).fetchall()
+            else:
+                tool_usage = conn.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN tl.tool_name = 'search_knowledge' THEN 'Knowledge (' || b.name || ')'
+                            ELSE tl.tool_name 
+                        END as display_name,
+                        COUNT(*) as count
+                    FROM tool_logs tl
+                    JOIN sessions s ON tl.session_id = s.id
+                    JOIN bots b ON s.bot_id = b.id
+                    WHERE tl.tool_name != '__metrics__'
+                    GROUP BY display_name
+                    ORDER BY count DESC
+                """).fetchall()
+            tool_data = [{"name": r["display_name"], "count": r["count"]} for r in tool_usage]
+            
+            # 9. Per-Bot Success Rate
+            if owner_user_id:
+                bot_performance = conn.execute("""
+                    SELECT b.name, 
+                           COUNT(s.id) as total,
+                           SUM(CASE WHEN s.turn_count > 2 THEN 1 ELSE 0 END) as success
+                    FROM bots b JOIN sessions s ON b.id = s.bot_id
+                    WHERE b.is_active = 1 AND b.owner_user_id = ?
+                    GROUP BY b.id
+                    HAVING total > 0
+                    ORDER BY total DESC
+                    LIMIT 3
+                """, (owner_user_id,)).fetchall()
+            else:
+                bot_performance = conn.execute("""
+                    SELECT b.name, 
+                           COUNT(s.id) as total,
+                           SUM(CASE WHEN s.turn_count > 2 THEN 1 ELSE 0 END) as success
+                    FROM bots b JOIN sessions s ON b.id = s.bot_id
+                    WHERE b.is_active = 1
+                    GROUP BY b.id
+                    HAVING total > 0
+                    ORDER BY total DESC
+                    LIMIT 3
+                """).fetchall()
+            
+            perf_data = [
+                {"name": r["name"], "rate": int((r["success"] / r["total"]) * 100)} 
+                for r in bot_performance
+            ]
+            
+            # 10. Call Duration Distribution
+            duration_bins = [
+                {"range": "< 1m", "max": 60, "min": 0},
+                {"range": "1-3m", "max": 180, "min": 60},
+                {"range": "3-5m", "max": 300, "min": 180},
+                {"range": "> 5m", "max": 999999, "min": 300},
+            ]
+            duration_data = []
+            for bin in duration_bins:
+                if owner_user_id:
+                    count = conn.execute("""
+                        SELECT COUNT(*) FROM sessions 
+                        WHERE ended_at IS NOT NULL AND (ended_at - started_at) >= ? AND (ended_at - started_at) < ? AND user_id = ?
+                    """, (bin["min"], bin["max"], owner_user_id)).fetchone()[0]
+                else:
+                    count = conn.execute("""
+                        SELECT COUNT(*) FROM sessions 
+                        WHERE ended_at IS NOT NULL AND (ended_at - started_at) >= ? AND (ended_at - started_at) < ?
+                    """, (bin["min"], bin["max"])).fetchone()[0]
+                duration_data.append({"range": bin["range"], "count": count})
+            
+            # 11. KPI: Average Latency (from __metrics__ tool logs)
+            if owner_user_id:
+                avg_lat_row = conn.execute("""
+                    SELECT AVG(json_extract(arguments, '$.total_ms')) as avg_lat
+                    FROM tool_logs tl JOIN sessions s ON tl.session_id = s.id
+                    WHERE tl.tool_name = '__metrics__' AND s.user_id = ?
+                """, (owner_user_id,)).fetchone()
+            else:
+                avg_lat_row = conn.execute("""
+                    SELECT AVG(json_extract(arguments, '$.total_ms')) as avg_lat
+                    FROM tool_logs
+                    WHERE tool_name = '__metrics__'
+                """).fetchone()
+            avg_latency_ms = avg_lat_row["avg_lat"] if avg_lat_row and avg_lat_row["avg_lat"] else 0
+
+            # 12. KPI: Total Tokens (from session metadata)
+            if owner_user_id:
+                tokens_row = conn.execute("""
+                    SELECT SUM(json_extract(metadata, '$.tokens_total')) as total
+                    FROM sessions
+                    WHERE metadata IS NOT NULL AND user_id = ?
+                """, (owner_user_id,)).fetchone()
+            else:
+                tokens_row = conn.execute("""
+                    SELECT SUM(json_extract(metadata, '$.tokens_total')) as total
+                    FROM sessions
+                    WHERE metadata IS NOT NULL
+                """).fetchone()
+            total_tokens = tokens_row["total"] if tokens_row and tokens_row["total"] else 0
+            
+            # 7. Sentiment — Calculated from session engagement (heuristic)
+            if owner_user_id:
+                pos = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 5 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+                neu = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count BETWEEN 2 AND 5 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+                neg = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count <= 1 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+            else:
+                pos = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 5").fetchone()[0]
+                neu = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count BETWEEN 2 AND 5").fetchone()[0]
+                neg = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count <= 1").fetchone()[0]
+            
+            total_sent = max(pos + neu + neg, 1)
+            sentiment = {
+                "positive": int((pos / total_sent) * 100),
+                "neutral": int((neu / total_sent) * 100),
+                "negative": int((neg / total_sent) * 100),
+                "note": "Based on engagement"
+            }
 
             return {
                 "metrics": {
                     "totalSessions": total_sessions,
                     "activeBots": active_bots,
-                    "avgLatency": "—",
+                    "avgLatency": f"{int(avg_latency_ms)}ms" if avg_latency_ms else "—",
+                    "totalTokens": f"{int(total_tokens / 1000)}k" if total_tokens > 1000 else str(int(total_tokens)),
                     "successRate": f"{int(success_rate)}%",
                     "avgDuration": f"{int(avg_duration)}s" if avg_duration else "—",
                 },
                 "botUsage": usage_data,
                 "peakHours": hour_data,
+                "sessionHistory": history_data,
+                "toolUsage": tool_data,
+                "botPerformance": perf_data,
+                "durationDistribution": duration_data,
                 "sentiment": sentiment,
             }
         return await self._run(_do)

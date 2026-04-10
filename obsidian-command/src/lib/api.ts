@@ -146,12 +146,17 @@ export interface DashboardStats {
     totalSessions: number;
     activeBots: number;
     avgLatency: string;
+    totalTokens: string;
     successRate: string;
     avgDuration: string;
   };
   botUsage: { name: string; value: number }[];
   peakHours: { hour: string; sessions: number }[];
   sentiment: { positive: number; neutral: number; negative: number };
+  sessionHistory: { name: string; value: number }[];
+  toolUsage: { name: string; count: number }[];
+  botPerformance: { name: string; rate: number }[];
+  durationDistribution: { range: string; count: number }[];
 }
 
 export interface SessionRecord {
@@ -550,6 +555,15 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to submit feedback');
     return res.json();
+  },
+
+  async translateSession(sessionId: string, targetLang: string): Promise<string> {
+    const response = await fetch(`${BASE_URL}/sessions/${sessionId}/translate?target_lang=${encodeURIComponent(targetLang)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await response.json();
+    return data.translated_text || '';
   },
 
   async getSessionFacts(sessionId: string): Promise<UserFact[]> {
