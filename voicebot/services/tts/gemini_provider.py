@@ -8,6 +8,7 @@ Supports high-fidelity streaming and dynamic downsampling.
 from __future__ import annotations
 
 import logging
+import time
 import asyncio
 import audioop  # Built-in module for fast PCM manipulation
 from typing import AsyncIterator, Optional
