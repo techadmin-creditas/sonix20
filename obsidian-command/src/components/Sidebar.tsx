@@ -8,6 +8,7 @@ import {
   Settings,
   Database,
   Bot,
+  Sparkles,
   LogOut,
   PlusCircle,
   GitBranch,
@@ -21,7 +22,9 @@ import { ThemeToggle } from './ThemeToggle';
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
+  { icon: Sparkles, label: 'DIY With AI', path: '/diy-with-ai' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
+  { icon: Sparkles, label: 'Persona Builder', path: '/persona' },
   { icon: GitBranch, label: 'Workflows', path: '/workflows' },
   { icon: Database, label: 'Test User Vault', path: '/test-users' },
   // { icon: Database, label: 'Knowledge Base', path: '/knowledge' },
@@ -42,7 +45,7 @@ export function Sidebar({
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.0</h1>
+            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.1</h1>
             {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
           <ThemeToggle />

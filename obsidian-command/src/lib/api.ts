@@ -77,6 +77,8 @@ export interface Bot {
   name: string;
   description: string;
   persona: string;
+  /** Core system prompt used for voice turns (editable by DIY With AI). */
+  system_prompt?: string;
   role: string;
   icon: string;
   color: string;
@@ -112,6 +114,18 @@ export interface Bot {
   topic_restriction?: string;
   refuse_off_topic?: boolean;
 }
+
+export type DiyPersonaDraft = {
+  title: string;
+  tags: string[];
+  default_language: 'en' | 'hi';
+  persona: string;
+  system_prompt: string;
+  tts_provider: string;
+  voice_id?: string;
+  voice_name?: string;
+  voice_provider?: string;
+};
 
 export interface SessionFeedback {
   outcome: 'resolved' | 'escalated' | 'abandoned';
@@ -357,8 +371,29 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to create bot');
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create bot'));
     return res.json();
+  },
+
+  async generateDiyPersona(input: {
+    objective: string;
+    domain?: string;
+    language?: 'en' | 'hi';
+    tone?: string;
+    constraints?: string;
+  }): Promise<{ persona: DiyPersonaDraft; llm_used: string; generated_at: number }> {
+    const res = await fetch(`${BASE_URL}/diy/persona`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to generate persona'));
+    const data = await res.json();
+    return {
+      persona: data.persona,
+      llm_used: data.llm_used,
+      generated_at: data.generated_at,
+    };
   },
 
   async createSession(
@@ -452,6 +487,30 @@ export const api = {
   }> {
     const res = await fetch(`${BASE_URL}/sessions/${id}/summarize`, { method: 'POST' });
     if (!res.ok) throw new Error('Failed to generate session summary');
+    return res.json();
+  },
+
+  async recommendSession(
+    id: string,
+    data?: { goal?: string; constraints?: string }
+  ): Promise<{
+    session_id: string;
+    generated_at: number;
+    llm_used: string;
+    recommendations: {
+      recommended_prompt: string;
+      recommended_persona: string;
+      recommended_llm_provider: string;
+      recommended_llm_model: string;
+      why: string[];
+    };
+  }> {
+    const res = await fetch(`${BASE_URL}/sessions/${id}/recommend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data || {}),
+    });
+    if (!res.ok) throw new Error('Failed to generate recommendations');
     return res.json();
   },
 

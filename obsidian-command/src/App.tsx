@@ -19,6 +19,11 @@ import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
 import TestUserManagement from './pages/TestUserManagement';
+import HomeOld from './pages/HomeOld';
+import HomeNew from './pages/HomeNew';
+import DiyWithAI from './pages/DiyWithAI';
+import DiyPersonaPresets from './pages/DiyPersonaPresets';
+import DiyPersonaBuilder from './pages/DiyPersonaBuilder';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -53,7 +58,8 @@ function App() {
     return (
       <Router>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<HomeOld />} />
+          <Route path="/home" element={<HomeNew />} />
           <Route
             path="/login"
             element={
@@ -85,10 +91,14 @@ function App() {
           <main className="flex-1 flex flex-col ">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/home" element={<HomeNew />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/sessions/live" element={<SessionControl />} />
               <Route path="/sessions/:id" element={<SessionDetail />} />
+              <Route path="/diy-with-ai" element={<DiyWithAI />} />
+              <Route path="/diy-with-ai/personas" element={<DiyPersonaPresets />} />
+              <Route path="/persona" element={<DiyPersonaBuilder />} />
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
               <Route path="/personas/create/debug" element={<BotConfig />} />

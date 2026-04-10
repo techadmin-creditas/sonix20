@@ -42,6 +42,7 @@ from voicebot.services.auth.auth_service import (
     issue_access_token,
     verify_password,
 )
+from voicebot.shared.utils.validation import is_valid_api_key
 
 # Guardrails
 from voicebot.core.guardrails import get_rule_metadata, RuleSuggestor
@@ -525,6 +526,274 @@ async def summarize_session(session_id: str):
         "entities_saved": len(entity_rows) if llm_ran else 0,
         "session_nlp_version": patch.get("session_nlp_version"),
         "llm_analysis_at": patch.get("llm_analysis_at"),
+    }
+
+
+@router.post("/sessions/{session_id}/recommend", tags=["sessions"])
+async def recommend_for_session(session_id: str, request: Request, data: dict | None = None):
+    """
+    Generate AI recommendations for the last call:
+    - recommended prompt
+    - recommended persona
+    - recommended llm provider/model
+
+    Uses Gemini Flash first (gemini-2.0-flash-001). Falls back to Groq on any failure.
+    Persists results to session.metadata.recommendations.
+    """
+    import re
+    import json as _json
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+
+    db = await get_db()
+    sess = await db.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    actor_user_id, actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not _can_access_owner(sess.get("user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    bot_id = sess.get("bot_id")
+    if not bot_id:
+        raise HTTPException(status_code=400, detail="Session has no bot_id")
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found for this session")
+
+    log_entries = await db.get_session_log(session_id)
+    transcript_text = "\n".join(
+        f"{e.get('role')}: {e.get('content')}"
+        for e in (log_entries or [])
+        if e.get("role") in ("user", "assistant")
+    ).strip()
+    if not transcript_text:
+        raise HTTPException(status_code=422, detail="Session has no transcript text")
+
+    payload = data or {}
+    goal = str(payload.get("goal") or "").strip()
+    constraints = str(payload.get("constraints") or "").strip()
+
+    prompt = (
+        "You are an expert voice-bot product operator.\n"
+        "Given the call transcript, propose improvements for the next call.\n\n"
+        "Return ONLY valid JSON with exactly these keys:\n"
+        "{\n"
+        '  \"recommended_prompt\": string,\n'
+        '  \"recommended_persona\": string,\n'
+        '  \"recommended_llm_provider\": string,\n'
+        '  \"recommended_llm_model\": string,\n'
+        '  \"why\": string[]\n'
+        "}\n\n"
+        "Rules:\n"
+        "- recommended_prompt: concise, actionable system prompt for the bot.\n"
+        "- recommended_persona: short persona description and tone.\n"
+        "- why: 3-6 short bullet strings.\n"
+        "- Do not include markdown, no code fences, no extra keys.\n\n"
+        f"Goal (optional): {goal or '(not provided)'}\n"
+        f"Constraints (optional): {constraints or '(not provided)'}\n\n"
+        "Transcript:\n"
+        f"{transcript_text}\n"
+    )
+
+    async def _run_llm(llm) -> tuple[dict, str]:
+        parts: list[str] = []
+        async for chunk in llm.stream_completion(
+            system_prompt="You output strict JSON only.",
+            messages=[{"role": "user", "content": prompt}],
+        ):
+            if chunk.content:
+                parts.append(chunk.content)
+        raw = "".join(parts).strip()
+        # Some providers may wrap JSON in whitespace; recover with a simple bracket slice.
+        t = raw.strip()
+        fence = re.search(r"```(?:json)?\\s*([\\s\\S]*?)\\s*```", t, re.IGNORECASE)
+        if fence:
+            t = fence.group(1).strip()
+        try:
+            obj = _json.loads(t)
+        except Exception:
+            i = t.find("{")
+            j = t.rfind("}")
+            if i >= 0 and j > i:
+                obj = _json.loads(t[i : j + 1])
+            else:
+                raise
+        if not isinstance(obj, dict):
+            raise ValueError("recommendation output was not a JSON object")
+        return obj, raw
+
+    llm_used = "groq"
+    llm_model = getattr(settings, "groq_model", None) or "llama-3.3-70b-versatile"
+    llm = GroqStreamingProvider(model=llm_model)
+
+    # Prefer Gemini Flash when configured.
+    if is_valid_api_key(getattr(settings, "gemini_api_key", None)):
+        try:
+            llm_used = "gemini"
+            llm_model = "gemini-2.0-flash-001"
+            llm = GeminiStreamingProvider(model=llm_model)
+            rec, raw = await _run_llm(llm)
+        except Exception as _gem_err:
+            logger.warning("DIY recommend: Gemini failed, falling back to Groq: %s", _gem_err)
+            llm_used = "groq"
+            llm_model = getattr(settings, "groq_model", None) or "llama-3.3-70b-versatile"
+            llm = GroqStreamingProvider(model=llm_model)
+            rec, raw = await _run_llm(llm)
+    else:
+        rec, raw = await _run_llm(llm)
+
+    # Minimal validation/sanitization
+    out = {
+        "recommended_prompt": str(rec.get("recommended_prompt") or "").strip(),
+        "recommended_persona": str(rec.get("recommended_persona") or "").strip(),
+        "recommended_llm_provider": str(rec.get("recommended_llm_provider") or "").strip().lower(),
+        "recommended_llm_model": str(rec.get("recommended_llm_model") or "").strip(),
+        "why": rec.get("why") if isinstance(rec.get("why"), list) else [],
+    }
+    out["why"] = [str(x).strip() for x in out["why"] if str(x).strip()][:8]
+    if not out["recommended_prompt"] or not out["recommended_persona"]:
+        raise HTTPException(status_code=502, detail="LLM did not produce required recommendation fields")
+
+    now_ts = int(time.time())
+    await db.merge_session_metadata(session_id, {
+        "recommendations": out,
+        "recommendations_at": now_ts,
+        "recommendations_llm": f"{llm_used}:{llm_model}",
+        # Keep raw response for debugging (can be removed later if too large)
+        "recommendations_raw": raw[:8000],
+    })
+
+    return {
+        "session_id": session_id,
+        "generated_at": now_ts,
+        "llm_used": f"{llm_used}:{llm_model}",
+        "recommendations": out,
+    }
+
+
+@router.post("/diy/persona", tags=["diy"])
+async def diy_generate_persona(request: Request, data: dict | None = None):
+    """
+    Generate a persona + system prompt for DIY With AI.
+
+    Uses Gemini Flash first (gemini-2.0-flash-001). Falls back to Groq on any failure.
+    Returns strict JSON fields used by the frontend Persona Builder page.
+    """
+    import re
+    import json as _json
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+
+    actor_user_id, _actor_role = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    payload = data or {}
+    objective = str(payload.get("objective") or "").strip()
+    domain = str(payload.get("domain") or "").strip()
+    language = str(payload.get("language") or "").strip().lower()  # "en" | "hi"
+    tone = str(payload.get("tone") or "").strip()
+    constraints = str(payload.get("constraints") or "").strip()
+
+    if language not in ("en", "hi", ""):
+        raise HTTPException(status_code=422, detail="language must be 'en' or 'hi'")
+
+    prompt = (
+        "You are an expert voice-bot persona designer.\n"
+        "Create a voice agent persona and a system prompt for a live phone-style conversation.\n\n"
+        "Return ONLY valid JSON with exactly these keys:\n"
+        "{\n"
+        '  \"title\": string,\n'
+        '  \"tags\": string[],\n'
+        '  \"default_language\": \"en\" | \"hi\",\n'
+        '  \"persona\": string,\n'
+        '  \"system_prompt\": string,\n'
+        '  \"tts_provider\": string\n'
+        "}\n\n"
+        "Rules:\n"
+        "- title: short label like 'Female · Hindi · Soft · Focus'.\n"
+        "- tags: 3-6 short lowercase tags.\n"
+        "- default_language: 'en' or 'hi'. If not specified, infer from the request.\n"
+        "- persona: 1-2 sentences describing style/tone.\n"
+        "- system_prompt: concise, actionable instructions for the agent.\n"
+        "- tts_provider: set to 'elevenlabs'.\n"
+        "- No markdown, no code fences, no extra keys.\n\n"
+        f"Objective: {objective or '(not provided)'}\n"
+        f"Domain: {domain or '(not provided)'}\n"
+        f"Language hint: {language or '(infer)'}\n"
+        f"Tone hint: {tone or '(infer)'}\n"
+        f"Constraints (optional): {constraints or '(none)'}\n"
+    )
+
+    async def _run_llm(llm) -> tuple[dict, str]:
+        parts: list[str] = []
+        async for chunk in llm.stream_completion(
+            system_prompt="You output strict JSON only.",
+            messages=[{"role": "user", "content": prompt}],
+        ):
+            if chunk.content:
+                parts.append(chunk.content)
+        raw = "".join(parts).strip()
+        t = raw.strip()
+        fence = re.search(r"```(?:json)?\\s*([\\s\\S]*?)\\s*```", t, re.IGNORECASE)
+        if fence:
+            t = fence.group(1).strip()
+        try:
+            obj = _json.loads(t)
+        except Exception:
+            i = t.find("{")
+            j = t.rfind("}")
+            if i >= 0 and j > i:
+                obj = _json.loads(t[i : j + 1])
+            else:
+                raise
+        if not isinstance(obj, dict):
+            raise ValueError("persona output was not a JSON object")
+        return obj, raw
+
+    llm_used = "groq"
+    llm_model = getattr(settings, "groq_model", None) or "llama-3.3-70b-versatile"
+    llm = GroqStreamingProvider(model=llm_model)
+
+    if is_valid_api_key(getattr(settings, "gemini_api_key", None)):
+        try:
+            llm_used = "gemini"
+            llm_model = "gemini-2.0-flash-001"
+            llm = GeminiStreamingProvider(model=llm_model)
+            rec, raw = await _run_llm(llm)
+        except Exception as _gem_err:
+            logger.warning("DIY persona: Gemini failed, falling back to Groq: %s", _gem_err)
+            llm_used = "groq"
+            llm_model = getattr(settings, "groq_model", None) or "llama-3.3-70b-versatile"
+            llm = GroqStreamingProvider(model=llm_model)
+            rec, raw = await _run_llm(llm)
+    else:
+        rec, raw = await _run_llm(llm)
+
+    out = {
+        "title": str(rec.get("title") or "").strip(),
+        "tags": rec.get("tags") if isinstance(rec.get("tags"), list) else [],
+        "default_language": str(rec.get("default_language") or language or "en").strip().lower(),
+        "persona": str(rec.get("persona") or "").strip(),
+        "system_prompt": str(rec.get("system_prompt") or "").strip(),
+        "tts_provider": str(rec.get("tts_provider") or "elevenlabs").strip().lower(),
+    }
+    out["tags"] = [str(x).strip().lower() for x in out["tags"] if str(x).strip()][:10]
+    if out["default_language"] not in ("en", "hi"):
+        out["default_language"] = "en"
+    if out["tts_provider"] != "elevenlabs":
+        out["tts_provider"] = "elevenlabs"
+    if not out["title"] or not out["persona"] or not out["system_prompt"]:
+        raise HTTPException(status_code=502, detail="LLM did not produce required persona fields")
+
+    return {
+        "generated_at": int(time.time()),
+        "llm_used": f"{llm_used}:{llm_model}",
+        "persona": out,
+        "raw": raw[:8000],
     }
 
 

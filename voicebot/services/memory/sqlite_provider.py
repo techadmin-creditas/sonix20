@@ -469,6 +469,138 @@ class SQLiteProvider:
 
         logger.info("Seeded default bot: %s (%s)", name, bot_id)
 
+        # If the registry is otherwise empty, seed a small starter pack so Bot Factory + DIY
+        # have usable personas out of the box.
+        existing_non_recovery = conn.execute(
+            "SELECT COUNT(1) AS c FROM bots WHERE is_active = 1 AND id != ?",
+            (bot_id,),
+        ).fetchone()
+        if existing_non_recovery and int(existing_non_recovery["c"] or 0) > 0:
+            return
+
+        owner_user_id = self._get_admin_user_id(conn)
+        tools_json = json.dumps(
+            ["search_knowledge", "book_appointment", "get_appointments", "remember_user_fact"]
+        )
+        voice_default = "EXAVITQu4vr4xnSDxMaL"  # stable ElevenLabs voice used elsewhere
+
+        starter = [
+            {
+                "id": "starter-female-hi-soft-focus",
+                "name": "Starter · Female · Hindi · Soft · Focus",
+                "description": "Calm, focused Hindi voice agent for concise assistance and clear next steps.",
+                "persona": "A calm, focused, soft-spoken female Hindi voice agent. Polite, efficient, and empathetic.",
+                "system_prompt": "You are a calm, focused female Hindi voice agent. Speak briefly and clearly. Ask one question at a time. Confirm key details. End with clear next steps.",
+                "role": "Voice Agent",
+                "icon": "concierge",
+                "color": "primary",
+                "default_language": "hi",
+                "tts_provider": "elevenlabs",
+            },
+            {
+                "id": "starter-female-en-firm-direct",
+                "name": "Starter · Female · English · Firm · Direct",
+                "description": "Firm, direct English agent for outcome-oriented conversations.",
+                "persona": "A firm, direct female English voice agent. No fluff; outcome-oriented.",
+                "system_prompt": "You are a firm, direct English voice agent. Be concise. Drive the conversation to a resolution with clear options. Avoid filler.",
+                "role": "Voice Agent",
+                "icon": "memory",
+                "color": "secondary",
+                "default_language": "en",
+                "tts_provider": "elevenlabs",
+            },
+            {
+                "id": "starter-male-hi-soft-empathy",
+                "name": "Starter · Male · Hindi · Soft · Empathetic",
+                "description": "Empathetic Hindi agent for sensitive support and reassurance.",
+                "persona": "An empathetic male Hindi voice agent. Patient, reassuring, and helpful.",
+                "system_prompt": "You are an empathetic male Hindi voice agent. Acknowledge feelings, reassure, then ask focused questions. Keep responses short.",
+                "role": "Voice Agent",
+                "icon": "event_busy",
+                "color": "primary",
+                "default_language": "hi",
+                "tts_provider": "elevenlabs",
+            },
+            {
+                "id": "starter-male-en-soft-support",
+                "name": "Starter · Male · English · Soft · Support",
+                "description": "Gentle English support agent with structured troubleshooting.",
+                "persona": "A gentle male English support agent. Friendly and helpful, with structured troubleshooting.",
+                "system_prompt": "You are a gentle English support agent. Ask clarifying questions, provide step-by-step guidance, confirm outcomes, and summarize next steps.",
+                "role": "Voice Agent",
+                "icon": "account_balance",
+                "color": "secondary",
+                "default_language": "en",
+                "tts_provider": "elevenlabs",
+            },
+            {
+                "id": "starter-female-hi-firm-collections",
+                "name": "Starter · Female · Hindi · Firm · Collections",
+                "description": "Firm Hindi collections agent for payments, due reminders, and objections handling.",
+                "persona": "A firm female Hindi collections agent. Polite but assertive.",
+                "system_prompt": "You are a firm Hindi collections agent. Verify identity, state the issue clearly, offer payment options, handle objections briefly, and close with an action.",
+                "role": "Voice Agent",
+                "icon": "concierge",
+                "color": "primary",
+                "default_language": "hi",
+                "tts_provider": "elevenlabs",
+            },
+            {
+                "id": "starter-female-en-warm-sales",
+                "name": "Starter · Female · English · Warm · Sales",
+                "description": "Warm English sales agent for discovery, objections, and confident next steps.",
+                "persona": "A warm female English sales agent. Curious, confident, and persuasive.",
+                "system_prompt": "You are a warm English sales agent. Discover needs, highlight benefits, handle objections, and propose the next step. Keep it short and confident.",
+                "role": "Voice Agent",
+                "icon": "memory",
+                "color": "secondary",
+                "default_language": "en",
+                "tts_provider": "elevenlabs",
+            },
+        ]
+
+        for b in starter:
+            try:
+                if conn.execute("SELECT 1 FROM bots WHERE id = ?", (b["id"],)).fetchone():
+                    continue
+                if conn.execute("SELECT 1 FROM bots WHERE name = ? AND is_active = 1", (b["name"],)).fetchone():
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO bots (
+                        id, name, description, persona, system_prompt, greeting, tools_enabled,
+                        llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens,
+                        workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction,
+                        refuse_off_topic, owner_user_id, min_stt_confidence
+                    )
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, '[]', NULL, 0, ?, 0.35)
+                    """,
+                    (
+                        b["id"],
+                        b["name"],
+                        b["description"],
+                        b["persona"],
+                        b["system_prompt"],
+                        tools_json,
+                        "gemini",
+                        "gemini-2.0-flash-001",
+                        voice_default,
+                        b["role"],
+                        b["icon"],
+                        b["color"],
+                        0.7,
+                        2048,
+                        b["default_language"],
+                        b["tts_provider"],
+                        owner_user_id,
+                    ),
+                )
+            except Exception as _e:
+                logger.warning("Starter bot seed failed for %s: %s", b.get("id"), _e)
+
+        conn.commit()
+        logger.info("Seeded starter bot pack (%d)", len(starter))
+
     def _hash_password_seed(self, password: str, *, iterations: int = 150_000) -> str:
         salt = os.urandom(16).hex()
         dk = hashlib.pbkdf2_hmac(
@@ -620,9 +752,9 @@ class SQLiteProvider:
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider,tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider,tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
