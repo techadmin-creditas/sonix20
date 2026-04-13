@@ -277,9 +277,11 @@ async def create_session(
     session_id = str(uuid.uuid4())
     db = await get_db()
     actor_user_id, actor_role = _actor(request)
-    if not actor_user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
     owner_user_id = actor_user_id
+    if not owner_user_id:
+        # Allow anonymous sessions for the landing page flow
+        owner_user_id = "guest"
+    
     if actor_role == "admin" and user_id:
         owner_user_id = str(user_id)
     language_explicit = "language" in request.query_params

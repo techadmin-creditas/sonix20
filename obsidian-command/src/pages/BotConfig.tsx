@@ -795,6 +795,22 @@ export default function BotConfig() {
                   <option value="gemini_s2s">Gemini speech-to-speech (Gemini Live STS)</option>
                 </select>
               </div>
+
+              {isDebug && <div className="flex flex-col gap-2 pt-4 border-t border-outline-variant/10">
+                <label className="text-xs font-bold uppercase tracking-widest text-primary px-1">Global Configuration</label>
+                <label className="flex items-center justify-between p-4 rounded-2xl bg-primary/5 border border-primary/20 cursor-pointer hover:bg-primary/10 transition-colors h-14 group">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-primary group-hover:underline">Landing Page Default</span>
+                    <span className="text-[10px] text-on-surface-variant font-medium">Click-and-talk bot for guests</span>
+                  </div>
+                  <input
+                    checked={formData.is_landing_page_default || false}
+                    onChange={e => setFormData(prev => ({ ...prev, is_landing_page_default: e.target.checked }))}
+                    className="rounded border-primary/30 bg-white text-primary focus:ring-primary/20 size-6 cursor-pointer"
+                    type="checkbox"
+                  />
+                </label>
+              </div>}
             </div>
           </section>
 

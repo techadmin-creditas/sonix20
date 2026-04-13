@@ -112,6 +112,7 @@ export interface Bot {
   proactive_prompts?: string[];
   topic_restriction?: string;
   refuse_off_topic?: boolean;
+  is_landing_page_default?: boolean;
 }
 
 export type DiyPersonaDraft = {

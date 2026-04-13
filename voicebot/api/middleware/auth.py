@@ -29,6 +29,7 @@ SKIP_AUTH_PATHS = {
     "/redoc",
     "/openapi.json",
     "/api/v1/auth/login",
+    "/api/v1/sessions",
 }
 
 
@@ -45,8 +46,10 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if request.method.upper() == "OPTIONS":
             return await call_next(request)
 
-        # Skip auth for health/docs endpoints
-        if request.url.path in SKIP_AUTH_PATHS:
+        # Skip auth for health/docs/public endpoints
+        path = request.url.path
+        if path in SKIP_AUTH_PATHS or (path.endswith("/") and path[:-1] in SKIP_AUTH_PATHS) or (not path.endswith("/") and path + "/" in SKIP_AUTH_PATHS):
+            logger.debug("Skipping auth for public path: %s", path)
             return await call_next(request)
 
         # Skip auth for WebSocket upgrades (handled separately)

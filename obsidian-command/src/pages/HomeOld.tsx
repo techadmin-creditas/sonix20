@@ -11,9 +11,53 @@ import {
   Sparkles,
   Workflow,
   Zap,
+  Bot as BotIcon,
+  Star,
+  Check
 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { cn } from '../lib/utils';
+import { api } from '../lib/api';
+import LiveTalk from '../components/LiveTalk';
+
+const BackgroundWaves = () => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
+    <motion.div 
+      className="absolute -top-[20%] -right-[10%] w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px]"
+      animate={{ 
+        x: [0, 80, 0],
+        y: [0, -60, 0],
+        scale: [1, 1.3, 1],
+        opacity: [0.3, 0.5, 0.3]
+      }}
+      transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+    />
+    <motion.div 
+      className="absolute -bottom-[20%] -left-[10%] w-[500px] h-[500px] bg-primary/15 rounded-full blur-[100px]"
+      animate={{ 
+        x: [0, -100, 0],
+        y: [0, 80, 0],
+        scale: [0.8, 1.2, 0.8],
+        opacity: [0.2, 0.4, 0.2]
+      }}
+      transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+    />
+    {/* SVG Wave Pattern */}
+    <svg className="absolute bottom-0 left-0 w-full h-32 opacity-10" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <motion.path
+        fill="currentColor"
+        className="text-primary"
+        animate={{
+          d: [
+            "M0,160L48,176C96,192,192,224,288,224C384,224,480,192,576,165.3C672,139,768,117,864,128C960,139,1056,181,1152,197.3C1248,213,1344,203,1392,197.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z",
+            "M0,64L48,80C96,96,192,128,288,128C384,128,480,96,576,106.7C672,117,768,139,864,149.3C960,160,1056,160,1152,144C1248,128,1344,96,1392,80L1440,64L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+          ]
+        }}
+        transition={{ duration: 5, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
+      />
+    </svg>
+  </div>
+);
 
 const CAPABILITIES = [
   {
@@ -177,27 +221,10 @@ export default function HomeOld() {
               animate={reduce ? undefined : { opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, delay: 0.12 }}
             >
-              <div className="glass-panel relative overflow-hidden rounded-3xl p-6 sm:p-8 shadow-2xl shadow-primary/5">
-                <img
-                  src="/marketing/hero-waves.svg"
-                  alt=""
-                  className="absolute bottom-0 left-0 right-0 h-32 w-full object-cover opacity-90 dark:opacity-70"
-                />
-                <div className="relative flex flex-col items-center gap-6">
-                  <img
-                    src="/marketing/ai-mesh.svg"
-                    alt=""
-                    className="mx-auto w-48 max-w-[55%] drop-shadow-lg sm:w-56"
-                  />
-                  <img
-                    src="/marketing/voice-bars.svg"
-                    alt=""
-                    className="h-12 w-auto opacity-90"
-                  />
-                  <p className="text-center text-sm text-on-surface-variant max-w-xs">
-                    Voice-first UX with LLM reasoning-wired for latency budgets and operator visibility.
-                  </p>
-                </div>
+              <div className="glass-panel relative overflow-hidden rounded-[3rem] p-4 sm:p-6 shadow-2xl shadow-primary/10 border-primary/20 bg-surface-low/40 backdrop-blur-md">
+                <BackgroundWaves />
+                <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
+                <LiveTalk />
               </div>
             </motion.div>
           </div>

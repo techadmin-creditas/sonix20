@@ -297,15 +297,21 @@ async def voice_websocket(
             logger.warning("Bot ID '%s' not found, using default fallback", bot_id)
     
     if not bot_config:
-        bots = await db.list_bots()
-        if bots:
-            preferred_id = "recovery-blank"
-            pick_id = next(
-                (b["id"] for b in bots if b.get("id") == preferred_id),
-                bots[0]["id"],
-            )
-            bot_config = await db.get_bot(pick_id) or {}
-            logger.info("Defaulting to bot: %s", bot_config.get("name"))
+        # Check for explicit landing page default first
+        landing_bot = await db.get_landing_page_default_bot()
+        if landing_bot:
+            bot_config = landing_bot
+            logger.info("Using landing page default bot: %s", bot_config.get("name"))
+        else:
+            bots = await db.list_bots()
+            if bots:
+                preferred_id = "recovery-blank"
+                pick_id = next(
+                    (b["id"] for b in bots if b.get("id") == preferred_id),
+                    bots[0]["id"],
+                )
+                bot_config = await db.get_bot(pick_id) or {}
+                logger.info("Defaulting to bot: %s", bot_config.get("name"))
 
     p_mode = str(bot_config.get("pipeline_mode") or "classic").lower()
     if p_mode == "speech_speech":

@@ -201,6 +201,7 @@ class SQLiteProvider:
             ("refuse_off_topic", "INTEGER DEFAULT 0"),
             ("owner_user_id", "TEXT REFERENCES users(id)"),
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
+            ("is_landing_page_default", "INTEGER DEFAULT 0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -723,16 +724,20 @@ class SQLiteProvider:
                          temperature: float = 0.7,
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
-                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35) -> dict:
+                         owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35,
+                         is_landing_page_default: bool = False) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
+            if is_landing_page_default:
+                conn.execute("UPDATE bots SET is_landing_page_default = 0")
+            
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence))
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence, is_landing_page_default)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence, 1 if is_landing_page_default else 0))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -804,13 +809,20 @@ class SQLiteProvider:
                 "llm_provider", "llm_model", "voice_id", "role", "icon", "color", "temperature", "max_tokens", "workflow_id",
                 "guardrail_policy", "data_access_policy", "conversation_policy", "pipeline_mode",
                 "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
-                "agent_task_spec", "default_language", "tts_provider", "stt_endpointing_ms",
                 "stt_utterance_end_ms", "first_segment_chars", "ultra_first_segment_chars",
                 "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
+                "is_landing_page_default",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
+            
+            if updates.get("is_landing_page_default"):
+                conn.execute("UPDATE bots SET is_landing_page_default = 0")
+                updates["is_landing_page_default"] = 1
+            elif "is_landing_page_default" in updates:
+                 updates["is_landing_page_default"] = 0
+
             if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
                 updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
             if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
@@ -828,6 +840,18 @@ class SQLiteProvider:
             conn.execute(f"UPDATE bots SET {set_clause} WHERE id = ?", values)
             conn.commit()
             return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
+    async def get_landing_page_default_bot(self) -> Optional[dict]:
+        """Fetch the bot explicitly marked for the landing page."""
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute("SELECT * FROM bots WHERE is_landing_page_default = 1 AND is_active = 1 LIMIT 1").fetchone()
+            if row:
+                d = dict(row)
+                d["tools_enabled"] = json.loads(d.get("tools_enabled", "[]"))
+                return d
+            return None
         return await self._run(_do)
 
     async def delete_bot(self, bot_id: str) -> bool:
