@@ -50,6 +50,9 @@ class OpenAIStreamingProvider:
         temperature: float = 0.7,
     ):
         self.api_key = api_key or settings.openai_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.model = model or settings.openai_model or "gpt-4o"
         self.max_tokens = max_tokens or 1024
         self.provider = "openai"

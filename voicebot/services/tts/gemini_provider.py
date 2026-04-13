@@ -47,6 +47,9 @@ class GeminiTTSProvider:
         
         self._stopped = False
         
+        # 🛡️ Quota Guard: Track cooldown globally for this instance
+        self._quota_exhausted_until = 0.0
+        
         try:
             # Initialize the standard client; we will use client.aio for async calls
             self.client = genai.Client(api_key=self.api_key)
@@ -73,6 +76,13 @@ class GeminiTTSProvider:
         if not text.strip() or not self.client:
             return
 
+        # 🛡️ Quota Guard check
+        now = time.time()
+        if now < self._quota_exhausted_until:
+            wait_left = self._quota_exhausted_until - now
+            logger.warning("Gemini TTS in penalty box (Quota 429). Skipping for %.1fs", wait_left)
+            return
+
         self._stopped = False
         
         # Standard configuration for single-speaker TTS
@@ -93,19 +103,20 @@ class GeminiTTSProvider:
             chunk_count = 0
             
             # Use the native async client (client.aio) so we don't block the event loop
-            async for chunk in await self.client.aio.models.generate_content_stream(
+            generator = await self.client.aio.models.generate_content_stream(
                 model=self.model,
                 contents=text, # Pass raw text to prevent conversational preamble
                 config=config,
-            ):
+            )
+            
+            async for chunk in generator:
                 if self._stopped:
                     break
                 
-                # Log usage metadata if present (usually in the last chunk or metadata chunks)
+                # Log usage metadata if present
                 if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
                     u = chunk.usage_metadata
-                    logger.info("Gemini TTS Usage: prompt=%d, candidate=%d, total=%d", 
-                                u.prompt_token_count, u.candidates_token_count, u.total_token_count)
+                    logger.debug("Gemini TTS Usage: prompt=%d tokens", u.prompt_token_count)
                 
                 if not chunk.parts:
                     continue
@@ -113,31 +124,30 @@ class GeminiTTSProvider:
                 part = chunk.parts[0]
                 if part.inline_data and part.inline_data.data:
                     audio_data = part.inline_data.data
-                    
-                    # Ignore empty chunks to ensure accurate TTFS metrics
                     if len(audio_data) > 0:
                         chunk_count += 1
-                        
                         if chunk_count == 1:
                             ttfa = (time.time() - start_time) * 1000
-                            logger.info("⚡ Gemini TTS First Chunk Return: %.0fms (size=%d bytes)", ttfa, len(audio_data))
+                            logger.info("⚡ Gemini TTS First Chunk Return: %.0fms", ttfa)
 
-                        # Fast Resampling: Downsample 24kHz to 16kHz on the fly
+                        # Fast Resampling: Downsample 24kHz to 16kHz
                         if self.native_sample_rate != self.target_sample_rate:
-                            # audioop.ratecv(data, width (2 bytes = 16-bit), channels (1), in_rate, out_rate, state)
                             audio_data, _ = audioop.ratecv(
                                 audio_data, 2, 1, self.native_sample_rate, self.target_sample_rate, None
                             )
-                        
-                        if chunk_count % 5 == 0:
-                            logger.debug("Received Gemini TTS chunk %d (size=%d bytes)", chunk_count, len(audio_data))
-                        
                         yield audio_data
 
-            logger.info("Gemini TTS streaming complete (total chunks: %d)", chunk_count)
+            if chunk_count > 0:
+                logger.debug("Gemini TTS streaming complete (%d chunks)", chunk_count)
 
         except Exception as e:
-            logger.error("Gemini TTS streaming error: %s", e)
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                # 🛡️ Mark as exhausted for 60s
+                self._quota_exhausted_until = time.time() + 60.0
+                logger.error("Gemini TTS Quota Exceeded (429). Penalty box active for 60s.")
+            else:
+                logger.error("Gemini TTS streaming error: %s", e)
             raise e
 
     async def stop(self) -> None:

@@ -35,9 +35,14 @@ class GroqStreamingProvider:
         temperature: float = 0.7,
     ):
         self.api_key = api_key or settings.groq_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
+            
         # Debug: confirm load
         if self.api_key:
-            logger.info("Groq Provider initialized with key: %s...%s", self.api_key[:5], self.api_key[-4:])
+            logger.info("Groq Provider initialized with key: %s...%s (len=%d)", 
+                        self.api_key[:5], self.api_key[-4:], len(self.api_key))
         else:
             logger.error("Groq Provider initialized with MISSING key!")
         self.model = model or settings.groq_model or "llama3-70b-8192"

@@ -22,6 +22,7 @@ interface TurnMetric {
   tts: number;
   total: number;
   sentiment: number;
+  is_fast_track?: boolean;
   interruptType?: 'clean' | 'noise_filter' | 'barge_in';
 }
 
@@ -93,7 +94,15 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({ data }) => {
                 }}
               />
               <Bar dataKey="stt" name="STT" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} fillOpacity={0.8} />
-              <Bar dataKey="llm" name="LLM" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} fillOpacity={0.8} />
+              <Bar dataKey="llm" name="LLM" stackId="a" radius={[0, 0, 0, 0]} fillOpacity={0.8}>
+                {data.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.is_fast_track ? '#22d3ee' : '#10b981'} 
+                    fillOpacity={entry.is_fast_track ? 1 : 0.8}
+                  />
+                ))}
+              </Bar>
               <Bar dataKey="tts" name="TTS" stackId="a" fill="#8b5cf6" radius={[4, 4, 0, 0]} fillOpacity={0.8} />
               
               {/* Highlight turns with noise filtering (Yellow) or Barge-in (Green) */}
@@ -177,16 +186,16 @@ export const TelemetryCharts: React.FC<TelemetryChartsProps> = ({ data }) => {
           </div>
         </div>
 
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-amber-500/5">
+        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-cyan-500/10">
           <div className="space-y-1">
-            <p className="text-[9px] font-black text-outline uppercase tracking-widest">Noise Filtered</p>
-            <p className="text-lg font-headline font-black text-on-surface">
-              {data.filter(d => d.interruptType === 'noise_filter').length}
-              <span className="text-[10px] font-normal text-outline/50 ml-1">Echos</span>
+            <p className="text-[9px] font-black text-outline uppercase tracking-widest">Semantic Fast-Tracks</p>
+            <p className="text-lg font-headline font-black text-cyan-400">
+              {data.filter(d => d.is_fast_track).length}
+              <span className="text-[10px] font-normal text-outline/50 ml-1">Boosts</span>
             </p>
           </div>
-          <div className="size-10 rounded-full bg-amber-500/10 flex items-center justify-center">
-            <ShieldAlert className="size-5 text-amber-400" />
+          <div className="size-10 rounded-full bg-cyan-500/10 flex items-center justify-center">
+            <Zap className="size-5 text-cyan-400" />
           </div>
         </div>
       </div>

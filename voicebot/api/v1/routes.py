@@ -356,9 +356,10 @@ async def create_session(
             # Automate: Trigger the LiveKit Voice Agent in the background
             try:
                 from voicebot.livekit_agent import LiveKitVoiceAgent
-                agent = LiveKitVoiceAgent(lk["room_name"], bot_id=bot_id)
+                # 🔑 PASS FULL UUID: We pass the full session_id to the agent so it can hydrate metadata.
+                agent = LiveKitVoiceAgent(lk["room_name"], bot_id=bot_id, session_id=session_id)
                 background_tasks.add_task(agent.start)
-                logger.info("Triggered LiveKit Agent for room %s", lk["room_name"])
+                logger.info("Triggered LiveKit Agent for room %s (session: %s)", lk["room_name"], session_id[:8])
             except Exception as e:
                 logger.error("Failed to trigger LiveKit Agent: %s", e)
         if lk is None and lk_err:
@@ -2078,6 +2079,49 @@ async def get_intent_analytics(request: Request, limit: int = 100):
         owner_user_id=None if actor_role == "admin" else actor_user_id,
     )
     return {"intents": intents, "count": len(intents)}
+
+
+@router.get("/analytics/training-data", tags=["analytics"])
+async def get_training_data(
+    type: Optional[str] = None,
+    feedback: Optional[str] = None,
+    format: str = "json",
+    limit: int = 1000,
+):
+    """
+    Export commitment training examples for fine-tuning.
+
+    - **type**: filter by task_type (`extract_commitment` | `check_contradiction`)
+    - **feedback**: filter by label (`correct` | `false_positive` | `missed` | null for all)
+    - **format**: `json` (default) or `jsonl` (OpenAI/Groq fine-tune format)
+    - **limit**: max rows (default 1000)
+    """
+    db = await get_db()
+    if not hasattr(db, "get_commitment_training_export"):
+        return {"examples": [], "count": 0}
+    examples = await db.get_commitment_training_export(
+        task_type=type, feedback=feedback, limit=limit
+    )
+    if format == "jsonl":
+        import json as _json
+        from fastapi.responses import PlainTextResponse
+        lines = []
+        for ex in examples:
+            sys_msg = (
+                "You are a strict commitment extractor. Reply with ONE sentence or NONE."
+                if ex["task_type"] == "extract_commitment"
+                else "You are a strict contradiction detector. Reply CONTRADICTION:... or NONE."
+            )
+            obj = {
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": ex["input_text"]},
+                    {"role": "assistant", "content": ex["prediction"]},
+                ]
+            }
+            lines.append(_json.dumps(obj, ensure_ascii=False))
+        return PlainTextResponse("\n".join(lines), media_type="application/jsonl")
+    return {"examples": examples, "count": len(examples)}
 
 
 _vector_db: Optional[VectorMemoryProvider] = None
