@@ -42,45 +42,48 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ):
-        # Always allow CORS preflight through so CORSMiddleware can attach headers.
+        # Always allow CORS preflight through.
         if request.method.upper() == "OPTIONS":
-            return await call_next(request)
-
-        # Skip auth for health/docs/public endpoints
-        path = request.url.path
-        if path in SKIP_AUTH_PATHS or (path.endswith("/") and path[:-1] in SKIP_AUTH_PATHS) or (not path.endswith("/") and path + "/" in SKIP_AUTH_PATHS):
-            logger.debug("Skipping auth for public path: %s", path)
             return await call_next(request)
 
         # Skip auth for WebSocket upgrades (handled separately)
         if request.headers.get("upgrade", "").lower() == "websocket":
             return await call_next(request)
 
-        # Optional unsafe bypass for local debugging only.
-        if os.getenv("ALLOW_UNSAFE_DEBUG_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
-            return await call_next(request)
-
-        # Extract the Bearer token
+        # Extract the Bearer token if present
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+        # Validate the JWT if provided
+        if token:
+            payload = _verify_jwt(token)
+            if payload:
+                # Attach user info to request state
+                request.state.user_id = payload.get("sub", "")
+                request.state.roles = payload.get("roles", [])
+            else:
+                # If a token was provided but is invalid, we strictly reject.
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or expired token"},
+                )
+
+        # Enforce auth if NO valid token was found AND the path is not public.
+        path = request.url.path
+        is_public = path in SKIP_AUTH_PATHS or \
+                    (path.endswith("/") and path[:-1] in SKIP_AUTH_PATHS) or \
+                    (not path.endswith("/") and path + "/" in SKIP_AUTH_PATHS)
+        
+        # Unsafe bypass option for local debugging.
+        debug_bypass = os.getenv("ALLOW_UNSAFE_DEBUG_AUTH_BYPASS", "").lower() in ("1", "true", "yes")
+
+        if not getattr(request.state, "user_id", None) and not is_public and not debug_bypass:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid Authorization header"},
             )
-
-        token = auth_header[7:]  # Strip "Bearer "
-
-        # Validate the JWT
-        payload = _verify_jwt(token)
-        if payload is None:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid or expired token"},
-            )
-
-        # Attach user info to request state for downstream use
-        request.state.user_id = payload.get("sub", "")
-        request.state.roles = payload.get("roles", [])
 
         return await call_next(request)
 
