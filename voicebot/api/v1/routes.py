@@ -530,7 +530,7 @@ async def summarize_session(session_id: str):
 
 
 @router.post("/sessions/{session_id}/recommend", tags=["sessions"])
-async def recommend_for_session(session_id: str, request: Request, data: dict | None = None):
+async def recommend_for_session(session_id: str, request: Request, data: Optional[dict] = None):
     """
     Generate AI recommendations for the last call:
     - recommended prompt
@@ -675,7 +675,7 @@ async def recommend_for_session(session_id: str, request: Request, data: dict | 
 
 
 @router.post("/diy/persona", tags=["diy"])
-async def diy_generate_persona(request: Request, data: dict | None = None):
+async def diy_generate_persona(request: Request, data: Optional[dict] = None):
     """
     Generate a persona + system prompt for DIY With AI.
 

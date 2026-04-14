@@ -63,7 +63,7 @@ class DeepgramWSTTSProvider:
         self._receive_task: Optional[asyncio.Task] = None
 
         # Audio chunks from the current Speak request land here.
-        self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._audio_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
         # Signals that all audio for the last Flush has been delivered.
         self._flushed_event = asyncio.Event()
         # Protects concurrent speak() calls (only one segment at a time).
@@ -89,7 +89,7 @@ class DeepgramWSTTSProvider:
             # Use `certifi` CA bundle so TLS verification works in dev
             # environments that may not have the expected system trust store.
             import ssl
-            ssl_context: ssl.SSLContext | None = None
+            ssl_context: Optional[ssl.SSLContext] = None
             try:
                 import certifi  # type: ignore
 

@@ -20,7 +20,7 @@ async def _instantiate_voice_tts(
     voice_id: str, 
     settings: AppSettings,
     tts_model: Optional[str] = None
-) -> Any | None:
+) -> Optional[Any]:
     provider = (provider or "").lower()
     
     if provider == "elevenlabs" and is_valid_api_key(settings.elevenlabs_api_key):
@@ -68,7 +68,7 @@ async def wrap_tts_with_fallbacks(primary: Any, bot_config: dict, settings: AppS
     labels: list[str] = [str(bot_config.get("tts_provider") or "primary").lower() or "primary"]
     seen_types: set[str] = {type(primary).__name__}
 
-    def add(p: Any | None, label: str) -> None:
+    def add(p: Optional[Any], label: str) -> None:
         if p is None:
             return
         t = type(p).__name__

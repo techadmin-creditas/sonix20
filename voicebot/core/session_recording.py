@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from typing import Optional
 from pathlib import Path
 import wave
 
@@ -25,7 +25,7 @@ class SessionRecorder:
         if pcm16:
             self._bot_pcm.extend(pcm16)
 
-    def finalize(self, session_id: str, output_dir: Path) -> dict | None:
+    def finalize(self, session_id: str, output_dir: Path) -> Optional[dict]:
         """Write mixed WAV and return metadata patch for session metadata."""
         if not self._user_pcm and not self._bot_pcm:
             return None
