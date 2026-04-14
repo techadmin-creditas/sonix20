@@ -324,6 +324,16 @@ class SQLiteProvider:
                 created_at  REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
 
+            CREATE TABLE IF NOT EXISTS commitment_training_examples (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type   TEXT NOT NULL,
+                input_text  TEXT NOT NULL,
+                prediction  TEXT NOT NULL,
+                feedback    TEXT DEFAULT NULL,
+                session_id  TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_logs_session_id ON conversation_logs(session_id);
@@ -331,6 +341,7 @@ class SQLiteProvider:
             CREATE INDEX IF NOT EXISTS idx_tool_logs_session ON tool_logs(session_id);
             CREATE INDEX IF NOT EXISTS idx_user_facts_user_id ON user_facts(user_id);
             CREATE INDEX IF NOT EXISTS idx_feedback_session ON session_feedback(session_id);
+            CREATE INDEX IF NOT EXISTS idx_commitment_examples ON commitment_training_examples(task_type, feedback);
 
             CREATE TABLE IF NOT EXISTS customer_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -361,7 +372,19 @@ class SQLiteProvider:
 
             CREATE INDEX IF NOT EXISTS idx_customers_account ON customer_accounts(account_number);
             CREATE INDEX IF NOT EXISTS idx_loans_account ON loans(account_number);
+
+            CREATE TABLE IF NOT EXISTS learned_affinities (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                intent_label TEXT NOT NULL,
+                pattern      TEXT NOT NULL UNIQUE,
+                hit_count    INTEGER DEFAULT 0,
+                is_verified  INTEGER DEFAULT 0,
+                created_at   REAL NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_affinities_intent ON learned_affinities(intent_label);
+            CREATE INDEX IF NOT EXISTS idx_affinities_pattern ON learned_affinities(pattern);
         """)
+
         # Ensure test_meta_data exists in customer_accounts
         existing_customer_cols = {row[1] for row in conn.execute("PRAGMA table_info(customer_accounts)").fetchall()}
         if "test_meta_data" not in existing_customer_cols:
@@ -437,7 +460,7 @@ class SQLiteProvider:
                 llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
                  default_language
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 bot_id,
@@ -1171,6 +1194,105 @@ class SQLiteProvider:
             session_id[:8],
             len(rows),
         )
+
+    # ─── Commitment Training (Self-Learning) ─────────────────────────────────
+
+    async def save_commitment_training_example(
+        self, task_type: str, input_text: str, prediction: str, session_id: Optional[str] = None
+    ) -> None:
+        """Store a raw commitment extraction or contradiction detection prediction for self-learning."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT INTO commitment_training_examples (task_type, input_text, prediction, session_id) VALUES (?, ?, ?, ?)",
+                (task_type, input_text[:500], prediction[:200], session_id),
+            )
+            conn.commit()
+        await self._run(_do)
+
+    async def get_commitment_few_shots(self, task_type: str, limit: int = 5) -> list[dict]:
+        """Return confirmed-correct past predictions for dynamic few-shot injection."""
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT input_text, prediction FROM commitment_training_examples "
+                "WHERE task_type = ? AND feedback = 'correct' AND prediction != 'NONE' "
+                "ORDER BY created_at DESC LIMIT ?",
+                (task_type, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def auto_label_commitment_examples(self, session_id: str) -> None:
+        """
+        Infer feedback labels for this session's training examples.
+        - If bot raised a CONTRADICTION and user's NEXT turn confirmed it → 'correct'
+        - If user's NEXT turn denied it → 'false_positive'
+        Uses conversation_logs to find confirmation/denial signals.
+        """
+        def _do():
+            conn = self._get_conn()
+            # Get all unlabeled contradiction examples for this session
+            examples = conn.execute(
+                "SELECT id, prediction FROM commitment_training_examples "
+                "WHERE session_id = ? AND task_type = 'check_contradiction' AND feedback IS NULL AND prediction != 'NONE'",
+                (session_id,),
+            ).fetchall()
+            if not examples:
+                return
+
+            # Get conversation turns for this session
+            turns = conn.execute(
+                "SELECT role, content FROM conversation_logs WHERE session_id = ? AND role IN ('user','assistant') ORDER BY id",
+                (session_id,),
+            ).fetchall()
+            turns = [dict(t) for t in turns]
+
+            confirm_words = {"haan", "sahi", "theek", "correct", "yes", "right", "bilkul", "okay"}
+            deny_words = {"nahi", "nahi", "no", "galat", "wrong", "maine nahi", "kabhi nahi", "false"}
+
+            # Find assistant turns that reference a contradiction, check what user said next
+            for i, turn in enumerate(turns):
+                if turn["role"] == "assistant" and i + 1 < len(turns):
+                    content_lower = turn["content"].lower()
+                    if "pehle" in content_lower or "baat ki thi" in content_lower or "committed" in content_lower.lower():
+                        next_user = turns[i + 1]
+                        if next_user["role"] == "user":
+                            user_words = set(next_user["content"].lower().split())
+                            if user_words & confirm_words:
+                                feedback = "correct"
+                            elif user_words & deny_words:
+                                feedback = "false_positive"
+                            else:
+                                continue
+                            for ex in examples:
+                                conn.execute(
+                                    "UPDATE commitment_training_examples SET feedback = ? WHERE id = ?",
+                                    (feedback, ex["id"]),
+                                )
+            conn.commit()
+        await self._run(_do)
+
+    async def get_commitment_training_export(self, task_type: Optional[str] = None, feedback: Optional[str] = None, limit: int = 1000) -> list[dict]:
+        """Export training examples for fine-tuning. Returns list of dicts."""
+        def _do():
+            conn = self._get_conn()
+            where = []
+            params = []
+            if task_type:
+                where.append("task_type = ?")
+                params.append(task_type)
+            if feedback:
+                where.append("feedback = ?")
+                params.append(feedback)
+            clause = ("WHERE " + " AND ".join(where)) if where else ""
+            rows = conn.execute(
+                f"SELECT task_type, input_text, prediction, feedback, session_id, created_at "
+                f"FROM commitment_training_examples {clause} ORDER BY created_at DESC LIMIT ?",
+                params + [limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
 
     async def get_user_facts(self, user_id: Optional[str] = None, session_id: Optional[str] = None) -> list[dict]:
         """Get stored facts about a user."""
@@ -2018,7 +2140,51 @@ class SQLiteProvider:
             return True
         return await self._run(_do)
 
+    async def save_learned_affinity(self, intent: str, pattern: str, is_verified: bool = False) -> bool:
+        """Save a new learned intent pattern (UPSERT)."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("""
+                INSERT INTO learned_affinities (intent_label, pattern, is_verified)
+                VALUES (?, ?, ?)
+                ON CONFLICT(pattern) DO UPDATE SET
+                    intent_label = excluded.intent_label,
+                    is_verified = MAX(is_verified, excluded.is_verified)
+            """, (intent, pattern, 1 if is_verified else 0))
+            conn.commit()
+            return True
+        return await self._run(_do)
+
+    async def list_learned_affinities(self, intent_label: Optional[str] = None) -> list[dict]:
+        """Fetch all learned patterns, optionally filtered by intent."""
+        def _do():
+            conn = self._get_conn()
+            if intent_label:
+                rows = conn.execute(
+                    "SELECT * FROM learned_affinities WHERE intent_label = ? ORDER BY hit_count DESC",
+                    (intent_label,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM learned_affinities ORDER BY hit_count DESC"
+                ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def increment_affinity_hit(self, pattern: str) -> bool:
+        """Increment the usage counter for a learned pattern."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE learned_affinities SET hit_count = hit_count + 1 WHERE pattern = ?",
+                (pattern,)
+            )
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
     async def close(self) -> None:
+
         """Close the connection pool."""
         if self._conn:
             self._conn.close()

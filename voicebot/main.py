@@ -84,6 +84,10 @@ async def _archive_voice_session(
         )
         logger.info("Session %s archived with summary (mode=%s).", session_id[:8], mode)
 
+        # Auto-label commitment training examples from this session (self-learning feedback)
+        if hasattr(db, "auto_label_commitment_examples"):
+            asyncio.create_task(db.auto_label_commitment_examples(session_id))
+
         # Store in vector memory (Disabled per user request)
         # if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
         #     try:

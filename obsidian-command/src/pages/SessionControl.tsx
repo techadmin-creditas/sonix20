@@ -210,7 +210,6 @@ export default function SessionControl() {
   /** Larger post-prime chunks → fewer scheduled AudioBufferSource nodes → less scheduling jitter. */
   const BOT_FLUSH_MIN_BYTES = 4096; // ~128ms @ 16kHz mono int16
   const BOT_IDLE_FLUSH_MS = 72;
-  const [micActivity, setMicActivity] = useState(0);
   const [sessionTransport, setSessionTransport] = useState<'websocket' | 'webrtc'>('websocket');
   const [livekitHint, setLivekitHint] = useState<string | null>(null);
   const [isHandoffAnimating, setIsHandoffAnimating] = useState(false);
@@ -420,7 +419,7 @@ export default function SessionControl() {
         if (socket.readyState !== WebSocket.OPEN) return;
         const { audio, rms } = e.data;
         socket.send(audio);
-        setMicActivity(rms * 100);
+        // setMicActivity is removed as high-frequency state updates cause Infinite Re-renders
       };
 
       processorRef.current = micWorkletNode; // Store it for cleanup
@@ -446,7 +445,6 @@ export default function SessionControl() {
         audioContextRef.current = null;
       });
     }
-    setMicActivity(0);
   };
 
   const handleTranslate = async (langName: string) => {
@@ -823,16 +821,6 @@ export default function SessionControl() {
       socket.onclose = (event) => {
         setIsLive(false);
         setIsConnecting(false);
-        setStatus(event.code === 4000 ? 'Init Failed' : 'Disconnected');
-        setWs(null);
-        stopAudio();
-      };
-
-      setWs(socket);
-
-      socket.onclose = (event) => {
-        setIsLive(false);
-        setIsConnecting(false);
         if (event.code === 4000) {
           setStatus('Initialization Failed');
         } else if (event.code !== 1000 && event.code !== 1005) {
@@ -847,6 +835,7 @@ export default function SessionControl() {
           setStatus('Disconnected');
         }
         setWs(null);
+        wsRef.current = null;
         stopAudio();
       };
 

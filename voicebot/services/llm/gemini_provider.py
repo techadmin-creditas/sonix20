@@ -38,6 +38,9 @@ class GeminiStreamingProvider:
         max_tokens: int = 1024,
     ):
         self.api_key = api_key or settings.gemini_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         # Use a reliable default
         self.model_name = model or "gemini-2.5-flash"
         self.temperature = temperature if temperature is not None else 0.7

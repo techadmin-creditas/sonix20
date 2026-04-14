@@ -11,22 +11,22 @@ DEFAULT_SEMANTIC_AFFINITIES = {
     ],
     "rejected": [
         "no", "nope", "nah", "never", "incorrect", "nhi", "not",
-        "galat", "wrong", "nai"
+        "galat", "wrong", "nai", "rejected", "can't pay", "not paying"
     ],
     "refusal": [
         "no", "nope", "can't", "wont", "refuse", "not possible",
-        "nahi hoga", "unwilling"
+        "nahi hoga", "unwilling", "not now", "later", "rejected"
     ],
     "callback": [
         "call back", "later", "busy", "driving", "meeting", 
-        "thodi der baad", "after some time"
+        "thodi der baad", "after some time", "wait a minute", "call me late"
     ],
     "already_paid": [
         "paid", "already paid", "pay kar diya", "bhar diya", 
-        "done already", "clear kar diya"
+        "done already", "clear kar diya", "completed payment"
     ],
     "dispute": [
         "wrong amount", "galat amount", "itna nahi hai", 
-        "fraud", "scam", "i don't owe"
+        "fraud", "scam", "i don't owe", "incorrect balance"
     ]
 }

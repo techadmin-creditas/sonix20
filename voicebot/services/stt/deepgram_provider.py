@@ -187,6 +187,9 @@ class DeepgramStreamingProvider:
         forward_all_pcm: bool = False,
     ):
         self.api_key = api_key or settings.deepgram_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.language = language
         self.model = model
         self.sample_rate = sample_rate

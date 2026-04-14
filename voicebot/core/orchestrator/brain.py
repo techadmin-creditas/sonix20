@@ -46,6 +46,28 @@ def _suspicious_prefix_length(text: str) -> int:
     return 0
 
 # ─── Dynamic Response Pools (To prevent robotic repetition) ────────────────
+_COMMITMENT_PROMPTS = {
+    "extract_commitment": (
+        "Did the user just make a commitment, promise, or clear statement of intent?\n"
+        "A commitment is any definite statement about what they WILL do, WANT, or have AGREED to.\n"
+        "NOT a commitment: questions, greetings, filler words ('okay', 'haan'), passive statements.\n"
+        "{few_shots}"
+        "User said: \"{text}\"\n\n"
+        "If a commitment exists, reply with ONLY the commitment as one short sentence (max 15 words).\n"
+        "If no commitment, reply with exactly: NONE"
+    ),
+    "check_contradiction": (
+        "Prior commitments made by the user in this call:\n{commitments}\n\n"
+        "{few_shots}"
+        "User just said: \"{text}\"\n\n"
+        "Does the user's current statement directly contradict or walk back any prior commitment?\n"
+        "Clarifying questions, partial information, or unrelated statements are NOT contradictions.\n\n"
+        "If YES — reply in this exact format:\n"
+        "CONTRADICTION: <prior commitment text> | <what they are now saying>\n\n"
+        "If NO contradiction — reply with exactly: NONE"
+    ),
+}
+
 _DYNAMIC_RESPONSES = {
     "low_confidence_reprompt": {
         "en": [
@@ -712,14 +734,63 @@ class AgenticBrain:
     def _format_task_phase_hint(self) -> str:
         """Provide a mission-critical context hint to the LLM about the current state/workflow."""
         parts = []
-        
-        # 1. Prioritize Context from WorkflowEngine
+
+        # 0. Dynamic Call Mission — Injected when agent_task_spec defines a call purpose.
+        if self._agent_task_spec:
+            call_purpose = (self._agent_task_spec.get("call_purpose") or "").strip()
+            
+            # Dynamically determine if this is an inbound or outbound bot (default to outbound)
+            call_direction = (self._bot_config.get("call_direction") or "outbound").lower()
+            
+            # Pull all captured workflow facts generically
+            _wf_data = getattr(getattr(self, "workflow_engine", None), "session_data", {}) or {}
+            captured_facts = ", ".join(
+                f"{k}={str(v)[:50]}"
+                for k, v in _wf_data.items()
+                if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
+            )
+            
+            mission_line = call_purpose or "Pursue the core objective."
+            facts_line = f" Known facts: {captured_facts}." if captured_facts else ""
+            direction_header = f"CALL MISSION — {call_direction.upper()} CALL"
+            
+            if call_direction == "outbound":
+                direction_instructions = (
+                    "You initiated this call. YOU have the agenda — the customer did NOT call for help.\n"
+                    "NEVER ask 'how can I help you' or 'what do you need'.\n"
+                    "When the user prompts you to speak (e.g., 'Yes?', 'Tell me', 'Haan bolo', 'Who is this?'), "
+                    "treat it as an INVITATION to state your purpose. Do it immediately and confidently."
+                )
+            else:
+                direction_instructions = (
+                    "The user initiated this call. You are here to assist them with their inquiries while "
+                    "efficiently guiding them toward the call's ultimate objective."
+                )
+
+            parts.append(
+                f"\n\n[{direction_header}]\n"
+                f"Purpose: {mission_line}{facts_line}\n"
+                f"{direction_instructions}\n"
+                "Stay on mission. If the user goes off-topic, acknowledge briefly and pivot back to the objective."
+            )
+
+        # 1. Workflow engine state — current node objective
         if hasattr(self, "workflow_engine") and self.workflow_engine:
             wf_status = self.workflow_engine.get_context_status()
             parts.append(f"\n\n[WORKFLOW STATE: {wf_status}]")
             parts.append(
-                "\nINSTRUCTION: You are in a structured logic flow. If the user asks an unrelated question, "
-                "answer it briefly and then bridge back to the CURRENT TASK."
+                "\nINSTRUCTION: Stay on the CURRENT TASK. "
+                "Conversational affirmations ('tell me', 'okay', 'bataiye') mean CONTINUE — not an off-topic question. "
+                "Continue with the task directly."
+            )
+
+        # Language consistency — enforce matching the user's live detected language
+        lang = self.session.detected_language or "en"
+        if lang in ("hi", "hi-IN", "hi-in"):
+            parts.append(
+                "\n[LANGUAGE RULE] User is speaking Hindi/Hinglish. "
+                "ALWAYS respond in natural Hinglish — mix Hindi and English as bilingual speakers naturally do. "
+                "Never switch to pure English unless the user explicitly switches first."
             )
 
         # 2. Add Agent Task Spec hints (Call Phase / Objection Round)
@@ -1227,9 +1298,28 @@ class AgenticBrain:
             ctx = await self.db.get_user_cross_session_context(user_id)
             parts = []
 
+            # Structured collections briefing — shown first so LLM sees it immediately
+            _structured_cats = {
+                "ptp_amount", "ptp_date", "partial_payment",
+                "contact_time_preference", "strategy_worked", "strategy_failed",
+            }
             if ctx.get("facts"):
-                facts_str = " | ".join(f["fact"] for f in ctx["facts"][:10])
-                parts.append(f"Known about this caller: {facts_str}")
+                structured = [
+                    f for f in ctx["facts"]
+                    if f.get("category", "") in _structured_cats
+                ]
+                if structured:
+                    lines = [f"  • {f['fact']}" for f in structured[:8]]
+                    parts.append("Collections briefing for this caller:\n" + "\n".join(lines))
+
+            if ctx.get("facts"):
+                general_facts = [
+                    f for f in ctx["facts"]
+                    if f.get("category", "") not in _structured_cats
+                ]
+                if general_facts:
+                    facts_str = " | ".join(f["fact"] for f in general_facts[:8])
+                    parts.append(f"Known about this caller: {facts_str}")
 
             if ctx.get("past_summaries"):
                 lines = [
@@ -1841,41 +1931,69 @@ class AgenticBrain:
         mappings = bot_cfg.get("variable_mappings", {})
         defaults = bot_cfg.get("metadata_defaults", {})
         
+        # Merge sources for lookup
+        combined = {**workflow_data, **metadata}
+        # Create a normalized lowercase map for fuzzy matching
+        lowercase_map = {str(k).lower(): v for k, v in combined.items()}
+        
         # Regex to find [Bracked Variables]
         pattern = re.compile(r'\[(.*?)\]')
         
         def _repl(match):
             key = match.group(1).strip()
+            key_low = key.lower()
             bracketed_key = f"[{key}]"
             
-            # Helper to check if a value is actually another key in metadata
+            # Helper to check if a value is actually another key
             def _resolve_pointer(v):
-                if isinstance(v, str) and (v in metadata or v in workflow_data):
-                    return str(metadata.get(v) or workflow_data.get(v))
+                if v is None: return None
+                if isinstance(v, str):
+                    # Check if v is a key in our combined data
+                    v_low = v.lower()
+                    if v in combined:
+                        rp_v = combined[v]
+                        return str(rp_v) if rp_v is not None else None
+                    if v_low in lowercase_map:
+                        rp_v = lowercase_map[v_low]
+                        return str(rp_v) if rp_v is not None else None
                 return str(v)
 
-            # A. Check explicit mappings (e.g. "[POS Amount]" -> "balance")
+            # A. Check explicit mappings
             mapped_key = mappings.get(bracketed_key) or mappings.get(key)
             if mapped_key:
-                val = metadata.get(mapped_key) or workflow_data.get(mapped_key)
+                val = combined.get(mapped_key)
                 if val is not None: return _resolve_pointer(val)
                 
-            # B. Check direct metadata/workflow_data (exact, bracketed, and snake_case)
-            val = metadata.get(bracketed_key) or workflow_data.get(bracketed_key) or \
-                  metadata.get(key) or workflow_data.get(key)
-            if val is not None: return _resolve_pointer(val)
+            # B. Direct Match (Case Sensitive)
+            if key in combined:
+                val = _resolve_pointer(combined[key])
+                if val is not None: return val
+            if bracketed_key in combined:
+                val = _resolve_pointer(combined[bracketed_key])
+                if val is not None: return val
             
-            # C. Check snake_case variant
-            sc_key = key.lower().replace(" ", "_").replace("-", "_")
-            val = metadata.get(sc_key) or workflow_data.get(sc_key)
-            if val is not None: return _resolve_pointer(val)
+            # C. Loose Match (Case Insensitive)
+            if key_low in lowercase_map:
+                val = _resolve_pointer(lowercase_map[key_low])
+                if val is not None: return val
             
-            # D. Check bot config defaults
+            # D. Snake Case Match (e.g. "Customer Name" -> "customer_name")
+            sc_key = key_low.replace(" ", "_").replace("-", "_")
+            if sc_key in lowercase_map:
+                val = _resolve_pointer(lowercase_map[sc_key])
+                if val is not None: return val
+            
+            # E. Check bot config defaults
             val = defaults.get(bracketed_key) or defaults.get(key) or \
                   defaults.get(sc_key) or bot_cfg.get(sc_key)
             if val is not None: return _resolve_pointer(val)
             
-            # E. Fallback to the original tag if nothing found
+            # F. Special Dynamic variables
+            if key_low in ("date", "today"):
+                import datetime
+                return datetime.date.today().strftime("%d %B %Y")
+            
+            # G. Fallback to original
             return match.group(0)
             
         return pattern.sub(_repl, text)
@@ -1891,6 +2009,9 @@ class AgenticBrain:
 
             turn_start = time.time()
             self._turn_start_ref = turn_start
+            self.session.last_llm_latency_ms = 0 # ⬅️ Reset for every turn
+            self._is_fast_track_turn = False      # ⬅️ New flag for telemetry
+            
             # ⏱️ PHASE 4: STT Latency Measurement
             # Time from Deepgram's final transcript arrival to Brain turn trigger.
             if hasattr(self, "_last_utterance_end_time") and self._last_utterance_end_time > 0:
@@ -1997,16 +2118,28 @@ class AgenticBrain:
             self._turn_count += 1
             self._update_task_phase_from_user_text(current_text)
 
-            # Parallel background tasks
+            # Parallel background tasks (fire-and-forget, non-critical path)
             asyncio.create_task(self._analyze_and_emit_sentiment(current_text))
             if self.session.user_id or self.session.session_id:
                 asyncio.create_task(self._extract_and_store_entities(current_text))
+
+            # Commitment intelligence — parallel, bounded 250ms before LLM starts
+            # Both tasks write to session.metadata so they must complete before _build_system_prompt()
+            _commit_tasks = [
+                asyncio.create_task(self._extract_commitment(current_text)),
+                asyncio.create_task(self._check_commitment_contradiction(current_text)),
+            ]
+            try:
+                await asyncio.wait(_commit_tasks, timeout=0.25)
+            except Exception:
+                pass  # Voice pipeline proceeds regardless
 
             # ── Step 2.1: Dynamic Workflow Execution ──
             if self.workflow_engine:
                 logger.info("Evaluating text via WorkflowEngine...")
                 yield_to_llm = await self.workflow_engine.evaluate(safe_text)
                 if not yield_to_llm:
+                    self._is_fast_track_turn = True  # ⬅️ Successfully bypassed main Voice LLM
                     self.session.is_bot_speaking = False
                     self._partial_buffer = ""
                     self._utterance_buffer = ""
@@ -2249,6 +2382,132 @@ class AgenticBrain:
                 "text-blue-400",
             )
 
+    # ─── Commitment Intelligence (Self-Learning) ──────────────────────────────
+
+    async def _load_commitment_few_shots(self, task_type: str) -> str:
+        """
+        Load top-5 confirmed-correct past predictions from DB for dynamic few-shot injection.
+        Returns formatted string for {few_shots} placeholder in _COMMITMENT_PROMPTS.
+        Falls back to empty string if DB unavailable or no examples yet.
+        """
+        if not self.db or not hasattr(self.db, "get_commitment_few_shots"):
+            return ""
+        try:
+            examples = await self.db.get_commitment_few_shots(task_type=task_type, limit=5)
+            if not examples:
+                return ""
+            lines = ["Examples from past calls (confirmed correct):\n"]
+            for ex in examples:
+                lines.append(f'  Input: "{ex["input_text"][:80]}" → {ex["prediction"]}\n')
+            lines.append("\n")
+            return "".join(lines)
+        except Exception:
+            return ""
+
+    async def _store_training_example(self, task_type: str, input_text: str, prediction: str) -> None:
+        """Fire-and-forget: persist a commitment prediction for self-learning."""
+        if self.db and hasattr(self.db, "save_commitment_training_example"):
+            try:
+                await self.db.save_commitment_training_example(
+                    task_type=task_type,
+                    input_text=input_text,
+                    prediction=prediction,
+                    session_id=self.session.session_id,
+                )
+            except Exception as e:
+                logger.debug("Training example save failed (non-critical): %s", e)
+
+    async def _extract_commitment(self, user_text: str) -> None:
+        """
+        LLM-based commitment extractor. Runs with bounded latency as part of
+        parallel pre-turn tasks. Any type of commitment (amount, date, preference,
+        promise) is captured as plain-English fact in session.metadata['commitments'].
+        Also stores raw prediction for self-learning.
+        """
+        if not user_text or not user_text.strip():
+            return
+        few_shots = await self._load_commitment_few_shots("extract_commitment")
+        prompt = _COMMITMENT_PROMPTS["extract_commitment"].format(
+            text=user_text[:300], few_shots=few_shots
+        )
+        try:
+            chunks = []
+            async for chunk in self.llm.stream_completion(
+                system_prompt="You are a strict commitment extractor. Reply with ONE sentence or NONE.",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=40,
+            ):
+                chunks.append(chunk.content or "")
+            result = "".join(chunks).strip()
+            label = "NONE"
+            if result and result.upper() != "NONE" and len(result) > 3:
+                commitments: list[dict] = self.session.metadata.setdefault("commitments", [])
+                entry = {"text": result, "original": user_text[:120], "turn": self._turn_count}
+                commitments.append(entry)
+                label = result
+                await self._log_event("[COMMITMENT]", result[:80], "text-blue-300")
+            asyncio.create_task(self._store_training_example("extract_commitment", user_text[:300], label))
+        except Exception as e:
+            logger.debug("Commitment extraction failed (non-critical): %s", e)
+
+    async def _check_commitment_contradiction(self, user_text: str) -> None:
+        """
+        LLM-based contradiction detector. Checks current utterance against
+        all prior intra-call commitments. If contradiction found, sets
+        session.metadata['contradiction_hint'] which is injected into the LLM
+        system prompt for the current turn.
+        Stores prediction for self-learning feedback loop.
+        """
+        commitments: list[dict] = self.session.metadata.get("commitments", [])
+        # Only check against commitments from PRIOR turns (not the one being extracted now)
+        prior = [c for c in commitments if c.get("turn", 0) < self._turn_count]
+        if not prior or not user_text:
+            self.session.metadata.pop("contradiction_hint", None)
+            return
+
+        commitment_lines = "\n".join(
+            f"- (turn {c['turn']}) {c['text']}" for c in prior[-5:]
+        )
+        few_shots = await self._load_commitment_few_shots("check_contradiction")
+        prompt = _COMMITMENT_PROMPTS["check_contradiction"].format(
+            commitments=commitment_lines,
+            few_shots=few_shots,
+            text=user_text[:300],
+        )
+        try:
+            chunks = []
+            async for chunk in self.llm.stream_completion(
+                system_prompt="You are a strict contradiction detector. Reply CONTRADICTION:... or NONE.",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=60,
+            ):
+                chunks.append(chunk.content or "")
+            result = "".join(chunks).strip()
+            if result.upper().startswith("CONTRADICTION:"):
+                detail = result[len("CONTRADICTION:"):].strip()
+                parts = detail.split("|", 1)
+                prior_stmt = parts[0].strip() if parts else detail
+                current_stmt = parts[1].strip() if len(parts) > 1 else user_text[:80]
+                hint = (
+                    f"INTRA-CALL CONTRADICTION: Earlier this call, the user committed: \"{prior_stmt}\". "
+                    f"They are now saying: \"{current_stmt}\". "
+                    f"Acknowledge this naturally and hold them to their prior statement."
+                )
+                self.session.metadata["contradiction_hint"] = hint
+                await self._log_event("[CONTRADICTION]", f"{prior_stmt[:50]} → {current_stmt[:50]}", "text-red-400")
+                asyncio.create_task(self._store_training_example(
+                    "check_contradiction",
+                    f"commitments: {commitment_lines[:200]} | user: {user_text[:200]}",
+                    result[:200],
+                ))
+            else:
+                self.session.metadata.pop("contradiction_hint", None)
+        except Exception as e:
+            logger.debug("Contradiction check failed (non-critical): %s", e)
+            self.session.metadata.pop("contradiction_hint", None)
+
     async def _guard_tts_segment(self, raw_buffer: str) -> tuple[str, Optional[dict]]:
         """Strip and apply output guard to a TTS phrase. Returns (Masked Text, Block Metadata)"""
         t = (raw_buffer or "").strip()
@@ -2406,7 +2665,7 @@ class AgenticBrain:
                 "total": round(total_latency, 0),
                 "sentiment_score": sentiment_score,
                 "interrupt_type": interrupt_type,
-                # Token usage fields (Aggregated for obsidian-command)
+                "is_fast_track": getattr(self, "_is_fast_track_turn", False), # ⬅️ New metric
                 "tokens_input": usage.get("prompt_tokens", 0) if usage else 0,
                 "tokens_output": usage.get("completion_tokens", 0) if usage else 0,
                 "tokens_total": usage.get("total_tokens", 0) if usage else 0,
@@ -3064,13 +3323,62 @@ class AgenticBrain:
                 "Never guess, invent, or use placeholder values for tool arguments."
             )
 
+        # Conversation style block — injected for all bots, critical for natural voice feel
+        call_direction = (self._bot_config.get("call_direction") or "outbound").lower()
+        
+        outbound_rule = ""
+        if call_direction == "outbound":
+            outbound_rule = (
+                "\n"
+                "RULE 6 — OUTBOUND BEHAVIOUR:\n"
+                "You initiated this call. The customer did NOT call you for help.\n"
+                "Phrases like 'Yes?', 'Tell me', 'Haan', 'Bataiye' mean 'go ahead, state your purpose'. "
+                "NEVER respond to these with 'How can I help you?'.\n"
+                "Treat these as a green light — immediately state your call objective.\n"
+                "BAD: 'Okay, so how can I assist you today?'\n"
+                "GOOD: 'Great. [User Name], I am calling regarding [State Objective]...'\n"
+            )
+
+        conversation_style_block = (
+            "\n\n[CONVERSATION STYLE — MANDATORY]\n"
+            "Speak like a confident, warm human agent on a phone call. Never sound like a bot or a script.\n"
+            "\n"
+            "RULE 1 — NO ECHOING (most critical):\n"
+            "NEVER repeat, paraphrase, or translate the user's words back to them.\n"
+            "When a user says a short affirmative ('yes', 'haan', 'okay', 'right') — do NOT say 'I understand you are available' or 'You said yes'.\n"
+            "Just use a single pivot word ('Okay,' / 'Great,' / 'Right,') and continue naturally.\n"
+            "BAD: 'Since you said yes, I will now tell you...'\n"
+            "GOOD: 'Great. [State the next point directly]'\n"
+            "\n"
+            "RULE 2 — NO MID-CALL GREETINGS:\n"
+            "NEVER use greetings ('Hello', 'Namaste', 'Good morning') once the conversation has started.\n"
+            "Greetings are strictly for the very first message. After that, go straight to the point.\n"
+            "\n"
+            "RULE 3 — NO INTENT ANNOUNCING:\n"
+            "NEVER announce what you are about to do (e.g., 'I want to talk to you about X'). Just talk about X.\n"
+            "BAD: 'Now I want to discuss your account...'\n"
+            "GOOD: 'Regarding your account...'\n"
+            "\n"
+            "RULE 4 — BE DIRECT AND PERSONAL:\n"
+            "Use the caller's name naturally if you know it. Match their language: Hindi/Hinglish response → reply in Hinglish. English → English.\n"
+            "\n"
+            "RULE 5 — ASSUME AFFIRMATIVE ON UNCLEAR INPUT:\n"
+            "In a voice call, transcriptions are often imperfect. "
+            "If user input is short and garbled but starts with an affirmative sound ('ha', 'yep', 'hmm', 'ji') — assume YES.\n"
+            "NEVER say 'I didn't understand' for a 1-2 word affirmative.\n"
+            "BAD: 'I didn't quite catch that, could you repeat?'\n"
+            "GOOD: 'Got it. [Continue with objective]'\n"
+            f"{outbound_rule}"
+        )
+
         # Build full prompt
         if self._bot_config.get("system_prompt"):
             return (
-                self._bot_config["system_prompt"] 
-                + lang_instruction 
-                + spec_block 
-                + dynamic_safety 
+                self._bot_config["system_prompt"]
+                + conversation_style_block
+                + lang_instruction
+                + spec_block
+                + dynamic_safety
                 + tool_instruction_block
             )
 
@@ -3091,7 +3399,7 @@ class AgenticBrain:
             "- If you don't understand, ask for clarification\n"
             "- Be warm, empathetic, and professional\n"
             "- Never reveal sensitive information (passwords, OTPs, card numbers)\n"
-            f"{lang_instruction}{spec_block}{dynamic_safety}{tool_instruction_block}"
+            f"{conversation_style_block}{lang_instruction}{spec_block}{dynamic_safety}{tool_instruction_block}"
         )
 
 
@@ -3127,7 +3435,32 @@ class AgenticBrain:
                 + "\n[END CALLER MEMORY]"
             )
 
-        return f"{extra}{memory_block}{phase_hint}"
+        contradiction_block = ""
+        hint = self.session.metadata.get("contradiction_hint")
+        if hint:
+            contradiction_block = f"\n\n[LIVE CONTEXT]\n{hint}\n[END LIVE CONTEXT]"
+
+        # Caller context: expose all non-internal workflow session_data to the LLM
+        # This ensures the LLM knows the caller's name, captured amounts, etc. after workflow yield
+        caller_context_block = ""
+        _workflow_data = {}
+        if self.workflow_engine:
+            _workflow_data = getattr(self.workflow_engine, "session_data", {})
+        caller_context_lines = [
+            f"  {k}: {str(v)[:80]}"
+            for k, v in _workflow_data.items()
+            if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
+        ]
+        if caller_context_lines:
+            caller_context_block = (
+                "\n\n[CALLER CONTEXT — facts established so far this call]\n"
+                + "\n".join(caller_context_lines)
+                + "\n[END CALLER CONTEXT]\n"
+                "Use the above naturally in conversation. "
+                "Never say you don't know something that is listed above."
+            )
+
+        return f"{extra}{memory_block}{contradiction_block}{caller_context_block}{phase_hint}"
 
     def _build_system_prompt(self) -> str:
         """

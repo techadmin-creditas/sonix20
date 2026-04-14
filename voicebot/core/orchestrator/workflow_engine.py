@@ -6,12 +6,20 @@ from typing import Optional, Any
 import logging
 from voicebot.core.orchestrator.constants import DEFAULT_SEMANTIC_AFFINITIES
 from voicebot.shared.logging.logger import setup_logger
+from voicebot.core.orchestrator.intent_learner import IntentLearner
 
 logger = setup_logger("workflow-engine")
 _background_tasks: set[asyncio.Task] = set()
 
 # Node type used to signal "hand off to the main LLM" — any unknown type also falls through.
 _LLM_FALLBACK_TYPE = "llm_fallback"
+
+# Internal workflow routing signals — never presented to LLM as intent classification options.
+# These are structural edge labels the engine uses for routing, not user-facing intents.
+_INTERNAL_ROUTING_LABELS = frozenset({
+    "fail", "failure", "success", "default", "next", "close",
+    "exit", "denied", "fallback", "done", "end", "complete",
+})
 
 # --- Global Prompt Registry ---
 PROMPT_TEMPLATES = {
@@ -22,17 +30,18 @@ PROMPT_TEMPLATES = {
         "Most Recent User Input: {last_user_text}\n\n"
         "YOUR TASK:\n"
         "1. Analyze the user's latest query in the context of the previous chat.\n"
-        "2. Generate a warm, empathetic, and professional response that resolves the user's immediate concern.\n"
+        "2. Generate a direct, professional response that resolves the user's immediate concern.\n"
         "3. CRITICAL: You MUST end your response with a clear question that steers the user back toward achieving the 'GOAL/OBJECTIVE' stated above.\n"
         "Keep it concise (1-2 sentences) and suitable for high-quality voice synthesis.\n"
         "If the user mentioned specific details like names or amounts, acknowledge them naturally."
     ),
     "nav_intent": (
-        "Analyze the user's voice transcript for 'navigational' or 'topic switching' intent.\n"
+        "Analyze the user's voice transcript for 'navigational', 'topic switching', or 'correction' intent.\n"
         "Does the user want to:\n"
         "1. Go back to a previous topic or step? (e.g., 'Wait, go back to the start')\n"
-        "2. Jump to a specific topic or step mentioned? (e.g., 'Tell me about the discount', 'I want to pay now')\n"
-        "3. Skip a step or Restart?\n\n"
+        "2. Correct previous information or resolve a contradiction? (e.g., 'wrong name', 'wrong person', 'identity correction')\n"
+        "3. Jump to a specific topic or step mentioned? (e.g., 'Tell me about information', 'I want to talk about something else')\n"
+        "4. Skip a step or Restart?\n\n"
         "Reply with a JSON object:\n"
         '{{"action": "BACKTRACK" | "JUMP" | "SKIP" | "RESTART" | "CONTINUE", "target_label": "the name of the step or topic mentioned", "reason": "..."}}'
         '\n\nTranscript: "{text}"'
@@ -47,11 +56,14 @@ PROMPT_TEMPLATES = {
     ),
     "logic_intent": (
         "User Language Context: {user_lang}\n"
-        "Classify the following user input into EXACTLY ONE of: [{ops_str}].\n"
-        "Rule: Map the user's input (whether in English, Hindi, or Hinglish) to the closest semantic English intent label from the available English Intents list.\n"
-        "CRITICAL: You must output ONLY the raw string label. Do not output conversational text or preamble.\n"
-        "If no match is found or it is irrelevant, output \"NONE\".\n\n"
-        "User Input: \"{text}\""
+        "Bot just asked: \"{node_context}\"\n"
+        "### INSTRUCTIONS:\n"
+        "1. Compare the user response against these options: [{ops_str}]\n"
+        "2. If a clear match exists, return that label.\n"
+        "3. AGENTIC DISCOVERY: If NO option matches, you MUST invent a new, concise 'snake_case' intent label (e.g. 'identity_correction', 'dispute_reason', 'callback_request').\n"
+        "4. Be descriptive. Do NOT return 'NONE', 'other', or 'default'.\n"
+        "5. Output ONLY the raw label string.\n\n"
+        "User said: \"{text}\""
     ),
     "sentiment": (
         "What is the sentiment of this response?\n"
@@ -73,7 +85,59 @@ PROMPT_TEMPLATES = {
         "3. If it answers the question, rephrase the context into a natural, empathetic, and professional 1-2 sentence voice reply.\n"
         "4. Do NOT say 'Reflecting on the text' or 'According to the context'. Just say the answer directly.\n\n"
         "REPLY ONLY WITH THE REPHRASED VOICETEXT OR [REJECT]."
-    )
+    ),
+    "infer_unmatched_intent": (
+        "User said: \"{text}\"\n"
+        "Bot's current step: \"{node_label}\"\n"
+        "Bot's goal at this step: \"{node_speech}\"\n\n"
+        "The user's response did not match any expected option.\n"
+        "Classify what the user is communicating. Reply with EXACTLY ONE:\n"
+        "- REFUSING — user says they cannot or will not do the thing asked\n"
+        "- CONFUSED — user doesn't understand the question\n"
+        "- QUESTIONING — user is asking a factual question unrelated to the workflow choice\n"
+        "- STALLING — user is deflecting or asking for more time\n"
+        "- AMBIGUOUS — cannot determine clearly\n"
+        "Reply with ONLY the single label. No explanation."
+    ),
+    "history_summary": (
+        "Summarize this voice conversation for the user in 2-3 spoken sentences.\n"
+        "Focus on: decisions made, information shared, current pending question.\n"
+        "Speak naturally — do NOT start with 'In this conversation...' or similar preamble.\n"
+        "Conversation:\n{history_str}\n\n"
+        "CRITICAL: {lang_instruction}"
+    ),
+    "retry_tier_selection": (
+        "You are selecting the most effective next escalation approach in a voice conversation.\n\n"
+        "User's latest response: \"{text}\"\n"
+        "Recent conversation:\n{context}\n\n"
+        "Available approaches:\n{tiers}\n\n"
+        "Based on the user's tone, resistance level, and what was said:\n"
+        "- A confused or hesitant user → use empathy/understanding first\n"
+        "- A politely stalling user → use benefit/value approach\n"
+        "- A strongly refusing user → use consequence/urgency approach\n"
+        "Reply with ONLY the number of the best approach (1, 2, 3, etc.)."
+    ),
+    "extract_node_entity": (
+        "You are a precise data extraction engine for a voice AI.\n\n"
+        "[CONTEXT]\n"
+        "Bot recently asked: \"{node_speech}\"\n"
+        "Expected routing options: [{edge_labels}]\n"
+        "Already known facts: {known_facts}\n\n"
+        "[INPUT]\n"
+        "User replied: \"{user_text}\"\n\n"
+        "[TASK]\n"
+        "Extract ALL newly revealed or explicitly confirmed facts from the User's reply. "
+        "Return a single JSON dictionary where keys are concise `snake_case` strings.\n\n"
+        "[RULES]\n"
+        "1. IMPLICIT CONFIRMATIONS: If the Bot asked to confirm a detail (e.g., 'Is your name [Name]?') and the User agreed ('Yes', 'Haan'), you MUST extract that detail (e.g., {{\"caller_name\": \"[Name]\"}}).\n"
+        "2. NO DUPLICATES: Do not extract facts already present in 'Already known facts' UNLESS the User is actively correcting or updating them.\n"
+        "3. NO GUESSING: Only extract facts actually stated or logically confirmed. Do not infer unstated data.\n"
+        "4. STRICT JSON: Output ONLY valid, raw JSON. Do NOT wrap the output in markdown code blocks (```json). No explanations.\n"
+        "5. EMPTY STATE: If no new facts were revealed, output exactly: {{}}\n\n"
+        "[EXAMPLES]\n"
+        "User: \"I will pay [Amount] tomorrow\" -> {{\"promised_amount\": \"[Amount]\", \"payment_date\": \"tomorrow\"}}\n"
+        "User: \"Call me on [Day] instead\" -> {{\"callback_day\": \"[Day]\"}}\n"
+    ),
 }
 
 # --- Dynamic Response Pools (To prevent robotic repetition) ---
@@ -167,7 +231,19 @@ _DYNAMIC_RESPONSES = {
             "Anyway, main wapas topic par aata hoon...",
             "Theek hai, main wapas point par aata hoon..."
         ]
-    }
+    },
+    "backtrack_summary_bridge": {
+        "en": [
+            "Sure, let me recap where we are.",
+            "Of course. Here's a quick summary.",
+            "Happy to recap what we've covered.",
+        ],
+        "hi": [
+            "Bilkul, ab tak ki baat ka summary batata hoon.",
+            "Ji zaroor, main recap karta hoon.",
+            "Main abhi tak ki baat dohra deta hoon.",
+        ]
+    },
 }
 
 
@@ -194,7 +270,9 @@ class SpeechHandler(BaseNodeHandler):
             text = await engine._generate_dynamic_speech(node, user_text)
 
         if text:
-            # Note: Variables are injected centrally in Brain._generate_and_speak
+            # Resolve [Placeholders] from session data and cross-session user facts,
+            # extending the central brain._inject_variables() with DB-sourced values.
+            text = await engine._resolve_speech_placeholders(text)
             await engine.brain._generate_and_speak(text)
         else:
             logger.warning("[WorkflowEngine] Speech node %s has no text configured.", node['id'])
@@ -221,6 +299,16 @@ class SpeechHandler(BaseNodeHandler):
 
 class UserInputHandler(BaseNodeHandler):
     async def handle(self, engine, node, user_text):
+        # 🛡️ FIX: Auto-advance to the next logic/processing node before yielding.
+        # This prevents the pointer from staying stuck on the input node during the pause.
+        if node['id'] not in engine.history:
+            engine.history.append(node['id'])
+
+        edges = engine._get_outgoing_edges(node['id'])
+        if edges:
+            # Advance pointer so we are 'waiting' on the next node (usually logic)
+            engine.current_node_id = edges[0].get("target")
+            
         # userInput always pauses the flow execution for the next turn
         return True
 
@@ -235,10 +323,59 @@ class LogicHandler(BaseNodeHandler):
             engine.current_node_id = None
             return True # Yield to LLM
             
+        # 0. Preemptive Shortcut for simple short utterances (Dictionary Fast-Path)
+        clean_text = user_text.lower().strip(" .?!,")
+        words = clean_text.split()
+        first_word = words[0] if words else ""
+        
+        # 🛡️ FIX: Expanded to 5 words OR if it starts with a known trigger word
+        if len(words) <= 5 or first_word in ["ha", "haan", "yes", "ji", "yep", "no", "nahi", "na", "nhi"]:
+            # 1. Load semantic affinities
+            from voicebot.core.orchestrator.constants import DEFAULT_SEMANTIC_AFFINITIES
+            bot_cfg = getattr(engine.brain, "_bot_config", {}) or {}
+            affinities = {**DEFAULT_SEMANTIC_AFFINITIES, **(bot_cfg.get("semantic_affinities", {}))}
+            
+            # 2. Map the user's text to a semantic key
+            matched_affinity = None
+            for aff_key, keywords in affinities.items():
+                if clean_text in keywords or first_word in keywords:
+                    matched_affinity = aff_key
+                    break
+                    
+            if matched_affinity:
+                # 3. Define how semantic intents map to UI edge handles/labels
+                routing_map = {
+                    "confirmed": ["yes", "confirm", "success", "true"],
+                    "rejected":  ["no", "fail", "refusal", "retry", "false", "decline"],
+                    "refusal":   ["no", "fail", "refusal", "retry", "false", "decline"],
+                    "callback":  ["later", "callback", "busy", "reschedule"]
+                }
+                
+                # Fetch target edge labels
+                target_labels = routing_map.get(matched_affinity, []) + [matched_affinity]
+                
+                # 4. Find the matching edge
+                for e in edges:
+                    handle = (e.get("sourceHandle") or "").lower()
+                    lbl = (e.get("label") or "").lower()
+                    
+                    if any(t in handle or t in lbl for t in target_labels):
+                        log_color = "text-emerald-400" if matched_affinity == "confirmed" else "text-amber-400"
+                        await engine._log("[WORKFLOW]", f"Fast-track dictionary match: '{matched_affinity}'", log_color)
+                        
+                        engine.current_node_id = e.get("target")
+                        # Reset reprompt counter on success
+                        engine.node_reprompt_counts[node['id']] = 0
+                        return False
+
         intents = _node_intents(node)
-        edge_labels = [e.get("label") or e.get("sourceHandle") or "" for e in edges]
-        # Skip internal retry labels for semantic classification
-        semantic_labels = [l for l in edge_labels if "retry_" not in l.lower()]
+        edge_labels = [str(e.get("label") or e.get("sourceHandle") or "").lower() for e in edges]
+        # Filter internal routing labels so the LLM only sees user-facing intents.
+        # e.g. "fail", "success", "retry_1" must never be classification options.
+        semantic_labels = [
+            l for l in edge_labels
+            if l and not l.startswith("retry_") and l not in _INTERNAL_ROUTING_LABELS
+        ]
         all_options = list(set([l for l in semantic_labels + intents if l]))
 
         # 1. Smart Sentiment Routing
@@ -249,21 +386,20 @@ class LogicHandler(BaseNodeHandler):
             # Priority A: Specific escape keywords (anger, escalation, etc)
             if sentiment == "negative":
                 for e in edges:
-                    lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-                    if any(x in lbl for x in ["anger", "fast_exit", "escalate", "agent"]):
-                        await engine._log("[WORKFLOW]", "Escape routing: Negative sentiment / Anger detected.", "text-red-400")
+                    lbl = str(e.get("label") or e.get("sourceHandle") or "").lower()
+                    if any(x in lbl for x in ["anger", "fast_exit", "escalate", "agent", "human"]):
+                        await engine._log("[WORKFLOW]", "Escape routing: Negative sentiment / Escalation detected.", "text-red-400")
                         engine.current_node_id = e.get("target")
                         return False
 
             # Priority B: Direct Handle/Label Match (Intuitive branching for Yes/No)
-            # We look for an edge that matches the sentiment's intent (yes/no)
             for e in edges:
-                handle = (e.get("sourceHandle") or "").lower()
-                lbl = (e.get("label") or "").lower()
+                handle = str(e.get("sourceHandle") or "").lower()
+                lbl = str(e.get("label") or "").lower()
                 
                 # A 'match' happens if handle is 'yes'/'no' 
                 # OR if it is a negative response and the label is 'retry_n' or 'fail'
-                is_no_match = (target_handle == "no" and (handle == "no" or "retry" in lbl or "fail" in lbl or "refusal" in lbl))
+                is_no_match = (target_handle == "no" and (handle == "no" or "retry" in lbl or "fail" in lbl or "refusal" in lbl or "reject" in lbl))
                 is_yes_match = (target_handle == "yes" and (handle == "yes" or "confirm" in lbl or "success" in lbl))
                 
                 if is_no_match or is_yes_match:
@@ -275,10 +411,12 @@ class LogicHandler(BaseNodeHandler):
                            engine.node_visit_counts[node['id']] = current_visits + 1
                            engine.current_node_id = e.get("target")
                            return False
-                    elif handle == target_handle or (target_handle == "no" and ("fail" in lbl or "refusal" in lbl)):
+                    else:
                         # Simple match
                         await engine._log("[WORKFLOW]", f"Sentiment routing → {lbl or handle}", "text-emerald-400")
                         engine.current_node_id = e.get("target")
+                        # Reset reprompt counter
+                        engine.node_reprompt_counts[node['id']] = 0
                         return False
 
         # 2. Track visits for Persistence Loops
@@ -288,57 +426,168 @@ class LogicHandler(BaseNodeHandler):
         
         retry_limit = int((node.get("data") or {}).get("retry_limit") or 3)
 
-        # 3. Classify Intent
-        selected = await engine._classify_intent(user_text, all_options) if all_options else "NONE"
+        # 3. Classify Intent — with node context (bot's last question) for accurate response classification
+        node_context = ""
+        _incoming_ids = [e.get("source") for e in engine.edges if e.get("target") == node["id"]]
+        for _src_id in _incoming_ids:
+            _src_node = engine.nodes.get(_src_id or "")
+            if _src_node:
+                _speech = _node_speech(_src_node) or ""
+                if _speech:
+                    node_context = _speech[:200]
+                    break
+                # If it's a userInput node, look one level further back
+                if (_src_node.get("type") or "").lower() in ("userinput", "user_input"):
+                    for _src2_id in [e.get("source") for e in engine.edges if e.get("target") == _src_id]:
+                        _s2 = engine.nodes.get(_src2_id or "")
+                        if _s2:
+                            _s2_speech = _node_speech(_s2) or ""
+                            if _s2_speech:
+                                node_context = _s2_speech[:200]
+                                break
+                    if node_context:
+                        break
+
+        selected = await engine._classify_intent(user_text, all_options, node_context=node_context) if all_options else "NONE"
         await engine._log("[WORKFLOW]", f"Logic branch → {selected} (Try {engine.node_visit_counts[node_id]})", "text-primary")
 
-        # Intelligence Update: If NO match found, stay on node and re-prompt!
-        if selected == "NONE":
-            await engine._log("[ENGINE]", f"Ambiguous input: '{user_text}'. Providing clarification.", "text-amber-400")
-            await engine._handle_reprompt(user_text)
-            return True # PAUSE and wait for new user input after reprompt
-
-        # 4. Routing Logic (Priority: Intent Match -> Retry Match -> Default)
+        # 4. Routing Logic (Priority: Intent Match -> Entity Capture -> Retry Match -> Default/Refusal -> Reprompt)
         target_id = None
-        
-        # Standard label match (STRICT MATCHING)
+        _pre_section_keys = set(engine.session_data.keys())  # snapshot for A.5 detection
+
+        # A. Standard label match (STRICT MATCHING)
         for e in edges:
-            lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-            if selected and lbl and lbl == selected.lower():
+            lbl = str(e.get("label") or e.get("sourceHandle") or "").lower()
+            if selected and selected != "NONE" and lbl and lbl == selected.lower():
                 target_id = e.get("target")
+                # Strategy tracking: record which retry tier the user agreed after
+                visited_key = f"_retry_visited_{node_id}"
+                visited_tiers = engine.session_data.get(visited_key, [])
+                if visited_tiers and engine.brain.db:
+                    last_tier = visited_tiers[-1]
+                    import asyncio as _asyncio
+                    _asyncio.create_task(engine.brain.db.save_user_fact(
+                        fact=f"Strategy that worked: {last_tier} approach (user agreed after this tier)",
+                        session_id=engine.brain.session.session_id,
+                        user_id=engine.brain.session.user_id,
+                        category="strategy_worked",
+                    ))
+                # Entity extraction on success — fire-and-forget (enriches session_data for next turn)
+                asyncio.create_task(engine._extract_node_entity(user_text, node, edges))
+
+                # Terminal safety guard: if routing to a terminal node on first visit, verify with LLM
+                if target_id and engine._is_terminal_target(target_id):
+                    if current_visits <= 1:
+                        confirmed = await engine._confirm_terminal_routing(user_text, selected, node_context)
+                        if not confirmed:
+                            target_id = None  # Block routing, fall through to reprompt
+                            await engine._log("[WORKFLOW]", f"Terminal guard blocked '{selected}' — low confidence", "text-yellow-400")
                 break
         
-        # If no specific intent matched, AND we have a retry path available, use it
-        if not target_id and current_visits < retry_limit:
-            retry_label = f"retry_{current_visits + 1}"
-            for e in edges:
-                lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-                if retry_label in lbl:
-                    await engine._log("[WORKFLOW]", f"Generic fallback → Persistence Tier {retry_label}", "text-amber-400")
-                    target_id = e.get("target")
-                    break
+        # A.2 GLOBAL ESCAPE: If no local edge matches, check if the detected intent 
+        # matches a node label anywhere in the graph (Global Semantic Jump).
+        if not target_id and selected and selected != "NONE":
+            if await engine._handle_jump(selected):
+                await engine._log("[WORKFLOW]", f"Global escape jump → {selected}", "text-purple-400")
+                return False
 
-        # Sane Fallback: If still no target, don't just pick edges[0] if it's ambiguous
+        # A.5 — Intelligence fallback: user gave a direct answer that didn't match any intent label
+        # e.g. "2000" when options are ["pay_now", "ptp_future"], or "ha" confirming a name
+        if not target_id and selected == "NONE":
+            try:
+                _extracted = await asyncio.wait_for(
+                    engine._extract_node_entity(user_text, node, edges),
+                    timeout=0.20,
+                )
+            except (asyncio.TimeoutError, Exception):
+                _extracted = {}
+            if _extracted:
+                # New facts captured — advance via any continuation edge
+                for _e in edges:
+                    _lbl = str(_e.get("label") or _e.get("sourceHandle") or "").lower()
+                    if any(x in _lbl for x in ["next", "success", "capture", "continue"]):
+                        target_id = _e.get("target")
+                        break
+            # Whether we advanced or not, fall through to Section B if still no target
+
+        # B. Dynamic Retry Tier Selection (Persistence Tiers)
+        # LLM picks the best retry tier based on what the user said and conversation context.
+        # Falls back to inline dynamic response if no retry edges are configured.
         if not target_id:
-            # Try to find a 'default' or 'fallback' or 'denied' edge
+            retry_edges = sorted(
+                [e for e in edges if str(e.get("label") or e.get("sourceHandle") or "").lower().startswith("retry_")],
+                key=lambda e: str(e.get("label") or ""),
+            )
+            if retry_edges:
+                best_edge = await engine._select_retry_tier(user_text, retry_edges, node_id)
+                if best_edge:
+                    await engine._log("[WORKFLOW]", f"Dynamic tier → {best_edge.get('label', '?')}", "text-amber-400")
+                    target_id = best_edge.get("target")
+                elif retry_limit == 0:
+                    # Unlimited mode: all tiers visited — reset and generate fresh dynamic response.
+                    engine.session_data.pop(f"_retry_visited_{node_id}", None)
+                    await engine._log("[WORKFLOW]", "Unlimited: resetting tiers — dynamic persistence.", "text-amber-400")
+                    await engine._generate_dynamic_persistence_response(user_text, node)
+                    return True
+            elif current_visits < retry_limit or retry_limit == 0:
+                # No explicit retry edges — generate a contextual inline response and stay on node.
+                await engine._log("[WORKFLOW]", "No retry edges — dynamic inline persistence.", "text-amber-400")
+                await engine._generate_dynamic_persistence_response(user_text, node)
+                return True
+
+        # C. Default Fallback Match (Success Path/Deny Path)
+        # Skip in unlimited mode — routing to fail/exit edges must not happen when retry_limit == 0.
+        if not target_id and retry_limit > 0:
             for e in edges:
-                lbl = (e.get("label") or e.get("sourceHandle") or "").lower()
-                if any(x in lbl for x in ["denied", "fallback", "default", "exit"]):
+                lbl = str(e.get("label") or e.get("sourceHandle") or "").lower()
+                if any(x in lbl for x in ["denied", "fallback", "default", "exit", "next", "success"]):
                     target_id = e.get("target")
                     break
         
+        # D. Smart Intent Inference + Semantic Routing (Final Fallback)
+        # When no structural path matches, infer the user's stance and route intelligently.
         if not target_id:
-            # Safer Fallback: Instead of guessing the first edge, 
-            # provide a smart AI re-prompt to get back on track.
-            await engine._log("[WORKFLOW]", f"No valid path for '{selected}'. Re-prompting user.", "text-amber-300")
-            await engine._handle_reprompt(user_text)
-            return True # Pause and wait for better input
+            inferred = await engine._infer_unmatched_intent(user_text, node)
+            await engine._log("[WORKFLOW]", f"Unmatched → inferred stance: {inferred}", "text-amber-400")
 
-        # Capture data for session (webhooks)
+            if inferred in ("REFUSING", "STALLING"):
+                # User clearly resists — advance to the next retry/escalation tier now.
+                retry_label = f"retry_{engine.node_visit_counts.get(node_id, 1)}"
+                for e in edges:
+                    lbl = str(e.get("label") or e.get("sourceHandle") or "").lower()
+                    if retry_label in lbl:
+                        engine.node_visit_counts[node_id] = engine.node_visit_counts.get(node_id, 0) + 1
+                        engine.current_node_id = e.get("target")
+                        engine.node_reprompt_counts[node_id] = 0
+                        return False
+                # All retry tiers exhausted.
+                if retry_limit == 0:
+                    # Unlimited mode: reset tiers and generate a fresh dynamic response.
+                    engine.session_data.pop(f"_retry_visited_{node_id}", None)
+                    await engine._log("[WORKFLOW]", "Unlimited: all tiers seen — dynamic persistence.", "text-amber-400")
+                    await engine._generate_dynamic_persistence_response(user_text, node)
+                    engine.node_reprompt_counts[node_id] = 0
+                    return True
+                # Finite mode: route to terminal fail/exit edge.
+                for e in edges:
+                    lbl = str(e.get("label") or e.get("sourceHandle") or "").lower()
+                    if any(x in lbl for x in ["fail", "exit", "end", "denied"]):
+                        engine.current_node_id = e.get("target")
+                        return False
+
+            # CONFUSED / QUESTIONING / AMBIGUOUS — generate contextual clarification.
+            if not await engine._handle_reprompt(user_text):
+                return True  # Yield to Brain LLM
+            return True  # Pause after reprompt
+        
+        # Capture data for session
         capture_key = (node.get("data") or {}).get("label") or node['id']
         engine.session_data[capture_key] = selected
         
+        # Success Transition
         engine.current_node_id = target_id
+        # Reset reprompt counter on success
+        engine.node_reprompt_counts[node['id']] = 0
         return False
 
 class SentimentHandler(BaseNodeHandler):
@@ -369,9 +618,12 @@ class SentimentHandler(BaseNodeHandler):
         
         if not target_id:
             await engine._log("[WORKFLOW]", "No sentiment match found. Re-prompting user.", "text-amber-300")
-            await engine._handle_reprompt(user_text)
-            return True
+            if not await engine._handle_reprompt(user_text):
+                return True # Yield
+            return True # Pause
             
+        # Reset count on success
+        engine.node_reprompt_counts[node['id']] = 0
         engine.current_node_id = target_id
         return False
 
@@ -396,9 +648,12 @@ class LanguageHandler(BaseNodeHandler):
                 target_id = edges[0].get("target")
             else:
                 await engine._log("[WORKFLOW]", f"Ambiguous language path for '{language}'. Re-prompting.", "text-amber-300")
-                await engine._handle_reprompt(user_text)
-                return True
+                if not await engine._handle_reprompt(user_text):
+                    return True # Yield
+                return True # Pause
 
+        # Reset count on success
+        engine.node_reprompt_counts[node['id']] = 0
         engine.current_node_id = target_id
         return False
 
@@ -658,6 +913,8 @@ class WorkflowEngine:
 
         # Tracks how many times each node has been visited/executed in this session
         self.node_visit_counts: dict[str, int] = {}
+        # Tracks consecutive classification failures (reprompts) on the current node
+        self.node_reprompt_counts: dict[str, int] = {}
         
         # Find start node if not set
         if not self._current_node_id and self.nodes:
@@ -753,23 +1010,31 @@ class WorkflowEngine:
     async def evaluate(self, user_text: str) -> bool:
         """
         Process the workflow. 
+        Returns True if the caller should yield to the main LLM (free-form fallback).
+        Returns False if the workflow handled the turn fully.
         """
         if not self.current_node_id or self.current_node_id not in self.nodes:
             return True
 
         user_text = user_text.strip()
+        node = self.nodes[self.current_node_id]
+        node_type = _norm_type(node.get("type", ""))
+        
+        # 1. VISITS & DYNAMICS
+        current_visits = self.node_visit_counts.get(self.current_node_id, 0)
+        retry_limit = node.get("data", {}).get("retry_limit", 0)
+        
         if user_text:
             # Globally detect and update session language context on every turn
             await self._detect_language(user_text)
 
-            # 1. Global Interceptors (Disconnect/Escalate)
+            # A. Global Interceptors (Disconnect/Escalate/Hurry)
             global_intent = await self._check_global_interceptor(user_text)
             if global_intent in ("DISCONNECT", "ESCALATE"):
                 key = "disconnect" if global_intent == "DISCONNECT" else "escalation"
                 key_color = "text-red-400" if global_intent == "DISCONNECT" else "text-orange-400"
                 await self._log("[INTERCEPTOR]", f"Detected global move: {global_intent}", f"{key_color} font-bold")
                 
-                # Speak the proper farewell and terminate
                 farewell = self._resolve_farewell(key)
                 await self.brain._generate_and_speak(farewell)
                 
@@ -777,27 +1042,21 @@ class WorkflowEngine:
                     self.brain.request_voice_session_end("user_disconnect")
                 else:
                     await self._handle_escalation()
-                
-                return False # MUST return False to prevent double-speech
+                return False
 
             if global_intent == "HURRY":
                 await self._log("[INTERCEPTOR]", "Detected impatience: HURRY. Accelerating.", "text-amber-400 font-bold")
-                
-                # -> NEW DYNAMIC ACKNOWLEDGMENT
                 ack_msg = self._get_dynamic_response("hurry_ack")
                 await self.brain._generate_and_speak(ack_msg)
-
-                # 2. Flag the session to force the next LLM generation to be ultra-short
                 self.session_data["hurry_mode"] = True
-
-                # 3. Advance the workflow
+                
                 edges = self._get_outgoing_edges(self.current_node_id)
                 if edges:
                     best_edges = [e for e in edges if "retry" not in (e.get("label") or "").lower()]
                     self.current_node_id = (best_edges or edges)[0].get("target")
                     return await self.evaluate("")
 
-            # 2. Navigation / Context Switching (Backtrack or Jump)
+            # B. Navigation / Context Switching (Backtrack or Jump)
             nav_intent = await self._detect_navigational_intent(user_text)
             if nav_intent:
                 action = nav_intent.get("action")
@@ -805,103 +1064,78 @@ class WorkflowEngine:
                 if action in ("BACKTRACK", "JUMP") and target:
                     if await self._handle_jump(target):
                         await self._log("[NAV]", f"Context switched to → {target}", "text-purple-300")
-                elif action == "BACKTRACK": # Simple backtrack
+                        return await self._execute_node_chain(user_text)
+                elif action == "BACKTRACK":
                     if await self._handle_backtrack(None):
                         await self._log("[NAV]", "Backtracked.", "text-purple-300")
+                        return await self._execute_node_chain(user_text)
 
-            # 3. FAQ / Knowledge Interceptor
+            # C. FAQ / Knowledge Interceptor
             if await self._check_knowledge_interceptor(user_text):
                 await self._log("[GLOBAL]", "FAQ Interceptor matched", "text-indigo-400")
                 if await self._execute_knowledge_jump(user_text):
-                    return False # Knowledge took over
-
-        # 3. Advance past userInput blockers
-        node = self.nodes[self.current_node_id]
-        node_type = _norm_type(node.get("type", ""))
-        
-        if user_text and node_type == "userInput":
-            # Track visits for userInput to trigger auto-backtrack on persistent failure
-            current_visits = self.node_visit_counts.get(self.current_node_id, 0)
-            retry_limit = int((node.get("data") or {}).get("retry_limit") or 2)
-            
-            edges = self._get_outgoing_edges(self.current_node_id)
-            if not edges:
-                self.current_node_id = None
-                return True
-            
-            logger.info("[evaluate] Node: %s | Outgoing Edges: %d", self.current_node_id, len(edges))
-            
-            self.last_user_text = user_text
-            self.node_visit_counts[self.current_node_id] = current_visits + 1
-            
-            # If we've failed too many times, backtrack to help the user get back on track
-            if current_visits >= retry_limit:
-                await self._log("[ENGINE]", f"Persistent ambiguity on node '{self.current_node_id}'. Attempting auto-backtrack.", "text-amber-400")
-                if await self._handle_backtrack(None):
-                    return await self._execute_node_chain(user_text)
-                return True # Yield if we can't backtrack
-            
-            # Smart Guard: If user says "No/Can't" but we only have a "Success" path, block it.
-            if len(edges) == 1:
-                lbl = (edges[0].get("label") or edges[0].get("sourceHandle") or "").lower()
-                expected_intents = _node_intents(node)
-                
-                # Logic Passthrough: If the next node is a LOGIC node, 
-                # ALWAYS pass the input through. Logic nodes handle the validation internally.
-                target_node = self.nodes.get(edges[0].get("target"), {})
-                target_type = _norm_type(target_node.get("type", ""))
-                
-                logger.info("[evaluate] One edge detected. Target: %s (%s) | lbl: '%s' | Expected Intents: %s", 
-                            edges[0].get("target"), target_type, lbl, expected_intents)
-                
-                if target_type == "logic" or (not lbl or lbl == "next") and not expected_intents:
-                    self.current_node_id = edges[0].get("target")
-                    return await self._execute_node_chain(user_text)
-
-                # Otherwise, strict validation
-                sentiment = await self._classify_sentiment(user_text)
-                if sentiment == "negative" and "yes" not in lbl:
-                    await self._log("[ENGINE]", "Refusal detected on success-path. Attempting smart routing to Empathy.", "text-red-400")
-                    
-                    # 1. Try to find a 'refusal' or 'retry_1' path in the global graph
-                    if await self._handle_jump("Tier 1 - Empathy") or await self._handle_jump("Empathy") or await self._handle_jump("refusal"):
-                        return await self._execute_node_chain(user_text)
-                        
-                    # 2. Fallback to backtrack
-                    if await self._handle_backtrack(None):
-                        return await self._execute_node_chain(user_text)
-                    
-                    # 3. If all else fails, yield but don't error
-                    return True 
-                
-                # If user says something irrelevant like "hello", stay here rather than jumping
-                valid_options = [lbl] if lbl and lbl != "next" else expected_intents
-                selected = await self._classify_intent(user_text, valid_options)
-                
-                if selected == "NONE":
-                    await self._handle_reprompt(user_text)
-                    return False # Return False: We already spoke the reprompt, don't let Brain speak again.
-                
-                # If we matched one of the node's semantic intents, proceed to the target
-                self.last_intent = selected
-                self.current_node_id = edges[0].get("target")
-            else:
-                labels = [e.get("label") or e.get("sourceHandle") or "next" for e in edges]
-                selected = await self._classify_intent(user_text, labels)
-                self.last_intent = selected # Capture for UI debugging
-                
-                # Intelligence Update: If NO match found, stay on node and re-prompt!
-                if selected == "NONE":
-                    await self._log("[ENGINE]", f"Ambiguous input: '{user_text}'. Providing clarification.", "text-amber-400")
-                    await self._handle_reprompt(user_text)
-                    return False # Return False to prevent double-speech
-                
-                target_id = next((e.get("target") for e in edges if (e.get("label") or "").lower() == selected.lower()), None)
-                if not target_id:
-                    await self._handle_reprompt(user_text)
                     return False
 
-                self.current_node_id = target_id
+        # 2. PERSISTENCE TRACKING (Retry Limit Logic)
+        if node_type == "userInput":
+            self.node_visit_counts[self.current_node_id] = current_visits + 1
+            edges = self._get_outgoing_edges(self.current_node_id)
+            
+            # If we've hit retry_limit, detect intent FIRST before taking drastic action.
+            if retry_limit > 0 and current_visits >= retry_limit:
+                self.node_visit_counts[self.current_node_id] = 0  
+                await self._log("[ENGINE]", f"Retry limit reached ({current_visits}). Detecting stance.", "text-amber-400")
+
+                inferred = await self._infer_unmatched_intent(user_text, node)
+                await self._log("[WORKFLOW]", f"Over-retry stance: {inferred}", "text-amber-400")
+
+                if inferred in ("REFUSING", "STALLING"):
+                    # Find fail/exit path
+                    for e in edges:
+                        target_node = self.nodes.get(e.get("target"), {})
+                        if _norm_type(target_node.get("type", "")) == "logic":
+                            for le in self._get_outgoing_edges(e.get("target")):
+                                lbl = str(le.get("label") or le.get("sourceHandle") or "").lower()
+                                if any(x in lbl for x in ["fail", "exit", "end", "denied"]):
+                                    await self._log("[WORKFLOW]", f"Refusal exit path → {le.get('target')}", "text-red-400")
+                                    self.current_node_id = le.get("target")
+                                    return await self._execute_node_chain(user_text)
+                    
+                elif inferred == "CONFUSED":
+                    if not await self._handle_reprompt(user_text):
+                        return True
+                    return False
+
+                # AMBIGUOUS / QUESTIONING — backtrack
+                if await self._handle_backtrack(None):
+                    return await self._execute_node_chain(user_text)
+                return True
+
+            # Standard Transition Logic
+            if not user_text:
+                return await self._execute_node_chain("")
+
+            # Logic Hand-off: If the next node is logic, move immediately
+            if edges:
+                target_node = self.nodes.get(edges[0].get("target"), {})
+                if _norm_type(target_node.get("type", "")) == "logic":
+                    self.current_node_id = edges[0].get("target")
+                    return await self._execute_node_chain(user_text)
+                
+                # Semantic Guard for single-edge Success paths
+                if len(edges) == 1:
+                    lbl = (edges[0].get("label") or edges[0].get("sourceHandle") or "").lower()
+                    if "success" in lbl or "confirmed" in lbl:
+                        sentiment = await self._classify_sentiment(user_text)
+                        if sentiment == "negative":
+                            await self._log("[ENGINE]", "Refusal on success-path. Backtracking.", "text-red-400")
+                            if await self._handle_backtrack(None):
+                                return await self._execute_node_chain(user_text)
+                            return True
+
+                # Default move
+                self.current_node_id = edges[0].get("target")
+                return await self._execute_node_chain(user_text)
 
         return await self._execute_node_chain(user_text)
 
@@ -1126,7 +1360,76 @@ class WorkflowEngine:
             incoming = [e.get("source") for e in self.edges if e.get("target") == target_id]
             target_id = incoming[0] if incoming else None
             
+        # Append captured session variables for richer LLM context
+        captured = [
+            f"{k}={str(v)[:40]}"
+            for k, v in self.session_data.items()
+            if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
+        ]
+        if captured and text:
+            label = node.get("data", {}).get("label") or self.current_node_id
+            return (
+                f"CURRENT TASK: [{label}]. Objective: {text[:200]}"
+                f" | Captured: {', '.join(captured[:6])}"
+            )
         return "Executing background logic. Stay on high alert for user interruptions."
+
+    async def _extract_node_entity(self, user_text: str, node: dict, edges: list) -> dict:
+        """
+        Universal LLM-driven entity extractor — no hardcoded fields, no regex.
+        Works for any node: verification, capture, confirmation, preference, free-form.
+        Infers key names from context. Returns extracted dict and writes to session_data.
+        Low-latency: uses _classifier_complete() (~100ms on Groq, max_tokens=80).
+        """
+        node_speech = (_node_speech(node) or "")[:250]
+        if not node_speech or not user_text.strip():
+            return {}
+
+        edge_labels = ", ".join(
+            str(e.get("label") or e.get("sourceHandle") or "")
+            for e in edges
+            if (e.get("label") or e.get("sourceHandle") or "")
+            and str(e.get("label") or "").lower() not in _INTERNAL_ROUTING_LABELS
+            and not str(e.get("label") or "").lower().startswith("retry_")
+        ) or "open-ended"
+
+        known_facts = ", ".join(
+            f"{k}={str(v)[:40]}"
+            for k, v in self.session_data.items()
+            if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
+        ) or "none"
+
+        prompt = PROMPT_TEMPLATES["extract_node_entity"].format(
+            node_speech=node_speech,
+            edge_labels=edge_labels[:150],
+            known_facts=known_facts[:150],
+            user_text=user_text[:200],
+        )
+        try:
+            result = (await self._classifier_complete(
+                "You output only a compact JSON dict of facts. No explanation.",
+                prompt,
+            )).strip()
+            if not result or result in ("{}", "{ }"):
+                return {}
+            import json as _json
+            extracted = _json.loads(result)
+            if not isinstance(extracted, dict):
+                return {}
+            new_facts = {}
+            for key, value in extracted.items():
+                key = str(key).strip()
+                value = str(value).strip() if value is not None else ""
+                if key and value and not key.startswith("_"):
+                    self.session_data[key] = value
+                    new_facts[key] = value
+            if new_facts:
+                summary = ", ".join(f"{k}={v}" for k, v in new_facts.items())
+                await self._log("[ENTITY]", summary[:100], "text-green-300")
+            return new_facts
+        except Exception as e:
+            logger.debug("Node entity extraction failed (non-critical): %s", e)
+            return {}
 
     async def _classifier_complete(self, system_prompt: str, user_prompt: str) -> str:
         """Stream a single classifier response using the cheap classifier LLM."""
@@ -1176,60 +1479,172 @@ class WorkflowEngine:
             logger.error("[WorkflowEngine] Global interceptor error: %s", e)
             return "CONTINUE"
 
-    async def _classify_intent(self, text: str, options: list[str]) -> str:
+    async def _classify_intent(self, text: str, options: list[str], node_context: str = "") -> str:
         """Map user input to one of the provided labels or 'NONE' if ambiguous."""
         text_lower = text.lower()
         
-        # Fast path for very short turns
-        if len(text_lower.split()) < 3:
-            # 1. Load affinities (Shared Defaults + Bot Overrides)
-            bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
-            affinities = {**DEFAULT_SEMANTIC_AFFINITIES, **(bot_cfg.get("semantic_affinities", {}))}
-            
+        # Fast path: short text OR first word is a known affinity token
+        words = text_lower.split()
+        first_word = words[0] if words else ""
+        # 1. Load affinities (Shared Defaults + Bot Overrides)
+        bot_cfg = getattr(self.brain, "_bot_config", {}) or {}
+        affinities = {**DEFAULT_SEMANTIC_AFFINITIES, **(bot_cfg.get("semantic_affinities", {}))}
+        if len(words) < 3 or first_word:
             for opt in options:
                 opt_low = opt.lower()
                 # Direct match
                 if opt_low in text_lower:
                     return opt
-                # Affinity match
+                # Affinity match: full text OR first word matches keywords
                 for aff_key, keywords in affinities.items():
-                    if aff_key in opt_low and any(k == text_lower for k in keywords):
+                    if aff_key in opt_low and (text_lower in keywords or first_word in keywords):
                         return opt
+            
+        # 🛡️ TIER 2: Learned Adaptive Affinities (SQLite Cache)
+        if self.brain.db:
+            learned = await self.brain.db.list_learned_affinities()
+            for aff in learned:
+                pattern = aff["pattern"]
+                label = aff["intent_label"]
+                
+                # Check for match (case-insensitive, unicode safe)
+                if re.search(pattern, text, re.I | re.UNICODE):
+                    await self._log("[WORKFLOW]", f"Adaptive intent match: '{label}' (hit {aff['hit_count']})", "text-emerald-400")
+                    asyncio.create_task(self.brain.db.increment_affinity_hit(pattern))
+                    return label
 
         user_lang = self.session_data.get("language", "en")
         ops_str = ", ".join([f'"{opt}"' for opt in options])
         try:
             prompt = PROMPT_TEMPLATES["logic_intent"].format(
                 user_lang=user_lang,
+                node_context=(node_context or "")[:200],
                 ops_str=ops_str,
-                text=text
+                text=text,
             )
+            # 🧠 TAXONOMY AWARENESS: Guide the LLM to reuse existing learned buckets
+            existing_learned = []
+            try:
+                # Use the canonical brain.db handler (SQLiteProvider)
+                db = self.brain.db
+                affinities = await db.list_learned_affinities()
+                existing_learned = list(set([a["intent_label"] for a in affinities if a.get("intent_label")]))
+            except Exception as e:
+                logger.debug("[WorkflowEngine] Taxonomy fetch suppressed: %s", e)
+                pass
+
+            system_prompt = (
+                "You are an Intent Classifier in AGENTIC GROUPING mode.\n"
+                "Your mission is to map user input to the BROADEST possible generic bucket to prevent taxonomy bloat.\n\n"
+            )
+            if existing_learned:
+                system_prompt += f"EXISTING BUCKETS: {existing_learned}\n\n"
+            
+            system_prompt += (
+                "GROUPING RULES:\n"
+                "- Categorize based on semantic intent (e.g., identity, location, confirmation, refusal, inquiry).\n"
+                "- Avoid creating narrow or word-specific buckets.\n"
+                "- Map similar concepts to high-level functional labels.\n"
+                "\nINSTRUCTIONS:\n"
+                "1. Compare against EXISTING BUCKETS first.\n"
+                "2. Map to the most semantically related bucket to maintain a compact taxonomy.\n"
+                "3. If the intent is truly distinct and functional, propose a concise 'snake_case' label.\n"
+                "Output ONLY the label."
+            )
+
             response = await self._classifier_complete(
-                "You are an intent classifier. Output exactly the label and nothing else.",
+                system_prompt,
                 prompt,
             )
+            # 1. First check if it matches an existing option
             for opt in options:
                 if opt.lower() in response.lower():
+                    # 🧠 TRIGGER LEARNING: Background task to generalize this input for future turns
+                    learner = IntentLearner(self.brain)
+                    asyncio.create_task(learner.learn_from_utterance(text, opt))
                     return opt
+            
+            # 2. DISCOVERY: If LLM proposed a NEW label (Agentic mode), accept and learn it
+            cleaned_resp = response.strip().strip('"').strip("'").split('\n')[0].strip()
+            # Basic safety: Ensure it is a concise label (no spaces usually) or short
+            if cleaned_resp and " " not in cleaned_resp and len(cleaned_resp) < 40 and cleaned_resp.upper() != "NONE":
+                learner = IntentLearner(self.brain)
+                asyncio.create_task(learner.learn_from_utterance(text, cleaned_resp))
+                return cleaned_resp
+
             return "NONE"
         except Exception as e:
             logger.error("[WorkflowEngine] Intent classification error: %s", e)
             return "NONE"
 
-    async def _handle_reprompt(self, last_input: str) -> None:
+    def _is_terminal_target(self, target_id: str) -> bool:
+        """Returns True if the target node only leads to close/end edges — i.e. it terminates the call."""
+        out_edges = self._get_outgoing_edges(target_id)
+        if not out_edges:
+            return True  # Dead end = terminal
+        return all(
+            str(e.get("label") or e.get("sourceHandle") or "").lower()
+            in {"close", "done", "end", "complete", ""}
+            for e in out_edges
+        )
+
+    async def _confirm_terminal_routing(self, user_text: str, selected: str, node_context: str) -> bool:
+        """
+        Safety check before routing to a terminal (call-ending) node.
+        Prevents false classifications from permanently terminating a call.
+        Returns True only if confident the user really means to end the flow.
+        """
+        prompt = (
+            f"Bot asked: \"{node_context}\"\n"
+            f"User said: \"{user_text}\"\n"
+            f"Classification: {selected}\n\n"
+            f"Is this classification DEFINITELY correct? Consider:\n"
+            f"- Does the user's exact words confirm they intended '{selected}'?\n"
+            f"- Could 'ha'/'haan' or similar affirmatives be misread as '{selected}'?\n"
+            f"Reply with YES if confident, NO if there is any doubt."
+        )
+        try:
+            result = (await self._classifier_complete(
+                "You are a classification safety checker. Reply YES or NO only.",
+                prompt,
+            )).strip().upper()
+            return result.startswith("YES")
+        except Exception:
+            return True  # Fail open — don't block if check errors
+
+    async def _handle_reprompt(self, last_input: str) -> bool:
         """Informative clarification + Repeat the current question."""
-        node = self.nodes.get(self.current_node_id, {})
-        base_speech = _get_effective_speech(self, node)
+        node_id = self.current_node_id
+        node = self.nodes.get(node_id, {})
         
+        # 1. Increment and check circuit breaker
+        count = self.node_reprompt_counts.get(node_id, 0) + 1
+        self.node_reprompt_counts[node_id] = count
+        
+        if count >= 2:
+            await self._log("[ENGINE]", f"Circuit Breaker Triggered (Turn {count}). Yielding to Brain fallback.", "text-red-400 font-bold")
+            # Reset count so we don't stay in fallback mode forever if they come back to this node later
+            self.node_reprompt_counts[node_id] = 0
+            
+            # Return False to signal "Yield to LLM/Brain"
+            return False
+
+        base_speech = _get_effective_speech(self, node)
+        if base_speech:
+            base_speech = await self._resolve_speech_placeholders(base_speech)
+
         # Use LLM to generate a smart clarification. 
         # If the user is asking a relevant question (e.g. "What is your bank name?"), 
         # the LLM should answer it first, then re-ask the original question.
         lang_instruction = self._get_lang_instruction()
+        # 🛡️ FIX: Use cerebral persona rules instead of generic prompt
+        bot_system_prompt = self.brain._build_system_prompt()
+        
         clarification_prompt = (
-            f"The user said '{last_input}' while the bot's current objective is: {base_speech}.\n\n"
-            f"TASK:\n"
-            f"1. If the user asked a relevant question, ANSWER IT briefly.\n"
-            f"2. Then, RE-ASK the original question to get the workflow back on track.\n\n"
+            "[IMMEDIATE TASK]\n"
+            f"The user said '{last_input}' while the bot's current objective is: {base_speech}.\n"
+            "1. If the user asked a relevant question, ANSWER IT briefly.\n"
+            "2. Then, RE-ASK the original question to get the workflow back on track.\n\n"
             f"CRITICAL: {lang_instruction} Keep your total response under 2 sentences."
         )
         
@@ -1237,7 +1652,7 @@ class WorkflowEngine:
             # Use the main LLM for this as it might need general knowledge, not just classification
             chunks = []
             async for chunk in self.brain.llm.stream_completion(
-                system_prompt="You are a professional debt collection voice assistant. Answer user queries concisely and stay on track.",
+                system_prompt=bot_system_prompt,
                 messages=[{"role": "user", "content": clarification_prompt}]
             ):
                 chunks.append(chunk.content or "")
@@ -1245,6 +1660,7 @@ class WorkflowEngine:
             
             await self.brain._generate_and_speak(res)
             self._spoke = True
+            return True # Success
         except Exception as e:
             logger.error("[WorkflowEngine] Reprompt generation failed: %s", e)
             # -> NEW DYNAMIC ERROR MESSAGE
@@ -1252,6 +1668,7 @@ class WorkflowEngine:
             await self.brain._generate_and_speak(err_msg)
             self.brain.request_voice_session_end("reprompt_error")
             self._spoke = True
+            return True # Even error speech counts as handling it
 
     async def _classify_sentiment(self, text: str) -> str:
         """Detect base sentiment via dynamic patterns or cheap LLM."""
@@ -1362,9 +1779,12 @@ class WorkflowEngine:
         prompt += f"\n\nCRITICAL LANGUAGE RULE: {lang_instruction}{hurry_modifier}"
 
         try:
+            # 🛡️ FIX: Enforce persona rules
+            bot_system_prompt = self.brain._build_system_prompt()
+            
             chunks = []
             async for chunk in self.brain.llm.stream_completion(
-                system_prompt="You are a natural-sounding voice assistant. Speak concisely and empathetically.",
+                system_prompt=bot_system_prompt,
                 messages=[{"role": "user", "content": prompt}]
             ):
                 chunks.append(chunk.content or "")
@@ -1372,6 +1792,228 @@ class WorkflowEngine:
         except Exception as e:
             logger.error("[WorkflowEngine] Dynamic speech error: %s", e)
             return base_text
+
+    async def _resolve_speech_placeholders(self, text: str) -> str:
+        """
+        Extends brain._inject_variables() with DB cross-session user facts.
+        Resolves remaining [Placeholder] tokens after the central variable injection.
+        """
+        resolved = self.brain._inject_variables(text)
+        remaining = re.findall(r'\[([^\]]+)\]', resolved)
+        if not resolved or not remaining:
+            return resolved
+
+        user_facts: dict = {}
+        try:
+            user_id = self.brain.session.user_id
+            if user_id and self.brain.db and hasattr(self.brain.db, "get_user_cross_session_context"):
+                ctx = await self.brain.db.get_user_cross_session_context(user_id)
+                if ctx and isinstance(ctx, dict):
+                    user_facts = {str(k).lower(): str(v) for k, v in ctx.items() if v is not None}
+        except Exception as e:
+            logger.warning("[WorkflowEngine] User fact fetch for placeholder resolution failed: %s", e)
+            return resolved
+
+        if not user_facts:
+            return resolved
+
+        def _repl(match):
+            key = match.group(1).strip()
+            sc = key.lower().replace(" ", "_").replace("-", "_")
+            if key.lower() in user_facts:
+                return user_facts[key.lower()]
+            if sc in user_facts:
+                return user_facts[sc]
+            for fk, fv in user_facts.items():
+                if fk in sc or sc in fk:
+                    return fv
+            return match.group(0)  # Leave unresolved if no match found
+
+        return re.compile(r'\[([^\]]+)\]').sub(_repl, resolved)
+
+    async def _generate_history_summary(self) -> str:
+        """
+        Generate a spoken summary of the conversation so far.
+        Called when user backtracks or asks 'what did we discuss?'.
+        Falls back to visited node speech if conversation history is unavailable.
+        """
+        lang_instruction = self._get_lang_instruction()
+        history_str = ""
+
+        # Prefer actual conversation turns for accurate summary
+        try:
+            turns = self.brain.session.get_context_window(max_turns=10)
+            if turns:
+                history_str = "\n".join(
+                    f"{t['role'].capitalize()}: {t['content']}" for t in turns
+                )
+        except Exception:
+            pass
+
+        # Fall back to visited node speeches as skeleton
+        if not history_str and self.history:
+            visited = []
+            for nid in self.history:
+                node = self.nodes.get(nid)
+                if node:
+                    sp = _node_speech(node)
+                    if sp:
+                        visited.append(sp[:80])
+            history_str = "\n".join(f"Bot: {s}" for s in visited)
+
+        if not history_str:
+            return ""
+
+        prompt = PROMPT_TEMPLATES["history_summary"].format(
+            history_str=history_str,
+            lang_instruction=lang_instruction,
+        )
+        try:
+            chunks = []
+            async for chunk in self.brain.llm.stream_completion(
+                system_prompt="You are a concise, natural-sounding voice assistant.",
+                messages=[{"role": "user", "content": prompt}],
+            ):
+                chunks.append(chunk.content or "")
+            return "".join(chunks).strip()
+        except Exception as e:
+            logger.error("[WorkflowEngine] History summary generation failed: %s", e)
+            return ""
+
+    async def _infer_unmatched_intent(self, user_text: str, node: dict) -> str:
+        """
+        When _classify_intent returns NONE and no retry path applies,
+        use LLM to understand what the user is actually communicating.
+        Returns: REFUSING | CONFUSED | QUESTIONING | STALLING | AMBIGUOUS
+        """
+        node_data = node.get("data") or {}
+        node_label = node_data.get("label") or node.get("id", "")
+        node_speech = (_node_speech(node) or "")[:300]
+        prompt = PROMPT_TEMPLATES["infer_unmatched_intent"].format(
+            text=user_text,
+            node_label=node_label,
+            node_speech=node_speech,
+        )
+        try:
+            response = (await self._classifier_complete(
+                "You are a strict intent classifier. Reply with exactly one label.",
+                prompt,
+            )).strip().upper()
+            for label in ("REFUSING", "CONFUSED", "QUESTIONING", "STALLING", "AMBIGUOUS"):
+                if label in response:
+                    return label
+        except Exception as e:
+            logger.error("[WorkflowEngine] Unmatched intent inference error: %s", e)
+        return "AMBIGUOUS"
+
+    def _mark_retry_visited(self, key: str, target_id: Optional[str]) -> None:
+        """Track which retry tier targets have been used for a given node."""
+        if not target_id:
+            return
+        existing = list(self.session_data.get(key) or [])
+        if target_id not in existing:
+            existing.append(target_id)
+        self.session_data[key] = existing
+
+    async def _select_retry_tier(self, user_text: str, retry_edges: list, node_id: str) -> Optional[dict]:
+        """
+        Dynamically select the best retry/escalation tier based on conversation context.
+        Avoids repeating already-visited tiers. Uses LLM to pick the most contextually
+        appropriate approach rather than mechanically incrementing the visit count.
+        Returns the chosen edge dict, or None if all tiers are exhausted.
+        """
+        visited_key = f"_retry_visited_{node_id}"
+        visited: set = set(self.session_data.get(visited_key) or [])
+        available = [e for e in retry_edges if e.get("target") not in visited]
+
+        if not available:
+            return None  # All tiers have been used
+
+        if len(available) == 1:
+            self._mark_retry_visited(visited_key, available[0].get("target"))
+            return available[0]
+
+        # Build tier descriptions from target node speech/label
+        tier_descriptions = []
+        for i, e in enumerate(available):
+            target = self.nodes.get(e.get("target"), {})
+            speech = _node_speech(target) or (target.get("data") or {}).get("label") or f"Approach {i + 1}"
+            tier_descriptions.append(f"{i + 1}. {speech[:120]}")
+
+        context_str = "None"
+        try:
+            turns = self.brain.session.get_context_window(max_turns=4)
+            if turns:
+                context_str = "\n".join(f"{t['role'].capitalize()}: {t['content']}" for t in turns)
+        except Exception:
+            pass
+
+        prompt = PROMPT_TEMPLATES["retry_tier_selection"].format(
+            text=user_text,
+            context=context_str,
+            tiers="\n".join(tier_descriptions),
+        )
+        try:
+            response = (await self._classifier_complete(
+                "Select the best escalation approach. Reply with ONLY a single digit.",
+                prompt,
+            )).strip()
+            m = re.search(r'\d', response)
+            if m:
+                idx = int(m.group()) - 1
+                if 0 <= idx < len(available):
+                    chosen = available[idx]
+                    self._mark_retry_visited(visited_key, chosen.get("target"))
+                    return chosen
+        except Exception as e:
+            logger.error("[WorkflowEngine] Retry tier selection failed: %s", e)
+
+        # Fallback: first available tier
+        chosen = available[0]
+        self._mark_retry_visited(visited_key, chosen.get("target"))
+        return chosen
+
+    async def _generate_dynamic_persistence_response(self, user_text: str, node: dict) -> None:
+        """
+        When retry_limit > 0 but no explicit retry_N edges are configured in the graph,
+        generate an inline contextual persistence/escalation response via LLM.
+        Stays on the current node — the next user turn will be evaluated again.
+        """
+        node_speech = (_node_speech(node) or "")[:200]
+        lang_instruction = self._get_lang_instruction()
+        context_str = "None"
+        try:
+            turns = self.brain.session.get_context_window(max_turns=6)
+            if turns:
+                context_str = "\n".join(f"{t['role'].capitalize()}: {t['content']}" for t in turns)
+        except Exception:
+            pass
+
+        prompt = (
+            f"You are handling a voice conversation where the user said: '{user_text}'\n"
+            f"The bot's current objective is: {node_speech}\n"
+            f"Conversation so far:\n{context_str}\n\n"
+            f"Generate a short (1-2 sentence) empathetic response that:\n"
+            f"1. Acknowledges what the user said naturally\n"
+            f"2. Gently but clearly steers back to the objective\n"
+            f"CRITICAL: {lang_instruction} Do not sound robotic or scripted."
+        )
+        try:
+            # 🛡️ FIX: Enforce persona rules
+            bot_system_prompt = self.brain._build_system_prompt()
+            
+            chunks = []
+            async for chunk in self.brain.llm.stream_completion(
+                system_prompt=bot_system_prompt,
+                messages=[{"role": "user", "content": prompt}],
+            ):
+                chunks.append(chunk.content or "")
+            response = "".join(chunks).strip()
+            if response:
+                await self.brain._generate_and_speak(response)
+                self._mark_spoken()
+        except Exception as e:
+            logger.error("[WorkflowEngine] Dynamic persistence response failed: %s", e)
 
     async def _handle_jump(self, target_label: Optional[str]) -> bool:
         """Find ANY node in the graph matching the target_label semantically."""
@@ -1494,7 +2136,7 @@ class WorkflowEngine:
             return None
 
         # Stage 2: LLM analysis
-        if len(text.split()) < 3: # Shorter threshold for navigation keywords
+        if len(text.strip()) == 0: 
             return None
 
         prompt = PROMPT_TEMPLATES["nav_intent"].format(text=text)
@@ -1519,12 +2161,23 @@ class WorkflowEngine:
         target_node_id = None
         
         if target_label:
-            # Try to match history labels
+            # 1. Search in History (Backward looking)
+            target_label_low = target_label.lower()
             for node_id in reversed(self.history):
                 node = self.nodes.get(node_id)
-                if node and target_label.lower() in (node.get("data", {}).get("label") or "").lower():
-                    target_node_id = node_id
-                    break
+                if node:
+                    node_label = (node.get("data", {}).get("label") or "").lower()
+                    if target_label_low in node_label or node_label in target_label_low:
+                        target_node_id = node_id
+                        break
+            
+            # 2. Search Global Graph (Forward/Sideways looking)
+            if not target_node_id:
+                for node_id, node in self.nodes.items():
+                    node_label = (node.get("data", {}).get("label") or "").lower()
+                    if target_label_low in node_label or node_label in target_label_low:
+                        target_node_id = node_id
+                        break
         
         if not target_node_id:
             # Pop last item (current node's parent)
@@ -1539,6 +2192,12 @@ class WorkflowEngine:
                 self.history = self.history[:idx]
             except ValueError:
                 pass
+            # Speak a context summary so the user knows where we are
+            summary = await self._generate_history_summary()
+            if summary:
+                bridge = self._get_dynamic_response("backtrack_summary_bridge")
+                await self.brain._generate_and_speak(f"{bridge} {summary}")
+                self._mark_spoken()
             return True
-        
+
         return False
