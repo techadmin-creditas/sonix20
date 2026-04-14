@@ -146,6 +146,67 @@
       animation-delay: 0.16s;
     }
   }
+
+  /* --- Voice Persona Studio Utilities --- */
+  
+  .studio-mesh-gradient {
+    background-color: var(--background);
+    background-image: 
+      radial-gradient(at 0% 0%, color-mix(in srgb, var(--primary) 15%, transparent) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, color-mix(in srgb, var(--primary) 10%, transparent) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%);
+  }
+
+  .studio-glass {
+    @apply bg-surface-lowest/40 backdrop-blur-2xl;
+    /* No borders, just tonal layering */
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .studio-glow-amber {
+    box-shadow: 0 0 40px -10px rgba(251, 140, 0, 0.3);
+  }
+
+  .premium-forge-border {
+    @apply border-2 border-outline-variant/20 shadow-[0_0_0_1px_rgba(255,255,255,0.05)];
+    background-clip: padding-box;
+  }
+
+  .pulse-neural {
+    animation: neural-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  }
+
+  @keyframes neural-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.02);
+    }
+  }
+
+  .studio-headline {
+    @apply font-headline font-extrabold tracking-tight leading-[1.1] text-on-surface uppercase;
+    font-size: clamp(2rem, 5vw, 4rem);
+  }
+
+  .studio-metadata {
+    @apply text-[10px] font-bold uppercase tracking-[0.3em] text-outline;
+  }
+
+  .studio-card-overlap {
+    position: relative;
+    z-index: 10;
+    transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .studio-card-overlap:hover {
+    transform: translateY(-8px) scale(1.02);
+    z-index: 20;
+  }
 }
 
 @keyframes pulse-subtle {

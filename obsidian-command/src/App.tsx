@@ -20,9 +20,15 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
 import HomeOld from './pages/HomeOld';
 import HomeNew from './pages/HomeNew';
+import VoicePersonas from './pages/VoicePersonas';
 import DiyWithAI from './pages/DiyWithAI';
 import DiyPersonaPresets from './pages/DiyPersonaPresets';
 import DiyPersonaBuilder from './pages/DiyPersonaBuilder';
+import { StudioLayout } from './components/StudioLayout';
+import StudioPersonas from './pages/StudioPersonas';
+import StudioLibrary from './pages/StudioLibrary';
+import StudioTest from './pages/StudioTest';
+import StudioDashboard from './pages/StudioDashboard';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -98,6 +104,7 @@ function App() {
               <Route path="/diy-with-ai" element={<DiyWithAI />} />
               <Route path="/diy-with-ai/personas" element={<DiyPersonaPresets />} />
               <Route path="/persona" element={<DiyPersonaBuilder />} />
+              <Route path="/voice-personas" element={<VoicePersonas />} />
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
               <Route path="/personas/create/debug" element={<BotConfig />} />
@@ -110,6 +117,15 @@ function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile currentUser={currentUser} />} />
+
+              {/* --- Voice Persona Studio Routes --- */}
+              <Route path="/studio" element={<StudioLayout />}>
+                <Route index element={<StudioDashboard />} />
+                <Route path="overview" element={<StudioDashboard />} />
+                <Route path="personas" element={<StudioPersonas />} />
+                <Route path="library" element={<StudioLibrary />} />
+                <Route path="test" element={<StudioTest />} />
+              </Route>
 
               <Route
                 path="/users"
