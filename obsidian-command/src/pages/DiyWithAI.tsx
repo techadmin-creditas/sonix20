@@ -19,66 +19,66 @@ type PersonaPreset = {
 };
 
 const PERSONA_PRESETS: PersonaPreset[] = [
-  {
-    key: 'female_hi_soft_focus',
-    title: 'Female · Hindi · Soft · Focus',
-    tags: ['female', 'hindi', 'soft', 'focused'],
-    default_language: 'hi',
-    persona: 'A calm, focused, soft-spoken female Hindi voice agent. Polite, efficient, and empathetic.',
-    system_prompt:
-      'You are a calm, focused female Hindi voice agent. Speak briefly and clearly. Ask one question at a time. Confirm key details. End with clear next steps.',
-    tts_provider: 'elevenlabs',
-  },
-  {
-    key: 'female_en_hard_direct',
-    title: 'Female · English · Hard · Direct',
-    tags: ['female', 'english', 'direct', 'firm'],
-    default_language: 'en',
-    persona: 'A firm, direct female English voice agent. No fluff; outcome-oriented.',
-    system_prompt:
-      'You are a firm, direct English voice agent. Be concise. Drive the conversation to a resolution with clear options. Avoid filler.',
-    tts_provider: 'elevenlabs',
-  },
-  {
-    key: 'male_hi_soft_empathy',
-    title: 'Male · Hindi · Soft · Empathetic',
-    tags: ['male', 'hindi', 'soft', 'empathetic'],
-    default_language: 'hi',
-    persona: 'An empathetic male Hindi voice agent. Patient, reassuring, and helpful.',
-    system_prompt:
-      'You are an empathetic male Hindi voice agent. Acknowledge feelings, reassure, then ask focused questions. Keep responses short.',
-    tts_provider: 'elevenlabs',
-  },
-  {
-    key: 'male_en_soft_support',
-    title: 'Male · English · Soft · Support',
-    tags: ['male', 'english', 'support', 'gentle'],
-    default_language: 'en',
-    persona: 'A gentle male English support agent. Friendly and helpful, with structured troubleshooting.',
-    system_prompt:
-      'You are a gentle English support agent. Ask clarifying questions, provide step-by-step guidance, confirm outcomes, and summarize next steps.',
-    tts_provider: 'elevenlabs',
-  },
-  {
-    key: 'female_hi_hard_collection',
-    title: 'Female · Hindi · Hard · Collections',
-    tags: ['female', 'hindi', 'firm', 'collections'],
-    default_language: 'hi',
-    persona: 'A firm female Hindi collections agent. Polite but assertive.',
-    system_prompt:
-      'You are a firm Hindi collections agent. Verify identity, state the issue clearly, offer payment options, handle objections briefly, and close with an action.',
-    tts_provider: 'elevenlabs',
-  },
-  {
-    key: 'female_en_soft_sales',
-    title: 'Female · English · Soft · Sales',
-    tags: ['female', 'english', 'sales', 'warm'],
-    default_language: 'en',
-    persona: 'A warm female English sales agent. Curious, confident, and persuasive.',
-    system_prompt:
-      'You are a warm English sales agent. Discover needs, highlight benefits, handle objections, and propose the next step. Keep it short and confident.',
-    tts_provider: 'elevenlabs',
-  },
+  // {
+  //   key: 'female_hi_soft_focus',
+  //   title: 'Female · Hindi · Soft · Focus',
+  //   tags: ['female', 'hindi', 'soft', 'focused'],
+  //   default_language: 'hi',
+  //   persona: 'A calm, focused, soft-spoken female Hindi voice agent. Polite, efficient, and empathetic.',
+  //   system_prompt:
+  //     'You are a calm, focused female Hindi voice agent. Speak briefly and clearly. Ask one question at a time. Confirm key details. End with clear next steps.',
+  //   tts_provider: 'elevenlabs',
+  // },
+  // {
+  //   key: 'female_en_hard_direct',
+  //   title: 'Female · English · Hard · Direct',
+  //   tags: ['female', 'english', 'direct', 'firm'],
+  //   default_language: 'en',
+  //   persona: 'A firm, direct female English voice agent. No fluff; outcome-oriented.',
+  //   system_prompt:
+  //     'You are a firm, direct English voice agent. Be concise. Drive the conversation to a resolution with clear options. Avoid filler.',
+  //   tts_provider: 'elevenlabs',
+  // },
+  // {
+  //   key: 'male_hi_soft_empathy',
+  //   title: 'Male · Hindi · Soft · Empathetic',
+  //   tags: ['male', 'hindi', 'soft', 'empathetic'],
+  //   default_language: 'hi',
+  //   persona: 'An empathetic male Hindi voice agent. Patient, reassuring, and helpful.',
+  //   system_prompt:
+  //     'You are an empathetic male Hindi voice agent. Acknowledge feelings, reassure, then ask focused questions. Keep responses short.',
+  //   tts_provider: 'elevenlabs',
+  // },
+  // {
+  //   key: 'male_en_soft_support',
+  //   title: 'Male · English · Soft · Support',
+  //   tags: ['male', 'english', 'support', 'gentle'],
+  //   default_language: 'en',
+  //   persona: 'A gentle male English support agent. Friendly and helpful, with structured troubleshooting.',
+  //   system_prompt:
+  //     'You are a gentle English support agent. Ask clarifying questions, provide step-by-step guidance, confirm outcomes, and summarize next steps.',
+  //   tts_provider: 'elevenlabs',
+  // },
+  // {
+  //   key: 'female_hi_hard_collection',
+  //   title: 'Female · Hindi · Hard · Collections',
+  //   tags: ['female', 'hindi', 'firm', 'collections'],
+  //   default_language: 'hi',
+  //   persona: 'A firm female Hindi collections agent. Polite but assertive.',
+  //   system_prompt:
+  //     'You are a firm Hindi collections agent. Verify identity, state the issue clearly, offer payment options, handle objections briefly, and close with an action.',
+  //   tts_provider: 'elevenlabs',
+  // },
+  // {
+  //   key: 'female_en_soft_sales',
+  //   title: 'Female · English · Soft · Sales',
+  //   tags: ['female', 'english', 'sales', 'warm'],
+  //   default_language: 'en',
+  //   persona: 'A warm female English sales agent. Curious, confident, and persuasive.',
+  //   system_prompt:
+  //     'You are a warm English sales agent. Discover needs, highlight benefits, handle objections, and propose the next step. Keep it short and confident.',
+  //   tts_provider: 'elevenlabs',
+  // },
 ];
 
 const DIY_PERSONA_STORAGE_KEY = 'diy.persona.draft';
@@ -159,7 +159,8 @@ export default function DiyWithAI() {
   }, []);
 
   const ALL_PRESETS = useMemo<PersonaPreset[]>(() => {
-    const dynamicPresets: PersonaPreset[] = dbPersonas.map(p => {
+    const dynamicPresets: PersonaPreset[] = dbPersonas.filter(p => p.isDeployed).map(p => {
+      console.log(p);
       const isHi = p.language.toLowerCase().includes('hi');
       let sysPrompt = `You are a ${p.tone.toLowerCase()} voice agent named ${p.name}. `;
       if (p.useCase) sysPrompt += `Your primary role is to handle ${p.useCase}. `;
@@ -413,9 +414,37 @@ export default function DiyWithAI() {
     wsRef.current = null;
     cleanupAudio();
     setIsLive(false);
+    setStep(3); // Temporary static override
   };
 
   const startSession = async () => {
+    // TEMPORARY STATIC SCRIPT OVERRIDE
+    setIsConnecting(false);
+    setIsLive(true);
+    setSessionId(`demo-${Date.now()}`);
+    setLiveTranscript([]);
+
+    const staticScript: TranscriptEntry[] = [
+      { role: 'bot', content: 'Hi! I’m ready. How can I help today?' },
+      { role: 'user', content: 'I need help understanding my pending payment.' },
+      { role: 'bot', content: 'Sure. Is this for a bill, a subscription, or a one-time purchase?' },
+      { role: 'user', content: 'It’s for my credit card bill.' },
+      { role: 'bot', content: 'Got it. Can you confirm the last 4 digits and the due date?' },
+      { role: 'user', content: '1234, due on the 15th.' },
+      { role: 'bot', content: 'Thanks. I can help you complete payment or set a reminder. Which do you prefer?' },
+    ];
+
+    // Simulate typing animation
+    staticScript.forEach((entry, index) => {
+      const timeoutId = window.setTimeout(() => {
+        setLiveTranscript(prev => [...prev, entry]);
+        // Auto-scroll logic is already handled by the scrollIntoView on the container ref if implemented
+      }, (index + 1) * 2000);
+      demoTimersRef.current.push(timeoutId);
+    });
+
+    return;
+
     if (demoMode) {
       runDemoLiveSession();
       return;
@@ -525,6 +554,29 @@ export default function DiyWithAI() {
   };
 
   const loadPostCall = async () => {
+    // TEMPORARY STATIC SCRIPT OVERRIDE
+    const demoOverride = demoPostCall(goalPrompt);
+    setRecordingUrl(undefined);
+    setLatency(demoOverride.latency);
+    setPostTranscript(demoOverride.transcript);
+
+    // Set static analysis data
+    setPostSummary("The user called to inquire about a pending credit card payment. The agent successfully verified the account using the last 4 digits (1234) and confirmed the due date as the 15th. The user was presented with payment and reminder options.");
+    setPostIntent("Billing Inquiry / Payment Discussion");
+    setPostInsights([
+      "User was cooperative and provided verification details quickly.",
+      "Clear interest in resolving the pending payment before the due date.",
+      "Responded well to the agent's structured questioning flow."
+    ]);
+    setPostFacts([
+      { id: 'f1', fact: 'Last 4 digits of credit card: 1234', category: 'verification' } as any,
+      { id: 'f2', fact: 'Payment due date: 15th', category: 'billing' } as any,
+      { id: 'f3', fact: 'Interested in payment or reminders', category: 'preference' } as any
+    ]);
+
+    setDetailsLoading(false);
+    return;
+
     if (demoMode) {
       const demo = demoPostCall(goalPrompt);
       setRecordingUrl(undefined);
@@ -764,17 +816,22 @@ export default function DiyWithAI() {
                   <p className="text-xs font-bold uppercase tracking-widest text-outline">Live transcript</p>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-outline">{isLive ? 'Live' : 'Standby'}</span>
                 </div>
-                <div className="min-h-[520px] rounded-2xl border border-outline-variant/15 bg-surface-high/50 p-4 overflow-y-auto space-y-3">
+                <div
+                  className="min-h-[520px] max-h-[600px] rounded-2xl border border-outline-variant/15 bg-surface-high/50 p-4 overflow-y-auto space-y-3"
+                  ref={(el) => {
+                    if (el) el.scrollTop = el.scrollHeight;
+                  }}
+                >
                   {liveTranscript.length === 0 ? (
-                    <div className="h-full min-h-[420px] flex items-center justify-center text-xs text-outline">
-                      {isConnecting ? 'Connecting…' : 'Start speaking to see the transcript.'}
+                    <div className="h-full min-h-[420px] flex items-center justify-center text-xs text-outline italic animate-pulse">
+                      {isConnecting ? 'Connecting…' : 'Waiting for conversation to start…'}
                     </div>
                   ) : (
                     liveTranscript.slice(-80).map((t, idx) => (
-                      <div key={idx} className={cn('max-w-[85%]', t.role === 'bot' ? 'mr-auto' : 'ml-auto')}>
+                      <div key={idx} className={cn('max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-500', t.role === 'bot' ? 'mr-auto' : 'ml-auto')}>
                         <div
                           className={cn(
-                            'rounded-2xl px-4 py-3 text-sm',
+                            'rounded-2xl px-4 py-3 text-sm shadow-sm',
                             t.role === 'bot'
                               ? 'bg-surface-high border border-outline-variant/10'
                               : 'bg-primary text-on-primary-fixed',
