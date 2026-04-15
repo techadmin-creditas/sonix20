@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Header } from '../components/Header';
 import { api, DiyPersonaDraft, getVoiceWebSocketUrl, type AiPersona, type UserFact } from '../lib/api';
 import { cn } from '../lib/utils';
-import { ArrowRight, Bot as BotIcon, Download, Loader2, Mic2, Pause, Play, Sparkles, Wand2, UserRound, Smile, Angry, Focus } from 'lucide-react';
+import { ArrowRight, Bot as BotIcon, Download, Loader2, Mic2, Pause, Play, Sparkles, Wand2, UserRound, Smile, Angry, Focus, Check, Activity, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
 type StepId = 1 | 2 | 3 | 4;
@@ -160,7 +160,6 @@ export default function DiyWithAI() {
 
   const ALL_PRESETS = useMemo<PersonaPreset[]>(() => {
     const dynamicPresets: PersonaPreset[] = dbPersonas.filter(p => p.isDeployed).map(p => {
-      console.log(p);
       const isHi = p.language.toLowerCase().includes('hi');
       let sysPrompt = `You are a ${p.tone.toLowerCase()} voice agent named ${p.name}. `;
       if (p.useCase) sysPrompt += `Your primary role is to handle ${p.useCase}. `;
@@ -171,14 +170,17 @@ export default function DiyWithAI() {
 
       return {
         key: `db_${p.id}`,
-        title: `${p.name} · ${p.gender} · ${p.language}`,
-        tags: [p.gender, p.emotion, ...(p.useCase ? [p.useCase.split(' ')[0]] : [])]
+        title: p.name,
+        tags: [p.language, ...(p.useCase ? [p.useCase.split(' ')[0]] : []), p.isDeployed ? 'Active' : 'Inactive']
           .filter(Boolean).map(s => s.toLowerCase().substring(0, 15)),
         default_language: isHi ? 'hi' : 'en',
-        persona: `A ${p.tone.toLowerCase()} ${p.gender.toLowerCase()} ${p.language} agent. ${p.psychology}`,
+        persona: `${p.tone} · ${p.useCase}`,
         system_prompt: sysPrompt,
         tts_provider: 'elevenlabs',
         voice_id: p.selectedVoice,
+        urgency: p.urgency || 45,
+        empathy: p.empathy || 75,
+        psychology: p.psychology || 'Neural persona profile loaded.',
       };
     });
     return [...dynamicPresets, ...PERSONA_PRESETS];
@@ -438,7 +440,16 @@ export default function DiyWithAI() {
     staticScript.forEach((entry, index) => {
       const timeoutId = window.setTimeout(() => {
         setLiveTranscript(prev => [...prev, entry]);
-        // Auto-scroll logic is already handled by the scrollIntoView on the container ref if implemented
+
+        // After the last message, wait a bit and move to Step 3 automatically
+        if (index === staticScript.length - 1) {
+          const endTimeoutId = window.setTimeout(() => {
+            setIsLive(false);
+            cleanupAudio();
+            setStep(3);
+          }, 1500);
+          demoTimersRef.current.push(endTimeoutId);
+        }
       }, (index + 1) * 2000);
       demoTimersRef.current.push(timeoutId);
     });
@@ -646,6 +657,22 @@ export default function DiyWithAI() {
   }, [step, sessionId]);
 
   const generateRecommendations = async () => {
+    // TEMPORARY STATIC SCRIPT OVERRIDE
+    setRecommendations({
+      recommended_prompt: "You are a specialized credit payment assistant. Be empathetic but firm about deadlines. Verify account details quickly using the last 4 digits, then provide a structured breakdown of payment methods (UPI, Card, NetBanking). Always close with a summary of the next action the user agreed to.",
+      recommended_persona: "A professional, empathetic, and efficient financial assistant.",
+      recommended_llm_provider: 'gemini',
+      recommended_llm_model: 'gemini-2.0-flash-001',
+      why: [
+        'User verification was handled well, but payment options could be more structured.',
+        'Adding empathy markers helped build trust during the verification phase.',
+        'Closing with a summary ensures no confusion about the due date.'
+      ],
+    });
+    setStep(4);
+    setRecLoading(false);
+    return;
+
     if (demoMode) {
       const basePrompt = (goalPrompt || '').trim() || 'Be concise, ask one question at a time, end with next steps.';
       setRecommendations({
@@ -899,36 +926,79 @@ export default function DiyWithAI() {
                           </button>
                         )}
                         {ALL_PRESETS.map((p) => (
-                          <button
+                          <div
                             key={p.key}
-                            type="button"
-                            onClick={() => {
-                              setSelectedPresetKey(p.key);
-                              setRecommendedConfig(null);
-                            }}
                             className={cn(
-                              'text-left rounded-2xl border border-outline-variant/15 bg-surface-highest/60 p-4 hover:bg-surface-highest transition-all',
-                              selectedPresetKey === p.key && 'ring-2 ring-primary/50 border-primary/30',
+                              'bg-surface-lowest rounded-3xl p-6 group relative overflow-hidden transition-all border border-outline-variant/10 shadow-sm hover:shadow-xl',
+                              selectedPresetKey === p.key && 'border-primary/50 ring-1 ring-primary/20'
                             )}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-xs font-extrabold">{p.title}</p>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {p.tags.map((t) => (
-                                    <span
-                                      key={t}
-                                      className="rounded-full border border-outline-variant/20 bg-surface px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-outline"
-                                    >
-                                      {t}
-                                    </span>
-                                  ))}
+                            <div className="flex justify-between items-center mb-6 border-b border-outline-variant/5 pb-4">
+                              <div className="flex items-center gap-4">
+                                <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary shadow-inner">
+                                  <UserRound className="size-7" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-lg font-headline font-extrabold text-on-surface truncate">{p.title}</h3>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{p.default_language === 'hi' ? 'Hindi' : 'English'}</p>
+                                    <span className="size-1 rounded-full bg-primary animate-pulse" />
+                                    <span className="text-[8px] font-bold text-primary uppercase">Active Agent</span>
+                                  </div>
                                 </div>
                               </div>
-                              <TileAvatar label={p.title} tags={p.tags} active={selectedPresetKey === p.key} />
                             </div>
-                            <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{p.persona}</p>
-                          </button>
+
+                            <div className="space-y-4">
+                              <p className="text-[11px] font-medium leading-relaxed text-outline/80">{p.persona}</p>
+
+                              <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5">
+                                <p className="text-[10px] leading-relaxed italic text-on-surface-variant line-clamp-2">
+                                  &ldquo;{(p as any).psychology || 'Neural persona profile loaded.'}&rdquo;
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+                                  <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1">
+                                    <Activity className="size-2.5" /> Urgency
+                                  </p>
+                                  <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                                    <div className="h-full bg-primary transition-all duration-700" style={{ width: `${(p as any).urgency ?? 45}%` }} />
+                                  </div>
+                                </div>
+                                <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+                                  <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1">
+                                    <Sparkles className="size-2.5" /> Empathy
+                                  </p>
+                                  <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${(p as any).empathy ?? 75}%` }} />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setSelectedPresetKey(p.key);
+                                  setRecommendedConfig(null);
+                                }}
+                                className={cn(
+                                  "w-full flex items-center justify-between p-3.5 rounded-xl transition-all border group/btn",
+                                  selectedPresetKey === p.key
+                                    ? "bg-primary/10 border-primary/20 text-primary"
+                                    : "bg-surface-low hover:bg-primary text-outline hover:text-on-primary-fixed border-outline-variant/5"
+                                )}
+                              >
+                                <span className="text-[9px] font-bold uppercase tracking-[0.2em]">
+                                  {selectedPresetKey === p.key ? 'Persona Selected' : 'Activate Persona'}
+                                </span>
+                                {selectedPresetKey === p.key
+                                  ? <Check className="size-3.5" />
+                                  : <ChevronRight className="size-3.5 group-hover/btn:translate-x-1 transition-transform" />
+                                }
+                              </button>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </>
@@ -1235,8 +1305,8 @@ function TileAvatar({
   const badge = isFemale ? 'F' : isMale ? 'M' : 'AI';
 
   return (
-    <div className={cn("relative size-9 rounded-xl border border-outline-variant/15 bg-primary/10 flex items-center justify-center text-primary shrink-0", active && "border-primary/30")}>
-      <UserRound className="size-4" />
+    <div className={cn("relative size-10 rounded-2xl border border-outline-variant/15 bg-primary/10 flex items-center justify-center text-primary shrink-0", active && "border-primary/30")}>
+      <UserRound className="size-5" />
       <div className="absolute -bottom-1 -right-1 rounded-full border border-outline-variant/20 bg-surface-highest px-1.5 py-0.5 flex items-center gap-1">
         <span className="text-[9px] font-extrabold uppercase tracking-widest text-on-surface">{badge}</span>
         <AccentIcon className="size-3 text-primary" />
