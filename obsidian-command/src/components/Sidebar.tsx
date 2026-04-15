@@ -42,7 +42,7 @@ export function Sidebar({
   onLogout: () => void;
 }) {
   return (
-    <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0">
+    <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0 z-50">
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
         <div className="flex justify-between items-center">
           <div>

@@ -95,13 +95,18 @@
 
 @layer components {
   .glass-panel {
-    @apply bg-surface/70 backdrop-blur-3xl border border-outline-variant/10;
+    @apply bg-surface/60 backdrop-blur-[20px] border border-outline-variant/5;
   }
   
   .ember-gradient {
-    background: linear-gradient(135deg, #fb8c00 0%, #B45309 100%);
+    background: var(--color-primary);
+    /* background: linear-gradient(135deg, var(--primary) 0%, var(--primary-container) 100%); */
   }
   
+  .premium-display {
+    @apply tracking-[-0.02em] font-headline font-black;
+  }
+
   .ghost-border {
     @apply border border-outline-variant/15;
   }

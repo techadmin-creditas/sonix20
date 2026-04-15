@@ -30,6 +30,7 @@ import StudioPersonas from './pages/StudioPersonas';
 import StudioLibrary from './pages/StudioLibrary';
 import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
+import { ThemeSynchronizer } from './components/ThemeSynchronizer';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -84,6 +85,7 @@ function App() {
 
   return (
     <NotificationProvider>
+      <ThemeSynchronizer />
 
       <Router>
         <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
