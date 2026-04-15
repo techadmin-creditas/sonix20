@@ -46,6 +46,9 @@ class ElevenLabsStreamingProvider:
         output_format: str = "pcm_16000",
     ):
         self.api_key = api_key or settings.elevenlabs_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.voice_id = voice_id or settings.elevenlabs_voice_id
         self.model_id = model_id
         self.output_format = output_format

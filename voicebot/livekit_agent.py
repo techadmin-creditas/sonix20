@@ -24,10 +24,14 @@ class LiveKitVoiceAgent:
     """
     Standalone LiveKit Agent that connects a LiveKit Room to the AgenticBrain.
     """
-    def __init__(self, room_name: str, bot_id: Optional[str] = None):
+    def __init__(self, room_name: str, bot_id: Optional[str] = None, session_id: Optional[str] = None):
         self.room_name = room_name
         self.bot_id = bot_id
-        self.session_id = f"lk-{room_name}"
+        
+        # 🔑 SESSION ID: Use provided ID or extract from room_name
+        # The room name is "voice-<truncated_id>", but the DB needs the full UUID.
+        self.session_id = session_id or room_name.replace("voice-", "")
+        
         self.room = rtc.Room()
         
         # Audio Source (16kHz, mono) for publishing bot voice
@@ -77,17 +81,42 @@ class LiveKitVoiceAgent:
         """Main loop for the agent."""
         logger.info("Starting LiveKit Agent for room: %s", self.room_name)
         
-        # 1. Initialize Brain
+        # 1. Initialize DB and Fetch Session Data
         db = SQLiteProvider()
         await db.initialize()
-        await db.create_session(self.session_id, bot_id=self.bot_id)
         
-        bot_config = await db.get_bot(self.bot_id) if self.bot_id else None
+        # 🔄 HYDRATION: Fetch the existing session created by the Gateway
+        db_session = await db.get_session(self.session_id)
+        if not db_session:
+             logger.warning("Session %s not found in DB at startup! Metadata injection may fail.", self.session_id)
+        
+        # 🤖 BOT CONFIG RECOVERY: Use provided bot_id OR pull from DB session
+        effective_bot_id = self.bot_id or (db_session.get("bot_id") if db_session else None)
+        bot_config = await db.get_bot(effective_bot_id) if effective_bot_id else None
+        
         if not bot_config:
+            logger.warning("No bot_config found for bot_id: %s. Falling back to first available bot.", effective_bot_id)
             bots = await db.list_bots()
             bot_config = bots[0] if bots else {}
             
         session = SessionState(session_id=self.session_id)
+        
+        # 👤 Sync metadata from DB session (if found)
+        try:
+            if db_session:
+                # 👤 Set core session attributes
+                session.user_id = db_session.get("user_id") or "anonymous"
+                session.detected_language = db_session.get("language") or "hi"
+                
+                # 📋 Merge metadata
+                if db_session.get("metadata"):
+                    session.metadata.update(db_session["metadata"])
+                
+                logger.info("Hydrated session %s: user=%s, lang=%s, meta_keys=%s", 
+                            self.session_id[:8], session.user_id, session.detected_language, list(session.metadata.keys()))
+        except Exception as e:
+            logger.warning("Failed to hydrate session metadata: %s", e)
+
 
         # Normalize TTS output to 10 ms frames (320 bytes at 16 kHz mono linear16).
         # 10 ms frames emit sooner when Deepgram WS sends small initial chunks,
@@ -103,8 +132,13 @@ class LiveKitVoiceAgent:
                 n -= 1
             if n == 0:
                 return
-            frame = rtc.AudioFrame(raw, 16000, 1, n // 2)
-            await self.audio_source.capture_frame(frame)
+            try:
+                frame = rtc.AudioFrame(raw, 16000, 1, n // 2)
+                await self.audio_source.capture_frame(frame)
+            except Exception as e:
+                # This often happens during rapid barge-in/interrupt cycles if the RTC 
+                # state is temporarily unstable. We log and drop the frame to prevent crash.
+                logger.debug("Dropped audio frame due to RTC State: %s", e)
 
         async def on_audio_output(audio_bytes: bytes):
             _audio_buf.extend(audio_bytes)
@@ -190,31 +224,10 @@ class LiveKitVoiceAgent:
 
         llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
 
-        # 3. TTS Provider (Hindi-Aware)
-        _voice_id = bot_config.get("voice_id") or "aura-asteria-en"
-        _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
-        _is_hindi_bot = _session_lang.startswith("hi")
-
-        if _is_hindi_bot or _tts_prov_name == "elevenlabs":
-            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-            tts_provider = ElevenLabsStreamingProvider(
-                voice_id=_voice_id,
-                model_id="eleven_multilingual_v2"
-            )
-            logger.info("Using ElevenLabs TTS (Multilingual v2) ✅")
-        elif _tts_prov_name == "deepgram_http":
-            tts_provider = DeepgramTTSProvider(model=_voice_id)
-            logger.info("Using Deepgram HTTP TTS ✅")
-        else:
-            # Default to WebSocket for lowest latency
-            from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
-            tts_provider = DeepgramWSTTSProvider(model=_voice_id)
-            try:
-                await asyncio.wait_for(tts_provider.connect(), timeout=5.0)
-                logger.info("Using Deepgram WS TTS (model=%s) ✅", _voice_id)
-            except Exception as _tts_err:
-                logger.warning("TTS WS failed, falling back to HTTP: %s", _tts_err)
-                tts_provider = DeepgramTTSProvider(model=_voice_id)
+        # 3. TTS Provider (Hindi-Aware & Factory-Based)
+        from voicebot.services.tts.voice_tts_factory import create_voice_tts
+        tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
+        logger.info("TTS stack initialized via factory ✅")
 
         # 4. Optional: Guardrails & Caching (Parity with main.py)
         from voicebot.services.memory.redis_provider import RedisSessionProvider

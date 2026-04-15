@@ -63,6 +63,9 @@ class OpenRouterStreamingProvider:
         temperature: float = 0.7,
     ):
         self.api_key = api_key or settings.openrouter_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         if self.api_key:
             logger.info(
                 "OpenRouter provider initialised  key=%s...%s  model=%s",

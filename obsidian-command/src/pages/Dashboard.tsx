@@ -91,8 +91,10 @@ export default function Dashboard() {
     );
   }
 
+  const totalSessionsValue = stats?.metrics.totalSessions || 0;
   const pieData = stats?.botUsage.map((b, i) => ({
     ...b,
+    percentage: totalSessionsValue > 0 ? Math.round((b.value / totalSessionsValue) * 100) : 0,
     color: ['#ffb77b', '#ffb68e', '#8f4e00', '#fb8c00', '#06b6d4'][i % 5]
   })) || [];
 
@@ -188,7 +190,7 @@ export default function Dashboard() {
             </div>
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={CHART_DATA}>
+                <AreaChart data={stats?.sessionHistory && stats.sessionHistory.length > 0 ? stats.sessionHistory : CHART_DATA}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#fb8c00" stopOpacity={0.3} />
@@ -225,18 +227,18 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-3xl font-headline font-extrabold">100%</span>
-                <span className="text-[10px] text-outline font-bold uppercase tracking-widest">Load</span>
+                <span className="text-3xl font-headline font-extrabold">{stats?.metrics.successRate || '0%'}</span>
+                <span className="text-[10px] text-outline font-bold uppercase tracking-widest">Success Rate</span>
               </div>
             </div>
-            <div className="mt-8 flex flex-col gap-3">
+            <div className="mt-8 flex flex-col gap-3" style={{ maxHeight: '107px', overflow: 'auto' }}>
               {pieData.map((item) => (
                 <div key={item.name} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
                     <span className="font-medium">{item.name}</span>
                   </div>
-                  <span className="font-bold text-on-surface">{item.value}</span>
+                  <span className="font-bold text-on-surface">{item.percentage}%</span>
                 </div>
               ))}
             </div>
@@ -251,29 +253,40 @@ export default function Dashboard() {
               <h4 className="font-headline text-lg font-bold">Sentiment Analysis</h4>
             </div>
             <div className="h-[250px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sentimentData} layout="vertical">
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} />
-                  <Tooltip
-                    cursor={{ fill: 'transparent' }}
-                    contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                  />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                    {sentimentData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 flex justify-around">
-              {sentimentData.map(item => (
-                <div key={item.name} className="text-center">
-                  <p className="text-[10px] uppercase font-bold text-outline">{item.name}</p>
-                  <p className="text-lg font-extrabold" style={{ color: item.color }}>{item.value}%</p>
-                </div>
-              ))}
+              {(() => {
+                const sData = [
+                  { name: 'Positive', value: stats?.sentiment.positive || 0, color: '#10b981' },
+                  { name: 'Neutral', value: stats?.sentiment.neutral || 0, color: '#94a3b8' },
+                  { name: 'Negative', value: stats?.sentiment.negative || 0, color: '#f43f5e' },
+                ];
+                return (
+                  <>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={sData} layout="vertical">
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 10, fill: '#827568' }} />
+                        <Tooltip
+                          cursor={{ fill: 'transparent' }}
+                          contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                        />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                          {sData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="mt-4 flex justify-around">
+                      {sData.map(item => (
+                        <div key={item.name} className="text-center">
+                          <p className="text-[10px] uppercase font-bold text-outline">{item.name}</p>
+                          <p className="text-lg font-extrabold" style={{ color: item.color }}>{item.value}%</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -284,14 +297,18 @@ export default function Dashboard() {
             </div>
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={DURATION_DATA}>
+                <BarChart data={(stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA}>
                   <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis hide />
                   <Tooltip
                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                   />
-                  <Bar dataKey="count" fill="#8f4e00" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {((stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={['#ffb77b', '#ffb68e', '#8f4e00', '#fb8c00'][index % 4]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -308,7 +325,7 @@ export default function Dashboard() {
             </div>
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={SUCCESS_RATE_DATA}>
+                <BarChart data={stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA}>
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis domain={[0, 100]} hide />
                   <Tooltip
@@ -316,7 +333,7 @@ export default function Dashboard() {
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
                   />
                   <Bar dataKey="rate" fill="#fb8c00" radius={[4, 4, 0, 0]}>
-                    {SUCCESS_RATE_DATA.map((entry, index) => (
+                    {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={index === 0 ? '#fb8c00' : index === 1 ? '#ffb68e' : '#8f4e00'} />
                     ))}
                   </Bar>
@@ -324,7 +341,7 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-4">
-              {SUCCESS_RATE_DATA.map(item => (
+              {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map(item => (
                 <div key={item.name} className="text-center p-3 rounded-xl bg-surface-high/50">
                   <p className="text-[10px] uppercase font-bold text-outline">{item.name}</p>
                   <p className="text-lg font-extrabold text-primary">{item.rate}%</p>
@@ -334,13 +351,18 @@ export default function Dashboard() {
           </div>
 
           <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/sessions')}>
-            <div className="flex items-center gap-3 mb-6">
-              <BarChart3 className="size-5 text-cyan-500" />
-              <h4 className="font-headline text-lg font-bold">Peak Activity Hours</h4>
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <BarChart3 className="size-5 text-cyan-500" />
+                <h4 className="font-headline text-lg font-bold">Peak Activity Hours</h4>
+              </div>
+              <div className="text-xs font-bold px-2 py-1 rounded-full bg-surface-highest text-cyan-500">
+                {stats?.peakHours.reduce((acc, curr) => acc + curr.sessions, 0) || 0} Sessions
+              </div>
             </div>
             <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={stats?.peakHours || PEAK_HOURS_DATA}>
+                <LineChart data={stats?.peakHours && stats.peakHours.length > 0 ? stats.peakHours : PEAK_HOURS_DATA}>
                   <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
                   <YAxis hide />
                   <Tooltip
@@ -351,19 +373,51 @@ export default function Dashboard() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <p className="text-center text-xs text-outline mt-4">Traffic peaks significantly during midday (12:00 - 16:00).</p>
+            {stats?.peakHours && stats.peakHours.length > 0 ? (
+              <p className="text-center text-xs text-outline mt-4">
+                Peak usage detected at <strong>{
+                  stats.peakHours.reduce((max, cur) => cur.sessions > max.sessions ? cur : max, stats.peakHours[0])?.hour
+                }</strong> today.
+              </p>
+            ) : (
+              <p className="text-center text-xs text-outline mt-4">No traffic recorded yet today.</p>
+            )}
           </div>
         </div>
 
         {/* Bottom Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/workflows')}>
-            <h4 className="font-headline text-lg font-bold mb-6">Tool Call Breakdown</h4>
-            <div className="flex flex-col gap-6">
-              <ProgressBar label="search_knowledge" value={85} count="842 calls" color="bg-secondary" />
-              <ProgressBar label="book_appointment" value={45} count="412 calls" color="bg-primary" />
-              <ProgressBar label="get_appointments" value={25} count="210 calls" color="bg-tertiary" />
-              <ProgressBar label="remember_user_fact" value={15} count="188 calls" color="bg-outline" />
+            <div className="flex justify-between items-center mb-6">
+              <h4 className="font-headline text-lg font-bold">Tool Call Breakdown</h4>
+              <div className="text-xs font-bold px-2 py-1 rounded-full bg-surface-highest text-primary">
+                {stats?.toolUsage.reduce((acc, curr) => acc + curr.count, 0) || 0} Total
+              </div>
+            </div>
+            <div className="flex flex-col gap-6 overflow-y-auto pr-2" style={{ maxHeight: '256px' }}>
+              {stats?.toolUsage && stats.toolUsage.length > 0 ? (
+                (() => {
+                  const maxCount = Math.max(...stats.toolUsage.map(t => t.count), 1);
+                  return stats.toolUsage.map((tool, idx) => (
+                    <>
+                      <ProgressBar
+                        key={tool.name}
+                        label={tool.name}
+                        value={(tool.count / maxCount) * 100}
+                        count={`${tool.count} calls`}
+                        color={['bg-secondary', 'bg-primary', 'bg-tertiary', 'bg-outline'][idx % 4]}
+                      />
+                    </>
+                  ));
+                })()
+              ) : (
+                <>
+                  <ProgressBar label="search_knowledge" value={85} count="842 calls" color="bg-secondary" />
+                  <ProgressBar label="book_appointment" value={45} count="412 calls" color="bg-primary" />
+                  <ProgressBar label="get_appointments" value={25} count="210 calls" color="bg-tertiary" />
+                  <ProgressBar label="remember_user_fact" value={15} count="188 calls" color="bg-outline" />
+                </>
+              )}
             </div>
           </div>
 

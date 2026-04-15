@@ -39,6 +39,9 @@ class AnthropicStreamingProvider:
         max_tokens: int = 1024,
     ):
         self.api_key = api_key or settings.anthropic_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.max_tokens = max_tokens
         self._client = None
         self.provider = "anthropic"

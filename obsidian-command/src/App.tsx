@@ -29,6 +29,7 @@ import StudioPersonas from './pages/StudioPersonas';
 import StudioLibrary from './pages/StudioLibrary';
 import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
+import TestUserManagement from './pages/TestUserManagement';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);
@@ -134,6 +135,7 @@ function App() {
                   currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/dashboard" replace />
                 }
               />
+              <Route path="/test-users" element={<TestUserManagement />} />
               <Route path="/login" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

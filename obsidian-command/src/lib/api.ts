@@ -108,6 +108,7 @@ export interface Bot {
   /** Min Deepgram confidence (0-1). Below this on short utterances, bot asks to repeat */
   min_stt_confidence?: number;
   tts_provider?: string;
+  tts_model?: string;
   default_language?: string;
   proactive_prompts?: string[];
   topic_restriction?: string;
@@ -161,12 +162,17 @@ export interface DashboardStats {
     totalSessions: number;
     activeBots: number;
     avgLatency: string;
+    totalTokens: string;
     successRate: string;
     avgDuration: string;
   };
   botUsage: { name: string; value: number }[];
   peakHours: { hour: string; sessions: number }[];
   sentiment: { positive: number; neutral: number; negative: number };
+  sessionHistory: { name: string; value: number }[];
+  toolUsage: { name: string; count: number }[];
+  botPerformance: { name: string; rate: number }[];
+  durationDistribution: { range: string; count: number }[];
 }
 
 export interface SessionRecord {
@@ -287,6 +293,13 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch users');
     const data = await res.json();
     return data.users || [];
+  },
+
+  async getTestCustomers(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/test-customers`);
+    if (!res.ok) throw new Error('Failed to fetch test customers');
+    const data = await res.json();
+    return data.customers || [];
   },
 
   async createUser(data: { username: string; password: string; role?: 'admin' | 'user' }): Promise<any> {
@@ -550,11 +563,11 @@ export const api = {
     return res.json();
   },
 
-  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>): Promise<any> {
+  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>, metadata?: any): Promise<any> {
     const res = await fetch(`${BASE_URL}/workflows/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts }),
+      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts, metadata }),
     });
     if (!res.ok) throw new Error('Failed to test workflow');
     return res.json();
@@ -610,6 +623,16 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to submit feedback');
     return res.json();
+  },
+
+  async translateSession(sessionId: string, targetLang: string, signal?: AbortSignal): Promise<string> {
+    const response = await fetch(`${BASE_URL}/sessions/${sessionId}/translate?target_lang=${encodeURIComponent(targetLang)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+    });
+    const data = await response.json();
+    return data.translated_text || '';
   },
 
   async getSessionFacts(sessionId: string): Promise<UserFact[]> {
@@ -858,6 +881,33 @@ export const api = {
     if (!res.ok) throw new Error('Failed to toggle AI persona deployment');
     const body = await res.json();
     return body.persona;
+  },
+
+  /** Generic request helper for dynamic features */
+  async request(method: string, path: string, body?: any): Promise<any> {
+    const url = path.startsWith('http') ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, `API ${method} ${path} failed`));
+    return res.json();
+  },
+
+  async suggestSystemPrompt(name: string, role: string, persona?: string, currentPrompt?: string): Promise<{
+    suggested_prompt?: string;
+    analysis?: string;
+    revised_prompt?: string;
+    provider?: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/bots/suggest-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, persona, current_prompt: currentPrompt }),
+    });
+    if (!res.ok) throw new Error('Failed to get prompt suggestions');
+    return res.json();
   },
 };
 

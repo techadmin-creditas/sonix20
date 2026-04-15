@@ -45,6 +45,101 @@ def _suspicious_prefix_length(text: str) -> int:
                 return length
     return 0
 
+# ─── Dynamic Response Pools (To prevent robotic repetition) ────────────────
+_COMMITMENT_PROMPTS = {
+    "extract_commitment": (
+        "Did the user just make a commitment, promise, or clear statement of intent?\n"
+        "A commitment is any definite statement about what they WILL do, WANT, or have AGREED to.\n"
+        "NOT a commitment: questions, greetings, filler words ('okay', 'haan'), passive statements.\n"
+        "{few_shots}"
+        "User said: \"{text}\"\n\n"
+        "If a commitment exists, reply with ONLY the commitment as one short sentence (max 15 words).\n"
+        "If no commitment, reply with exactly: NONE"
+    ),
+    "check_contradiction": (
+        "Prior commitments made by the user in this call:\n{commitments}\n\n"
+        "{few_shots}"
+        "User just said: \"{text}\"\n\n"
+        "Does the user's current statement directly contradict or walk back any prior commitment?\n"
+        "Clarifying questions, partial information, or unrelated statements are NOT contradictions.\n\n"
+        "If YES — reply in this exact format:\n"
+        "CONTRADICTION: <prior commitment text> | <what they are now saying>\n\n"
+        "If NO contradiction — reply with exactly: NONE"
+    ),
+}
+
+_DYNAMIC_RESPONSES = {
+    "low_confidence_reprompt": {
+        "en": [
+            "I didn't quite catch that. Could you say that again?",
+            "Sorry, I missed that. Can you please repeat it?",
+            "I'm sorry, I didn't hear you clearly. Could you say that once more?",
+            "Excuse me, I missed the last part. What was that?"
+        ],
+        "hi": [
+            "Maaf kijiye, main sun nahi paaya. Kya aap phir se kahenge?",
+            "Sorry, mujhe samajh nahi aaya. Ek baar phir bolenge?",
+            "Kshama kijiye, main sun nahi saka. Dobara bol sakte hain?",
+            "Aapki awaaz thodi kat gayi thi. Phir se batayiye?"
+        ]
+    },
+    "sentiment_escalation": {
+        "en": [
+            "I can hear this is frustrating. Let me connect you with a team member who can help you directly.",
+            "I understand your frustration. I'm transferring you to a senior advisor now.",
+            "I'm sorry this is difficult. Let me get a specialist on the line for you.",
+            "I want to make sure you get the right help. Let me connect you with one of our managers."
+        ],
+        "hi": [
+            "Main samajh sakta hoon ki aap pareshaan hain. Main aapki baat apne senior se karwata hoon.",
+            "Maaf kijiye, main aapko senior advisor se connect kar raha hoon jo isme behtar madad kar sakein.",
+            "Main aapka frustration samajh sakta hoon. Line par rahiye, main call transfer kar raha hoon.",
+            "Main chahta hoon aapki poori madad ho. Main call senior team member ko de raha hoon."
+        ]
+    },
+    "topic_violation": {
+        "en": [
+            "I am specialized in {topic}. Is there something related to that I can help with?",
+            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
+            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
+            "My expertise is limited to {topic}. Happy to help you with that!"
+        ],
+        "hi": [
+            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
+            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
+            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
+            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
+        ]
+    },
+    "security_block": {
+        "en": [
+            "I'm sorry, I can't process that request.",
+            "I am unable to perform that action for security reasons.",
+            "That request goes beyond what I'm allowed to do.",
+            "I'm unable to fulfill that specific request."
+        ],
+        "hi": [
+            "Maaf kijiye, main yeh nahi kar sakta.",
+            "Suraksha kaarno se main yeh request poori nahi kar sakta.",
+            "Kshama kijiye, yeh mere adhikaar kshetra se bahar hai.",
+            "Main is request ko poora karne mein asamarth hoon."
+        ]
+    },
+    "topic_violation": {
+        "en": [
+            "I am specialized in {topic}. Is there something related to that I can help with?",
+            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
+            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
+            "My expertise is limited to {topic}. Happy to help you with that!"
+        ],
+        "hi": [
+            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
+            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
+            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
+            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
+        ]
+    },
+}
 # ─── End Constants ───────────────────────────────────────────────────
 
 from voicebot.shared.config import get_settings
@@ -160,6 +255,27 @@ _SCOPE_TOOL_NAMES = {
     "weather": ("get_weather",),
     "banking": ("verify_customer", "get_account_balance", "get_loan_status"),
 }
+
+# 🧠 SELF-LEARNING: Post-Call Reflection Prompt
+_POST_CALL_REFLECTION_PROMPT = """
+You are a Senior Conversation Analyst. Your goal is to review a voice conversation and extract deep insights for future use.
+
+### ANALYSIS GOALS:
+1.  **USER FACTS**: Identify specific facts about the user (preferences, account details mentioned, constraints, personality traits).
+2.  **SUCCESSFUL TACTICS**: Identify specifically what the bot did that worked well (e.g., "Used a calm tone during frustration," "Offered a discount").
+3.  **SUMMARY**: A concise 1-2 sentence summary of the call outcome.
+4.  **CONFIDENCE**: For each fact/tactic, provide a confidence score between 0.0 and 1.0.
+
+### OUTPUT FORMAT (JSON ONLY):
+{{
+    "user_facts": [{{"fact": "...", "confidence": 0.95}}, ...],
+    "successful_tactics": [{{"tactic": "...", "confidence": 0.8}}, ...],
+    "outcome_summary": "Summary text..."
+}}
+
+### CONVERSATION TRANSCRIPT:
+{transcript}
+"""
 
 
 class BotState(str, Enum):
@@ -371,6 +487,34 @@ class AgenticBrain:
         
         # Extensible dynamic node workflow
         self.workflow_engine = None
+
+    def _get_dynamic_response(self, category: str, **kwargs) -> str:
+        """Picks a random, non-repeating human-like response based on session language."""
+        user_lang = self.session.detected_language or "en"
+        lang_key = "hi" if ("hi" in user_lang.lower() or user_lang.lower().startswith("hi")) else "en"
+        
+        pool = _DYNAMIC_RESPONSES.get(category, {}).get(lang_key, [])
+        if not pool:
+            return "..." # Ultimate fallback
+
+        # Prevent immediate repetition
+        history_key = f"_last_{category}"
+        last_used = getattr(self, history_key, "")
+        
+        choices = [phrase for phrase in pool if phrase != last_used]
+        if not choices:
+            choices = pool # Fallback if pool is too small
+
+        selected = random.choice(choices)
+        
+        # Inject dynamic variables like {topic}
+        try:
+            selected = selected.format(**kwargs)
+        except KeyError:
+            pass
+
+        setattr(self, history_key, selected)
+        return selected
 
     def _apply_conversation_policy_derived(self) -> None:
         """Load timing, TTS chunking, and streaming options from conversation_policy."""
@@ -588,26 +732,84 @@ class AgenticBrain:
             meta["call_phase"] = "pitch"
 
     def _format_task_phase_hint(self) -> str:
-        if not self._agent_task_spec:
-            return ""
-        meta = self.session.metadata
-        phase = meta.get("call_phase")
-        if not phase:
-            return ""
-        parts = [f"\n\n[Session hint: call_phase={phase}"]
-        if meta.get("user_stance"):
-            parts.append(f", user_stance={meta.get('user_stance')}")
-        if meta.get("objection_round") is not None:
-            parts.append(f", objection_round={meta.get('objection_round')}")
-        parts.append("]")
-        if phase == "handle_objection":
-            parts.append(
-                " Respond with empathy; offer one alternative angle from value_props or objection_handling; stay polite."
+        """Provide a mission-critical context hint to the LLM about the current state/workflow."""
+        parts = []
+
+        # 0. Dynamic Call Mission — Injected when agent_task_spec defines a call purpose.
+        if self._agent_task_spec:
+            call_purpose = (self._agent_task_spec.get("call_purpose") or "").strip()
+            
+            # Dynamically determine if this is an inbound or outbound bot (default to outbound)
+            call_direction = (self._bot_config.get("call_direction") or "outbound").lower()
+            
+            # Pull all captured workflow facts generically
+            _wf_data = getattr(getattr(self, "workflow_engine", None), "session_data", {}) or {}
+            captured_facts = ", ".join(
+                f"{k}={str(v)[:50]}"
+                for k, v in _wf_data.items()
+                if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
             )
-        elif phase == "closing":
+            
+            mission_line = call_purpose or "Pursue the core objective."
+            facts_line = f" Known facts: {captured_facts}." if captured_facts else ""
+            direction_header = f"CALL MISSION — {call_direction.upper()} CALL"
+            
+            if call_direction == "outbound":
+                direction_instructions = (
+                    "You initiated this call. YOU have the agenda — the customer did NOT call for help.\n"
+                    "NEVER ask 'how can I help you' or 'what do you need'.\n"
+                    "When the user prompts you to speak (e.g., 'Yes?', 'Tell me', 'Haan bolo', 'Who is this?'), "
+                    "treat it as an INVITATION to state your purpose. Do it immediately and confidently."
+                )
+            else:
+                direction_instructions = (
+                    "The user initiated this call. You are here to assist them with their inquiries while "
+                    "efficiently guiding them toward the call's ultimate objective."
+                )
+
             parts.append(
-                " User has declined repeatedly or exit conditions met: give a brief polite goodbye, then call end_voice_session."
+                f"\n\n[{direction_header}]\n"
+                f"Purpose: {mission_line}{facts_line}\n"
+                f"{direction_instructions}\n"
+                "Stay on mission. If the user goes off-topic, acknowledge briefly and pivot back to the objective."
             )
+
+        # 1. Workflow engine state — current node objective
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            wf_status = self.workflow_engine.get_context_status()
+            parts.append(f"\n\n[WORKFLOW STATE: {wf_status}]")
+            parts.append(
+                "\nINSTRUCTION: Stay on the CURRENT TASK. "
+                "Conversational affirmations ('tell me', 'okay', 'bataiye') mean CONTINUE — not an off-topic question. "
+                "Continue with the task directly."
+            )
+
+        # Language consistency — enforce matching the user's live detected language
+        lang = self.session.detected_language or "en"
+        if lang in ("hi", "hi-IN", "hi-in"):
+            parts.append(
+                "\n[LANGUAGE RULE] User is speaking Hindi/Hinglish. "
+                "ALWAYS respond in natural Hinglish — mix Hindi and English as bilingual speakers naturally do. "
+                "Never switch to pure English unless the user explicitly switches first."
+            )
+
+        # 2. Add Agent Task Spec hints (Call Phase / Objection Round)
+        if self._agent_task_spec:
+            meta = self.session.metadata
+            phase = meta.get("call_phase")
+            if phase:
+                parts.append(f"\n[Session hint: call_phase={phase}")
+                if meta.get("user_stance"):
+                    parts.append(f", user_stance={meta.get('user_stance')}")
+                if meta.get("objection_round") is not None:
+                    parts.append(f", objection_round={meta.get('objection_round')}")
+                parts.append("]")
+                
+                if phase == "handle_objection":
+                    parts.append(" Respond with empathy; offer one alternative angle; stay polite.")
+                elif phase == "closing":
+                    parts.append(" User exit conditions met: give a brief polite goodbye.")
+
         return "".join(parts)
 
     # ─── Audio Input Handling ────────────────────────────────────────────
@@ -655,6 +857,10 @@ class AgenticBrain:
                 logger.error("🛑 STT Terminal Error signaled: %s", error_msg)
                 await self._handle_fatal_error(VoiceBotError(error_msg), context="stt_terminal_error")
                 return
+
+            # Track VAD timing locally to assist with barge-in decision logic
+            if msg_type == "speech_started":
+                self._last_vad_signal_time = time.time()
 
             confidence = kwargs.get("confidence", 1.0)
             
@@ -708,16 +914,31 @@ class AgenticBrain:
                         logger.debug("🧠 Barge-in Ignored: Within post-turn guard window (%.0fms < %dms)", _elapsed, self._barge_in_grace_ms)
                         return
 
-                    # Signal the frontend to MUTE audio playback instantly (can be reversed if it was noise)
+                    # Signal the frontend to MUTE audio playback instantly
                     if self._on_audio_interrupt:
                         await self._on_audio_interrupt()
 
                     # Short confirmation window — distinguishes real speech from single noise burst.
-                    # Value from conversation_policy (set in _apply_conversation_policy_derived).
                     await asyncio.sleep(self._barge_in_debounce_ms / 1000.0)
                     
                     if self.state in (BotState.SPEAKING, BotState.PROCESSING):
                         snapshot = (self._partial_buffer or text).strip()
+                        
+                        # 🛡️ LATENCY FIX: Extended Grace Window
+                        # If the STT endpoint triggered a VAD signal but hasn't returned text yet, 
+                        # hold the mute state for an extra 300ms to allow the network to catch up.
+                        if not snapshot:
+                            logger.debug("🧠 Barge-in: VAD triggered but text is empty. Holding mute for 300ms grace window...")
+                            await asyncio.sleep(0.3)
+                            # Re-fetch the snapshot after waiting
+                            snapshot = (self._partial_buffer or text).strip()
+                            
+                        # If STILL no text after the extended wait, it was just a noise burst. Resume playback.
+                        if not snapshot:
+                            logger.info("🧠 Barge-in Suppressed: No text arrived during extended grace window. Resuming.")
+                            if self._on_audio_resume:
+                                await self._on_audio_resume()
+                            return
                         
                         # 🛡️ New meaningful barge-in check (Deduplication + Backchannel)
                         if not self.turn_detector.is_meaningful_barge_in(snapshot, self._last_processed_text):
@@ -1077,9 +1298,28 @@ class AgenticBrain:
             ctx = await self.db.get_user_cross_session_context(user_id)
             parts = []
 
+            # Structured collections briefing — shown first so LLM sees it immediately
+            _structured_cats = {
+                "ptp_amount", "ptp_date", "partial_payment",
+                "contact_time_preference", "strategy_worked", "strategy_failed",
+            }
             if ctx.get("facts"):
-                facts_str = " | ".join(f["fact"] for f in ctx["facts"][:10])
-                parts.append(f"Known about this caller: {facts_str}")
+                structured = [
+                    f for f in ctx["facts"]
+                    if f.get("category", "") in _structured_cats
+                ]
+                if structured:
+                    lines = [f"  • {f['fact']}" for f in structured[:8]]
+                    parts.append("Collections briefing for this caller:\n" + "\n".join(lines))
+
+            if ctx.get("facts"):
+                general_facts = [
+                    f for f in ctx["facts"]
+                    if f.get("category", "") not in _structured_cats
+                ]
+                if general_facts:
+                    facts_str = " | ".join(f["fact"] for f in general_facts[:8])
+                    parts.append(f"Known about this caller: {facts_str}")
 
             if ctx.get("past_summaries"):
                 lines = [
@@ -1109,7 +1349,7 @@ class AgenticBrain:
     async def start_conversation(self) -> None:
         """
         Trigger the initial greeting from the bot.
-        Uses bot-specific greeting from DB config if available.
+        Handles Workflow nodes, Static Configured Greetings, and Dynamic LLM Greetings.
         """
         logger.info("🎬 Starting conversation (session=%s)", self.session.session_id[:8])
 
@@ -1120,41 +1360,53 @@ class AgenticBrain:
             await self._set_state(BotState.PROCESSING)
             self._interrupt_event.clear()
             
-            # Load Workflow Engine if applicable
+            custom_greeting = self._bot_config.get("greeting") or ""
+
+            # ── SCENARIO 1: WORKFLOW ENGINE ATTACHED ──
             if self._bot_config.get("workflow_id") and self.db:
                 wf_data = await self.db.get_workflow(self._bot_config["workflow_id"])
                 if wf_data:
                     from voicebot.core.orchestrator.workflow_engine import WorkflowEngine
                     self.workflow_engine = WorkflowEngine(self, wf_data)
                     logger.info("Loaded generic workflow engine: %s", wf_data.get('name', 'Unknown'))
-                else:
-                    self.workflow_engine = None
+                    
+                    # 1a. Speak the custom DB greeting if it exists (e.g. "Hello, this is X.")
+                    if custom_greeting:
+                        await self._generate_and_speak(custom_greeting)
 
-            # Use custom greeting from bot config if set
-            custom_greeting = self._bot_config.get("greeting")
+                    # 1b. Kick off the workflow engine naturally
+                    logger.info("🎬 Starting WorkflowEngine execution...")
+                    await self.workflow_engine.evaluate("")
+                    
+                    # Exit out, the engine handles the state and proactive timers from here
+                    return 
+
+            # ── SCENARIO 2: STANDARD BOT (NO WORKFLOW) ──
+            self.workflow_engine = None
+            
             if custom_greeting:
-                logger.info("Using bot greeting (session=%s): %s", self.session.session_id[:8], custom_greeting[:60])
-                # We try to speak, but if it fails, we still want the transcript
-                try:
-                    await self._stream_text_to_tts(custom_greeting, time.time())
-                except Exception as tts_err:
-                    logger.warning("Greeting TTS failed: %s", tts_err)
-                    await self._log_event("[SYSTEM]", "Voice greeting failed. Continuing with text.", "text-yellow-400")
-
-                if self._on_bot_transcript:
-                    await self._on_bot_transcript(custom_greeting, True)
+                # Path A: We have a static greeting configured in the DB
+                logger.info("Using static config greeting: %s", custom_greeting[:60])
                 
+                await self._generate_and_speak(custom_greeting)
                 await self._set_state(BotState.LISTENING)
-                # Log the greeting as an assistant turn
+                
+                # Log to session history since we aren't routing through the LLM
                 self.session.add_turn(TurnRole.ASSISTANT, custom_greeting)
                 if self.db:
                     await self.db.log_turn(self.session.session_id, "assistant", custom_greeting)
             else:
-                # LLM-generated greeting based on persona
+                # Path B: No static greeting, let the LLM generate one dynamically
+                logger.info("No static greeting found. Generating dynamic persona greeting.")
                 bot_name = self._bot_config.get("name", "Assistant")
                 persona = self._bot_config.get("persona", "helpful and friendly")
-                intro_instruction = f"You are {bot_name}, a {persona} AI assistant. Greet the user warmly in one sentence and invite them to speak."
+                
+                intro_instruction = (
+                    f"You are {bot_name}, a {persona} AI assistant. "
+                    f"Greet the user warmly in one sentence and invite them to speak."
+                )
                 await self._run_llm_turn(intro_instruction, override_system_prompt=True)
+
         except Exception as e:
             await self._handle_fatal_error(e, "conversation_startup_failed")
 
@@ -1637,9 +1889,8 @@ class AgenticBrain:
                 
                 # Immediate refusal — beats the rest of the current turn's LLM generation
                 await asyncio.sleep(0.05) # Yield to allow cancel to propagate
-                await self._generate_and_speak(
-                    f"I am specialized in {topic}. Is there something related to that I can help with?"
-                )
+                msg = self._get_dynamic_response("topic_violation", topic=topic)
+                await self._generate_and_speak(msg)
         except asyncio.CancelledError:
             pass  # Normal closure when turn completes on-topic
         except Exception as e:
@@ -1648,17 +1899,104 @@ class AgenticBrain:
     async def _generate_and_speak(self, text: str) -> None:
         """Speak fixed text (workflows, rejection messages). Logs assistant turn via _finalize_turn."""
         try:
-            t = self._strip_technical_artifacts(text or "")
+            # 1. Resolve variables [Placeholders]
+            t = self._inject_variables(text or "")
+            # 2. Cleanup artifacts
+            t = self._strip_technical_artifacts(t)
             if not t:
                 return
             if self.output_guard:
                 t = self.output_guard.validate_and_mask(t)["masked_text"]
+            
             turn_start = time.time()
             self._interrupt_event.clear()
             await self._stream_text_to_tts(t, turn_start)
             await self._finalize_turn(t, turn_start)
         except Exception as e:
             await self._handle_fatal_error(e, "tts_reply_failed")
+
+    def _inject_variables(self, text: str) -> str:
+        """Replace [Variable Name] placeholders from session data, metadata, mappings, or bot defaults."""
+        if not text: return ""
+        
+        import re
+        # 1. Gather all data sources
+        metadata = getattr(self.session, "metadata", {}) if self.session else {}
+        # Also check WorkflowEngine's local session_data if available
+        workflow_data = {}
+        if hasattr(self, "workflow_engine") and self.workflow_engine:
+            workflow_data = getattr(self.workflow_engine, "session_data", {})
+            
+        bot_cfg = self._bot_config or {}
+        mappings = bot_cfg.get("variable_mappings", {})
+        defaults = bot_cfg.get("metadata_defaults", {})
+        
+        # Merge sources for lookup
+        combined = {**workflow_data, **metadata}
+        # Create a normalized lowercase map for fuzzy matching
+        lowercase_map = {str(k).lower(): v for k, v in combined.items()}
+        
+        # Regex to find [Bracked Variables]
+        pattern = re.compile(r'\[(.*?)\]')
+        
+        def _repl(match):
+            key = match.group(1).strip()
+            key_low = key.lower()
+            bracketed_key = f"[{key}]"
+            
+            # Helper to check if a value is actually another key
+            def _resolve_pointer(v):
+                if v is None: return None
+                if isinstance(v, str):
+                    # Check if v is a key in our combined data
+                    v_low = v.lower()
+                    if v in combined:
+                        rp_v = combined[v]
+                        return str(rp_v) if rp_v is not None else None
+                    if v_low in lowercase_map:
+                        rp_v = lowercase_map[v_low]
+                        return str(rp_v) if rp_v is not None else None
+                return str(v)
+
+            # A. Check explicit mappings
+            mapped_key = mappings.get(bracketed_key) or mappings.get(key)
+            if mapped_key:
+                val = combined.get(mapped_key)
+                if val is not None: return _resolve_pointer(val)
+                
+            # B. Direct Match (Case Sensitive)
+            if key in combined:
+                val = _resolve_pointer(combined[key])
+                if val is not None: return val
+            if bracketed_key in combined:
+                val = _resolve_pointer(combined[bracketed_key])
+                if val is not None: return val
+            
+            # C. Loose Match (Case Insensitive)
+            if key_low in lowercase_map:
+                val = _resolve_pointer(lowercase_map[key_low])
+                if val is not None: return val
+            
+            # D. Snake Case Match (e.g. "Customer Name" -> "customer_name")
+            sc_key = key_low.replace(" ", "_").replace("-", "_")
+            if sc_key in lowercase_map:
+                val = _resolve_pointer(lowercase_map[sc_key])
+                if val is not None: return val
+            
+            # E. Check bot config defaults
+            val = defaults.get(bracketed_key) or defaults.get(key) or \
+                  defaults.get(sc_key) or bot_cfg.get(sc_key)
+            if val is not None: return _resolve_pointer(val)
+            
+            # F. Special Dynamic variables
+            if key_low in ("date", "today"):
+                import datetime
+                return datetime.date.today().strftime("%d %B %Y")
+            
+            # G. Fallback to original
+            return match.group(0)
+            
+        return pattern.sub(_repl, text)
 
     async def _process_user_turn(self, user_text: str) -> None:
         try:
@@ -1667,9 +2005,13 @@ class AgenticBrain:
             self._interrupt_event.clear()
             self._last_call_sig = None  # Reset tool-loop tracking for new turn
             self._barge_in_buffer = ""  # Clear any leftover barge-in content from previous turn
+            self.session.is_interrupted = False  # Reset for telemetry auditing
 
             turn_start = time.time()
             self._turn_start_ref = turn_start
+            self.session.last_llm_latency_ms = 0 # ⬅️ Reset for every turn
+            self._is_fast_track_turn = False      # ⬅️ New flag for telemetry
+            
             # ⏱️ PHASE 4: STT Latency Measurement
             # Time from Deepgram's final transcript arrival to Brain turn trigger.
             if hasattr(self, "_last_utterance_end_time") and self._last_utterance_end_time > 0:
@@ -1691,9 +2033,9 @@ class AgenticBrain:
                     self._last_stt_confidence, _min_confidence, user_text,
                 )
                 await self._set_state(BotState.LISTENING)
-                await self._generate_and_speak(
-                    "I didn't quite catch that. Could you say that again?"
-                )
+                # -> NEW DYNAMIC REPROMPT
+                reprompt = self._get_dynamic_response("low_confidence_reprompt")
+                await self._generate_and_speak(reprompt)
                 return
 
             self._completed_user_turns += 1
@@ -1724,10 +2066,8 @@ class AgenticBrain:
             if self._injection_detector:
                 inj = self._injection_detector.check(current_text)
                 if inj["detected"] and self._guardrail_policy.get("injection_action", "log") == "block":
-                    msg = self._guardrail_policy.get(
-                        "injection_block_message",
-                        "I can't process that request.",
-                    )
+                    # -> NEW DYNAMIC SECURITY BLOCK
+                    msg = self._guardrail_policy.get("injection_block_message") or self._get_dynamic_response("security_block")
                     logger.warning("Injection block (session=%s)", self.session.session_id[:8])
                     self.session.add_turn(TurnRole.USER, current_text)
                     if self.memory:
@@ -1753,7 +2093,8 @@ class AgenticBrain:
                     await self._log_event("[BRAIN]", f"Verifying topic relevance for '{self._topic_restriction}'...", "text-indigo-400")
                     is_on_topic = await self._check_topic_relevance(current_text, self._topic_restriction)
                     if not is_on_topic:
-                        msg = f"I am specialized in {self._topic_restriction}. Is there something related to that I can help with?"
+                        # -> NEW DYNAMIC TOPIC BLOCK
+                        msg = self._get_dynamic_response("topic_violation", topic=self._topic_restriction)
                         logger.warning("Topic guardrail triggered (session=%s)", self.session.session_id[:8])
                         self.session.add_turn(TurnRole.USER, current_text)
                         if self.memory:
@@ -1777,16 +2118,28 @@ class AgenticBrain:
             self._turn_count += 1
             self._update_task_phase_from_user_text(current_text)
 
-            # Parallel background tasks
+            # Parallel background tasks (fire-and-forget, non-critical path)
             asyncio.create_task(self._analyze_and_emit_sentiment(current_text))
             if self.session.user_id or self.session.session_id:
                 asyncio.create_task(self._extract_and_store_entities(current_text))
+
+            # Commitment intelligence — parallel, bounded 250ms before LLM starts
+            # Both tasks write to session.metadata so they must complete before _build_system_prompt()
+            _commit_tasks = [
+                asyncio.create_task(self._extract_commitment(current_text)),
+                asyncio.create_task(self._check_commitment_contradiction(current_text)),
+            ]
+            try:
+                await asyncio.wait(_commit_tasks, timeout=0.25)
+            except Exception:
+                pass  # Voice pipeline proceeds regardless
 
             # ── Step 2.1: Dynamic Workflow Execution ──
             if self.workflow_engine:
                 logger.info("Evaluating text via WorkflowEngine...")
                 yield_to_llm = await self.workflow_engine.evaluate(safe_text)
                 if not yield_to_llm:
+                    self._is_fast_track_turn = True  # ⬅️ Successfully bypassed main Voice LLM
                     self.session.is_bot_speaking = False
                     self._partial_buffer = ""
                     self._utterance_buffer = ""
@@ -1922,9 +2275,9 @@ class AgenticBrain:
                     self.session.session_id[:8],
                 )
                 self.request_voice_session_end("escalated_sentiment")
-                await self._generate_and_speak(
-                    "I can hear this is frustrating. Let me connect you with a team member who can help you directly."
-                )
+                # -> NEW DYNAMIC ESCALATION
+                msg = self._get_dynamic_response("sentiment_escalation")
+                await self._generate_and_speak(msg)
 
             await self._log_event(
                 "[SENTIMENT]",
@@ -2029,6 +2382,132 @@ class AgenticBrain:
                 "text-blue-400",
             )
 
+    # ─── Commitment Intelligence (Self-Learning) ──────────────────────────────
+
+    async def _load_commitment_few_shots(self, task_type: str) -> str:
+        """
+        Load top-5 confirmed-correct past predictions from DB for dynamic few-shot injection.
+        Returns formatted string for {few_shots} placeholder in _COMMITMENT_PROMPTS.
+        Falls back to empty string if DB unavailable or no examples yet.
+        """
+        if not self.db or not hasattr(self.db, "get_commitment_few_shots"):
+            return ""
+        try:
+            examples = await self.db.get_commitment_few_shots(task_type=task_type, limit=5)
+            if not examples:
+                return ""
+            lines = ["Examples from past calls (confirmed correct):\n"]
+            for ex in examples:
+                lines.append(f'  Input: "{ex["input_text"][:80]}" → {ex["prediction"]}\n')
+            lines.append("\n")
+            return "".join(lines)
+        except Exception:
+            return ""
+
+    async def _store_training_example(self, task_type: str, input_text: str, prediction: str) -> None:
+        """Fire-and-forget: persist a commitment prediction for self-learning."""
+        if self.db and hasattr(self.db, "save_commitment_training_example"):
+            try:
+                await self.db.save_commitment_training_example(
+                    task_type=task_type,
+                    input_text=input_text,
+                    prediction=prediction,
+                    session_id=self.session.session_id,
+                )
+            except Exception as e:
+                logger.debug("Training example save failed (non-critical): %s", e)
+
+    async def _extract_commitment(self, user_text: str) -> None:
+        """
+        LLM-based commitment extractor. Runs with bounded latency as part of
+        parallel pre-turn tasks. Any type of commitment (amount, date, preference,
+        promise) is captured as plain-English fact in session.metadata['commitments'].
+        Also stores raw prediction for self-learning.
+        """
+        if not user_text or not user_text.strip():
+            return
+        few_shots = await self._load_commitment_few_shots("extract_commitment")
+        prompt = _COMMITMENT_PROMPTS["extract_commitment"].format(
+            text=user_text[:300], few_shots=few_shots
+        )
+        try:
+            chunks = []
+            async for chunk in self.llm.stream_completion(
+                system_prompt="You are a strict commitment extractor. Reply with ONE sentence or NONE.",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=40,
+            ):
+                chunks.append(chunk.content or "")
+            result = "".join(chunks).strip()
+            label = "NONE"
+            if result and result.upper() != "NONE" and len(result) > 3:
+                commitments: list[dict] = self.session.metadata.setdefault("commitments", [])
+                entry = {"text": result, "original": user_text[:120], "turn": self._turn_count}
+                commitments.append(entry)
+                label = result
+                await self._log_event("[COMMITMENT]", result[:80], "text-blue-300")
+            asyncio.create_task(self._store_training_example("extract_commitment", user_text[:300], label))
+        except Exception as e:
+            logger.debug("Commitment extraction failed (non-critical): %s", e)
+
+    async def _check_commitment_contradiction(self, user_text: str) -> None:
+        """
+        LLM-based contradiction detector. Checks current utterance against
+        all prior intra-call commitments. If contradiction found, sets
+        session.metadata['contradiction_hint'] which is injected into the LLM
+        system prompt for the current turn.
+        Stores prediction for self-learning feedback loop.
+        """
+        commitments: list[dict] = self.session.metadata.get("commitments", [])
+        # Only check against commitments from PRIOR turns (not the one being extracted now)
+        prior = [c for c in commitments if c.get("turn", 0) < self._turn_count]
+        if not prior or not user_text:
+            self.session.metadata.pop("contradiction_hint", None)
+            return
+
+        commitment_lines = "\n".join(
+            f"- (turn {c['turn']}) {c['text']}" for c in prior[-5:]
+        )
+        few_shots = await self._load_commitment_few_shots("check_contradiction")
+        prompt = _COMMITMENT_PROMPTS["check_contradiction"].format(
+            commitments=commitment_lines,
+            few_shots=few_shots,
+            text=user_text[:300],
+        )
+        try:
+            chunks = []
+            async for chunk in self.llm.stream_completion(
+                system_prompt="You are a strict contradiction detector. Reply CONTRADICTION:... or NONE.",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=60,
+            ):
+                chunks.append(chunk.content or "")
+            result = "".join(chunks).strip()
+            if result.upper().startswith("CONTRADICTION:"):
+                detail = result[len("CONTRADICTION:"):].strip()
+                parts = detail.split("|", 1)
+                prior_stmt = parts[0].strip() if parts else detail
+                current_stmt = parts[1].strip() if len(parts) > 1 else user_text[:80]
+                hint = (
+                    f"INTRA-CALL CONTRADICTION: Earlier this call, the user committed: \"{prior_stmt}\". "
+                    f"They are now saying: \"{current_stmt}\". "
+                    f"Acknowledge this naturally and hold them to their prior statement."
+                )
+                self.session.metadata["contradiction_hint"] = hint
+                await self._log_event("[CONTRADICTION]", f"{prior_stmt[:50]} → {current_stmt[:50]}", "text-red-400")
+                asyncio.create_task(self._store_training_example(
+                    "check_contradiction",
+                    f"commitments: {commitment_lines[:200]} | user: {user_text[:200]}",
+                    result[:200],
+                ))
+            else:
+                self.session.metadata.pop("contradiction_hint", None)
+        except Exception as e:
+            logger.debug("Contradiction check failed (non-critical): %s", e)
+            self.session.metadata.pop("contradiction_hint", None)
+
     async def _guard_tts_segment(self, raw_buffer: str) -> tuple[str, Optional[dict]]:
         """Strip and apply output guard to a TTS phrase. Returns (Masked Text, Block Metadata)"""
         t = (raw_buffer or "").strip()
@@ -2053,7 +2532,8 @@ class AgenticBrain:
 
     async def _emit_tts_audio_stream(self, text: str, turbo: bool = False) -> None:
         """Stream one TTS synthesis to the client; one short log per segment."""
-        t = (text or "").strip()
+        # 1. Resolve variables [Placeholders]
+        t = self._inject_variables(text or "").strip()
         if not self.tts or not t:
             return
         # Clear interrupt event explicitly before starting synthesis loop
@@ -2148,26 +2628,6 @@ class AgenticBrain:
             if cache_key:
                 await self.memory.set_cache(cache_key, clean_response, ttl=cache_ttl_seconds)
 
-        # Store in semantic QA cache (Disabled per user request)
-        # if (
-        #     _qa_question
-        #     and full_response
-        #     and len(full_response.split()) > 10
-        #     and self._vector_memory
-        #     and getattr(self._vector_memory, "_available", False)
-        #     and self._bot_id
-        # ):
-        #     try:
-        #         asyncio.create_task(
-        #             self._vector_memory.cache_qa(
-        #                 bot_id=str(self._bot_id),
-        #                 question=_qa_question,
-        #                 answer=full_response,
-        #             )
-        #         )
-        #     except Exception:
-        #         pass
-
         # Log to SQLite long-term memory
         if self.db:
             await self.db.log_turn(self.session.session_id, "assistant", clean_response)
@@ -2176,6 +2636,20 @@ class AgenticBrain:
         total_latency = (time.time() - turn_start) * 1000
         self.session.last_total_latency_ms = total_latency
         
+        # 🧪 [TELEMETRY] Sentiment Score Mapping (-1 to 1)
+        _sentiment_map = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
+        current_sentiment = self._sentiment_history[-1] if self._sentiment_history else "neutral"
+        sentiment_score = _sentiment_map.get(current_sentiment, 0.0)
+
+        # Audit last interrupt type: Differentiate Barge-in from Noise
+        interrupt_type = "clean"
+        if self.session.is_interrupted:
+             interrupt_type = "barge_in"
+        elif self.session.false_interruption_count > 0:
+             # Basic heuristic: if we had a false interrupt this turn, let the dashboard know
+             interrupt_type = "noise_filter"
+
+
         # Emit structured metrics for the dashboard
         if self._on_metrics:
             _tts_name = type(self.tts).__name__ if self.tts else "none"
@@ -2189,7 +2663,9 @@ class AgenticBrain:
                 "false_interruptions": self.session.false_interruption_count,
                 "tts_provider": _tts_name,
                 "total": round(total_latency, 0),
-                # Token usage fields (Aggregated for obsidian-command)
+                "sentiment_score": sentiment_score,
+                "interrupt_type": interrupt_type,
+                "is_fast_track": getattr(self, "_is_fast_track_turn", False), # ⬅️ New metric
                 "tokens_input": usage.get("prompt_tokens", 0) if usage else 0,
                 "tokens_output": usage.get("completion_tokens", 0) if usage else 0,
                 "tokens_total": usage.get("total_tokens", 0) if usage else 0,
@@ -2215,7 +2691,9 @@ class AgenticBrain:
                     total_ms=total_latency,
                     first_audio_ms=self.session.first_audio_latency_ms,
                     prompt_tokens=prompt,
-                    completion_tokens=completion
+                    completion_tokens=completion,
+                    sentiment_score=sentiment_score,
+                    interrupt_type=interrupt_type
                 ))
             except Exception:
                 pass
@@ -2845,13 +3323,62 @@ class AgenticBrain:
                 "Never guess, invent, or use placeholder values for tool arguments."
             )
 
+        # Conversation style block — injected for all bots, critical for natural voice feel
+        call_direction = (self._bot_config.get("call_direction") or "outbound").lower()
+        
+        outbound_rule = ""
+        if call_direction == "outbound":
+            outbound_rule = (
+                "\n"
+                "RULE 6 — OUTBOUND BEHAVIOUR:\n"
+                "You initiated this call. The customer did NOT call you for help.\n"
+                "Phrases like 'Yes?', 'Tell me', 'Haan', 'Bataiye' mean 'go ahead, state your purpose'. "
+                "NEVER respond to these with 'How can I help you?'.\n"
+                "Treat these as a green light — immediately state your call objective.\n"
+                "BAD: 'Okay, so how can I assist you today?'\n"
+                "GOOD: 'Great. [User Name], I am calling regarding [State Objective]...'\n"
+            )
+
+        conversation_style_block = (
+            "\n\n[CONVERSATION STYLE — MANDATORY]\n"
+            "Speak like a confident, warm human agent on a phone call. Never sound like a bot or a script.\n"
+            "\n"
+            "RULE 1 — NO ECHOING (most critical):\n"
+            "NEVER repeat, paraphrase, or translate the user's words back to them.\n"
+            "When a user says a short affirmative ('yes', 'haan', 'okay', 'right') — do NOT say 'I understand you are available' or 'You said yes'.\n"
+            "Just use a single pivot word ('Okay,' / 'Great,' / 'Right,') and continue naturally.\n"
+            "BAD: 'Since you said yes, I will now tell you...'\n"
+            "GOOD: 'Great. [State the next point directly]'\n"
+            "\n"
+            "RULE 2 — NO MID-CALL GREETINGS:\n"
+            "NEVER use greetings ('Hello', 'Namaste', 'Good morning') once the conversation has started.\n"
+            "Greetings are strictly for the very first message. After that, go straight to the point.\n"
+            "\n"
+            "RULE 3 — NO INTENT ANNOUNCING:\n"
+            "NEVER announce what you are about to do (e.g., 'I want to talk to you about X'). Just talk about X.\n"
+            "BAD: 'Now I want to discuss your account...'\n"
+            "GOOD: 'Regarding your account...'\n"
+            "\n"
+            "RULE 4 — BE DIRECT AND PERSONAL:\n"
+            "Use the caller's name naturally if you know it. Match their language: Hindi/Hinglish response → reply in Hinglish. English → English.\n"
+            "\n"
+            "RULE 5 — ASSUME AFFIRMATIVE ON UNCLEAR INPUT:\n"
+            "In a voice call, transcriptions are often imperfect. "
+            "If user input is short and garbled but starts with an affirmative sound ('ha', 'yep', 'hmm', 'ji') — assume YES.\n"
+            "NEVER say 'I didn't understand' for a 1-2 word affirmative.\n"
+            "BAD: 'I didn't quite catch that, could you repeat?'\n"
+            "GOOD: 'Got it. [Continue with objective]'\n"
+            f"{outbound_rule}"
+        )
+
         # Build full prompt
         if self._bot_config.get("system_prompt"):
             return (
-                self._bot_config["system_prompt"] 
-                + lang_instruction 
-                + spec_block 
-                + dynamic_safety 
+                self._bot_config["system_prompt"]
+                + conversation_style_block
+                + lang_instruction
+                + spec_block
+                + dynamic_safety
                 + tool_instruction_block
             )
 
@@ -2872,7 +3399,7 @@ class AgenticBrain:
             "- If you don't understand, ask for clarification\n"
             "- Be warm, empathetic, and professional\n"
             "- Never reveal sensitive information (passwords, OTPs, card numbers)\n"
-            f"{lang_instruction}{spec_block}{dynamic_safety}{tool_instruction_block}"
+            f"{conversation_style_block}{lang_instruction}{spec_block}{dynamic_safety}{tool_instruction_block}"
         )
 
 
@@ -2908,7 +3435,32 @@ class AgenticBrain:
                 + "\n[END CALLER MEMORY]"
             )
 
-        return f"{extra}{memory_block}{phase_hint}"
+        contradiction_block = ""
+        hint = self.session.metadata.get("contradiction_hint")
+        if hint:
+            contradiction_block = f"\n\n[LIVE CONTEXT]\n{hint}\n[END LIVE CONTEXT]"
+
+        # Caller context: expose all non-internal workflow session_data to the LLM
+        # This ensures the LLM knows the caller's name, captured amounts, etc. after workflow yield
+        caller_context_block = ""
+        _workflow_data = {}
+        if self.workflow_engine:
+            _workflow_data = getattr(self.workflow_engine, "session_data", {})
+        caller_context_lines = [
+            f"  {k}: {str(v)[:80]}"
+            for k, v in _workflow_data.items()
+            if not str(k).startswith("_") and v and str(v) not in ("NONE", "None", "")
+        ]
+        if caller_context_lines:
+            caller_context_block = (
+                "\n\n[CALLER CONTEXT — facts established so far this call]\n"
+                + "\n".join(caller_context_lines)
+                + "\n[END CALLER CONTEXT]\n"
+                "Use the above naturally in conversation. "
+                "Never say you don't know something that is listed above."
+            )
+
+        return f"{extra}{memory_block}{contradiction_block}{caller_context_block}{phase_hint}"
 
     def _build_system_prompt(self) -> str:
         """
@@ -3037,6 +3589,113 @@ class AgenticBrain:
         except Exception as e:
             logger.error("Failed to load custom tools: %s", e)
 
+    async def _post_call_reflection(self) -> None:
+        """
+        Extract insights from the finished conversation to update long-term memory.
+        Uses a 'Heavy' model (GPT-4 / Gemini Pro) for high-quality extraction.
+        """
+        if not self._vector_memory or not self.session.conversation_history:
+            return
+            
+        logger.info("🧠 [REFLECTION] Starting post-call analysis for user %s", self.session.user_id)
+        
+        try:
+            # 1. Prepare history for the analyst
+            transcript_lines = []
+            for turn in self.session.conversation_history:
+                role = turn.role.upper()
+                content = turn.content or "[Action Taken]"
+                transcript_lines.append(f"{role}: {content}")
+            
+            full_transcript = "\n".join(transcript_lines)
+            
+            # 2. Call the reflection engine (Non-streaming, high-intelligence)
+            # NOTE: We use the direct provider call to avoid speech/guardrail overhead.
+            prompt = _POST_CALL_REFLECTION_PROMPT.format(transcript=full_transcript)
+            
+            # Try to pick a 'Heavy' model if using OpenRouter
+            heavy_model = "google/gemini-2.0-flash-001" 
+            if hasattr(self.llm, "provider") and self.llm.provider == "openrouter":
+                 # Use a reasoning-heavy or high-context model for post-call analysis
+                 reflection_resp = await self.llm.complete(
+                     system_prompt="You are an expert conversation analyst.",
+                     messages=[{"role": "user", "content": prompt}]
+                 )
+            else:
+                 # Fallback to current provider's default complete if available
+                 if hasattr(self.llm, "complete"):
+                     reflection_resp = await self.llm.complete(
+                         system_prompt="You are an expert conversation analyst.",
+                         messages=[{"role": "user", "content": prompt}]
+                     )
+                 else:
+                     logger.warning("[REFLECTION] LLM provider does not support non-streaming '.complete()'")
+                     return
+
+            # 3. Parse and Store
+            try:
+                # Extract JSON from potential markdown wrapping
+                json_match = re.search(r"\{.*\}", reflection_resp, re.DOTALL)
+                if not json_match:
+                    logger.warning("[REFLECTION] No JSON found in response")
+                    return
+                
+                insights = json.loads(json_match.group(0))
+                
+                # A. Store Call Summary
+                summary = insights.get("outcome_summary", "")
+                if summary:
+                    try:
+                        await self._vector_memory.store_conversation(
+                            session_id=self.session.session_id,
+                            summary=summary,
+                            user_id=self.session.user_id
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store summary: %s", e)
+                
+                # B. Store User Facts
+                for item in insights.get("user_facts", []):
+                    fact = item.get("fact") if isinstance(item, dict) else str(item)
+                    conf = item.get("confidence", 0.7) if isinstance(item, dict) else 0.7
+                    if not fact: continue
+                    
+                    try:
+                        await self._vector_memory.store_fact(
+                            bot_id=str(self._bot_id),
+                            fact=fact,
+                            source="reflection",
+                            category="user_context",
+                            confidence=conf # Pass to metadata
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store fact: %s", e)
+                
+                # C. Store Successful Tactics (learned behavior)
+                for item in insights.get("successful_tactics", []):
+                    tactic = item.get("tactic") if isinstance(item, dict) else str(item)
+                    conf = item.get("confidence", 0.7) if isinstance(item, dict) else 0.7
+                    if not tactic: continue
+                    
+                    try:
+                        await self._vector_memory.store_fact(
+                            bot_id=str(self._bot_id),
+                            fact=f"Tactical Insight: {tactic}",
+                            source="reflection",
+                            category="successful_tactics",
+                            confidence=conf
+                        )
+                    except Exception as e:
+                        logger.error("[REFLECTION] Failed to store tactic: %s", e)
+                    
+                logger.info("✅ [REFLECTION] Complete for user %s. Insights stored.", self.session.user_id)
+                
+            except (json.JSONDecodeError, KeyError) as parse_err:
+                logger.error("[REFLECTION] Failed to parse model output: %s", parse_err)
+                
+        except Exception as e:
+            logger.error("[REFLECTION] Error during analysis: %s", e)
+
     async def cleanup(self) -> None:
         """Clean up resources when the session ends."""
         self._cancel_all_latency_watchdogs()
@@ -3072,6 +3731,16 @@ class AgenticBrain:
                 pass
 
         logger.info("Brain cleanup complete — session=%s", self.session.session_id[:8])
+        
+        # 🧠 PHASE 5: Post-Call Reflection (Self-Learning)
+        # We run this in the background after the session is closed to the user.
+        if self.session.user_id:
+             reflection_task = asyncio.create_task(self._post_call_reflection())
+             # Ensure the task is not garbage collected early and is tracked
+             if not hasattr(self, "_background_tasks"):
+                 self._background_tasks = set()
+             self._background_tasks.add(reflection_task)
+             reflection_task.add_done_callback(self._background_tasks.discard)
 
     # ─── Logic Helpers (Delegated to TurnDetector) ───────────────────
 

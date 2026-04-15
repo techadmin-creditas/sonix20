@@ -202,6 +202,9 @@ class SQLiteProvider:
             ("owner_user_id", "TEXT REFERENCES users(id)"),
             ("min_stt_confidence", "REAL DEFAULT 0.5"),
             ("is_landing_page_default", "INTEGER DEFAULT 0"),
+            ("variable_mappings", "TEXT DEFAULT '{}'"),
+            ("metadata_defaults", "TEXT DEFAULT '{}'"),
+            ("tts_model", "TEXT DEFAULT ''"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -322,6 +325,16 @@ class SQLiteProvider:
                 created_at  REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
 
+            CREATE TABLE IF NOT EXISTS commitment_training_examples (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type   TEXT NOT NULL,
+                input_text  TEXT NOT NULL,
+                prediction  TEXT NOT NULL,
+                feedback    TEXT DEFAULT NULL,
+                session_id  TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_sessions_bot_id ON sessions(bot_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_logs_session_id ON conversation_logs(session_id);
@@ -329,6 +342,7 @@ class SQLiteProvider:
             CREATE INDEX IF NOT EXISTS idx_tool_logs_session ON tool_logs(session_id);
             CREATE INDEX IF NOT EXISTS idx_user_facts_user_id ON user_facts(user_id);
             CREATE INDEX IF NOT EXISTS idx_feedback_session ON session_feedback(session_id);
+            CREATE INDEX IF NOT EXISTS idx_commitment_examples ON commitment_training_examples(task_type, feedback);
 
             CREATE TABLE IF NOT EXISTS customer_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,6 +353,7 @@ class SQLiteProvider:
                 email           TEXT,
                 balance         REAL NOT NULL DEFAULT 0.0,
                 account_type    TEXT DEFAULT 'savings',
+                test_meta_data  TEXT DEFAULT '{}',
                 is_active       INTEGER NOT NULL DEFAULT 1,
                 created_at      REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
@@ -358,7 +373,27 @@ class SQLiteProvider:
 
             CREATE INDEX IF NOT EXISTS idx_customers_account ON customer_accounts(account_number);
             CREATE INDEX IF NOT EXISTS idx_loans_account ON loans(account_number);
+
+            CREATE TABLE IF NOT EXISTS learned_affinities (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                intent_label TEXT NOT NULL,
+                pattern      TEXT NOT NULL UNIQUE,
+                hit_count    INTEGER DEFAULT 0,
+                is_verified  INTEGER DEFAULT 0,
+                created_at   REAL NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_affinities_intent ON learned_affinities(intent_label);
+            CREATE INDEX IF NOT EXISTS idx_affinities_pattern ON learned_affinities(pattern);
         """)
+
+        # Ensure test_meta_data exists in customer_accounts
+        existing_customer_cols = {row[1] for row in conn.execute("PRAGMA table_info(customer_accounts)").fetchall()}
+        if "test_meta_data" not in existing_customer_cols:
+            try:
+                conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            except sqlite3.OperationalError:
+                pass
+
         conn.commit()
 
         # 4. AI Persona Builder Registry
@@ -468,7 +503,7 @@ class SQLiteProvider:
                 llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
                  default_language
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 bot_id,
@@ -490,6 +525,14 @@ class SQLiteProvider:
             ),
         )
         conn.commit()
+        
+        # Add test_meta_data for persistent simulator overrides if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE customer_accounts ADD COLUMN test_meta_data TEXT DEFAULT '{}'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         logger.info("Seeded default bot: %s (%s)", name, bot_id)
 
         # If the registry is otherwise empty, seed a small starter pack so Bot Factory + DIY
@@ -924,7 +967,9 @@ class SQLiteProvider:
                          max_tokens: int = 2048, tts_provider: str = "deepgram_ws", default_language: str = "hi", proactive_prompts: Optional[list] = None,
                          topic_restriction: Optional[str] = None, refuse_off_topic: bool = False,
                          owner_user_id: Optional[str] = None, min_stt_confidence: float = 0.35,
-                         is_landing_page_default: bool = False) -> dict:
+                         is_landing_page_default: bool = False,
+                         workflow_id: Optional[str] = None,
+                         tts_model: Optional[str] = None) -> dict:
         """Create a new bot configuration."""
         def _do():
             conn = self._get_conn()
@@ -934,9 +979,9 @@ class SQLiteProvider:
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id,min_stt_confidence, is_landing_page_default)
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence,is_landing_page_default)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, None, default_language, tts_provider, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence, 1 if is_landing_page_default else 0))
+            """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence, 1 if is_landing_page_default else 0))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}
 
@@ -959,6 +1004,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -978,6 +1025,8 @@ class SQLiteProvider:
                     d["pipeline_mode"] = "classic"
                 d["agent_task_spec"] = parse_agent_task_spec(d.get("agent_task_spec"))
                 d["proactive_prompts"] = json.loads(d.get("proactive_prompts", "[]"))
+                d["variable_mappings"] = json.loads(d.get("variable_mappings", "{}"))
+                d["metadata_defaults"] = json.loads(d.get("metadata_defaults", "{}"))
                 return d
             return None
         return await self._run(_do)
@@ -986,7 +1035,7 @@ class SQLiteProvider:
         """List all active bots."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at").fetchall()
+            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at DESC").fetchall()
             results = []
             for r in rows:
                 d = dict(r)
@@ -1012,7 +1061,7 @@ class SQLiteProvider:
                 "barge_in_grace_period_ms", "barge_in_debounce_ms", "topic_check_async",
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
-                "is_landing_page_default",
+                "is_landing_page_default", "variable_mappings", "metadata_defaults", "tts_model",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             
@@ -1022,17 +1071,14 @@ class SQLiteProvider:
             elif "is_landing_page_default" in updates:
                  updates["is_landing_page_default"] = 0
 
-            if "tools_enabled" in updates and isinstance(updates["tools_enabled"], list):
-                updates["tools_enabled"] = json.dumps(updates["tools_enabled"])
-            if "proactive_prompts" in updates and isinstance(updates["proactive_prompts"], list):
-                updates["proactive_prompts"] = json.dumps(updates["proactive_prompts"])
+            for field in ("tools_enabled", "proactive_prompts", "agent_task_spec", 
+                          "variable_mappings", "metadata_defaults",
+                          "guardrail_policy", "data_access_policy", "conversation_policy"):
+                if field in updates and (isinstance(updates[field], (dict, list))):
+                    updates[field] = json.dumps(updates[field])
             if "refuse_off_topic" in updates:
                 updates["refuse_off_topic"] = 1 if updates["refuse_off_topic"] else 0
-            if "agent_task_spec" in updates and isinstance(updates["agent_task_spec"], dict):
-                updates["agent_task_spec"] = json.dumps(updates["agent_task_spec"])
-            for pol in ("guardrail_policy", "data_access_policy", "conversation_policy"):
-                if pol in updates and isinstance(updates[pol], dict):
-                    updates[pol] = json.dumps(updates[pol])
+            
             updates["updated_at"] = time.time()
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             values = list(updates.values()) + [bot_id]
@@ -1113,24 +1159,27 @@ class SQLiteProvider:
     # ─── Session Management ───────────────────────────────────────────────────
 
     async def create_session(self, session_id: str, bot_id: Optional[str] = None,
-                             user_id: Optional[str] = None, language: str = "hi") -> None:
+                             user_id: Optional[str] = None, language: str = "hi",
+                             metadata: Optional[dict] = None) -> None:
         """Register or update a session in SQLite."""
+        meta_json = json.dumps(metadata or {})
         def _do():
             conn = self._get_conn()
             # 1. Insert session record if it doesn't exist yet
             conn.execute("""
-                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, started_at)
-                VALUES (?, ?, ?, ?, strftime('%s','now'))
-            """, (session_id, bot_id, user_id, language))
+                INSERT OR IGNORE INTO sessions (id, bot_id, user_id, language, metadata, started_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s','now'))
+            """, (session_id, bot_id, user_id, language, meta_json))
             
             # 2. Update existing session fields (except started_at)
             conn.execute("""
                 UPDATE sessions 
                 SET bot_id = COALESCE(?, bot_id),
                     user_id = COALESCE(?, user_id),
-                    language = ?
+                    language = ?,
+                    metadata = ?
                 WHERE id = ?
-            """, (bot_id, user_id, language, session_id))
+            """, (bot_id, user_id, language, meta_json, session_id))
             
             conn.commit()
         await self._run(_do)
@@ -1367,6 +1416,105 @@ class SQLiteProvider:
             len(rows),
         )
 
+    # ─── Commitment Training (Self-Learning) ─────────────────────────────────
+
+    async def save_commitment_training_example(
+        self, task_type: str, input_text: str, prediction: str, session_id: Optional[str] = None
+    ) -> None:
+        """Store a raw commitment extraction or contradiction detection prediction for self-learning."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT INTO commitment_training_examples (task_type, input_text, prediction, session_id) VALUES (?, ?, ?, ?)",
+                (task_type, input_text[:500], prediction[:200], session_id),
+            )
+            conn.commit()
+        await self._run(_do)
+
+    async def get_commitment_few_shots(self, task_type: str, limit: int = 5) -> list[dict]:
+        """Return confirmed-correct past predictions for dynamic few-shot injection."""
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute(
+                "SELECT input_text, prediction FROM commitment_training_examples "
+                "WHERE task_type = ? AND feedback = 'correct' AND prediction != 'NONE' "
+                "ORDER BY created_at DESC LIMIT ?",
+                (task_type, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def auto_label_commitment_examples(self, session_id: str) -> None:
+        """
+        Infer feedback labels for this session's training examples.
+        - If bot raised a CONTRADICTION and user's NEXT turn confirmed it → 'correct'
+        - If user's NEXT turn denied it → 'false_positive'
+        Uses conversation_logs to find confirmation/denial signals.
+        """
+        def _do():
+            conn = self._get_conn()
+            # Get all unlabeled contradiction examples for this session
+            examples = conn.execute(
+                "SELECT id, prediction FROM commitment_training_examples "
+                "WHERE session_id = ? AND task_type = 'check_contradiction' AND feedback IS NULL AND prediction != 'NONE'",
+                (session_id,),
+            ).fetchall()
+            if not examples:
+                return
+
+            # Get conversation turns for this session
+            turns = conn.execute(
+                "SELECT role, content FROM conversation_logs WHERE session_id = ? AND role IN ('user','assistant') ORDER BY id",
+                (session_id,),
+            ).fetchall()
+            turns = [dict(t) for t in turns]
+
+            confirm_words = {"haan", "sahi", "theek", "correct", "yes", "right", "bilkul", "okay"}
+            deny_words = {"nahi", "nahi", "no", "galat", "wrong", "maine nahi", "kabhi nahi", "false"}
+
+            # Find assistant turns that reference a contradiction, check what user said next
+            for i, turn in enumerate(turns):
+                if turn["role"] == "assistant" and i + 1 < len(turns):
+                    content_lower = turn["content"].lower()
+                    if "pehle" in content_lower or "baat ki thi" in content_lower or "committed" in content_lower.lower():
+                        next_user = turns[i + 1]
+                        if next_user["role"] == "user":
+                            user_words = set(next_user["content"].lower().split())
+                            if user_words & confirm_words:
+                                feedback = "correct"
+                            elif user_words & deny_words:
+                                feedback = "false_positive"
+                            else:
+                                continue
+                            for ex in examples:
+                                conn.execute(
+                                    "UPDATE commitment_training_examples SET feedback = ? WHERE id = ?",
+                                    (feedback, ex["id"]),
+                                )
+            conn.commit()
+        await self._run(_do)
+
+    async def get_commitment_training_export(self, task_type: Optional[str] = None, feedback: Optional[str] = None, limit: int = 1000) -> list[dict]:
+        """Export training examples for fine-tuning. Returns list of dicts."""
+        def _do():
+            conn = self._get_conn()
+            where = []
+            params = []
+            if task_type:
+                where.append("task_type = ?")
+                params.append(task_type)
+            if feedback:
+                where.append("feedback = ?")
+                params.append(feedback)
+            clause = ("WHERE " + " AND ".join(where)) if where else ""
+            rows = conn.execute(
+                f"SELECT task_type, input_text, prediction, feedback, session_id, created_at "
+                f"FROM commitment_training_examples {clause} ORDER BY created_at DESC LIMIT ?",
+                params + [limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
     async def get_user_facts(self, user_id: Optional[str] = None, session_id: Optional[str] = None) -> list[dict]:
         """Get stored facts about a user."""
         def _do():
@@ -1586,25 +1734,179 @@ class SQLiteProvider:
                 peak_hours = conn.execute("""
                     SELECT strftime('%H', datetime(started_at, 'unixepoch')) as hour, COUNT(*) as count
                     FROM sessions
-                    WHERE started_at > strftime('%s', 'now', '-1 day')
+                    WHERE started_at > strftime('%s', 'now', 'start of day')
                     GROUP BY hour
                     ORDER BY hour
                 """).fetchall()
             hour_data = [{"hour": r["hour"] + ":00", "sessions": r["count"]} for r in peak_hours]
             
-            # 7. Sentiment — not computed from DB yet; UI can hide or show placeholder
-            sentiment = {"positive": 0, "neutral": 0, "negative": 0, "note": "unavailable"}
+            # 7. Session History (last 8 days)
+            if owner_user_id:
+                history = conn.execute("""
+                    SELECT strftime('%m-%d', datetime(started_at, 'unixepoch')) as day, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-8 days') AND user_id = ?
+                    GROUP BY day
+                    ORDER BY day
+                """, (owner_user_id,)).fetchall()
+            else:
+                history = conn.execute("""
+                    SELECT strftime('%m-%d', datetime(started_at, 'unixepoch')) as day, COUNT(*) as count
+                    FROM sessions
+                    WHERE started_at > strftime('%s', 'now', '-8 days')
+                    GROUP BY day
+                    ORDER BY day
+                """).fetchall()
+            history_data = [{"name": r["day"], "value": r["count"]} for r in history]
+            
+            # 8. Tool Usage Breakdown (with Bot Context)
+            if owner_user_id:
+                tool_usage = conn.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN tl.tool_name = 'search_knowledge' THEN 'Knowledge (' || b.name || ')'
+                            ELSE tl.tool_name 
+                        END as display_name,
+                        COUNT(*) as count
+                    FROM tool_logs tl
+                    JOIN sessions s ON tl.session_id = s.id
+                    JOIN bots b ON s.bot_id = b.id
+                    WHERE tl.tool_name != '__metrics__' AND s.user_id = ?
+                    GROUP BY display_name
+                    ORDER BY count DESC
+                """, (owner_user_id,)).fetchall()
+            else:
+                tool_usage = conn.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN tl.tool_name = 'search_knowledge' THEN 'Knowledge (' || b.name || ')'
+                            ELSE tl.tool_name 
+                        END as display_name,
+                        COUNT(*) as count
+                    FROM tool_logs tl
+                    JOIN sessions s ON tl.session_id = s.id
+                    JOIN bots b ON s.bot_id = b.id
+                    WHERE tl.tool_name != '__metrics__'
+                    GROUP BY display_name
+                    ORDER BY count DESC
+                """).fetchall()
+            tool_data = [{"name": r["display_name"], "count": r["count"]} for r in tool_usage]
+            
+            # 9. Per-Bot Success Rate
+            if owner_user_id:
+                bot_performance = conn.execute("""
+                    SELECT b.name, 
+                           COUNT(s.id) as total,
+                           SUM(CASE WHEN s.turn_count > 2 THEN 1 ELSE 0 END) as success
+                    FROM bots b JOIN sessions s ON b.id = s.bot_id
+                    WHERE b.is_active = 1 AND b.owner_user_id = ?
+                    GROUP BY b.id
+                    HAVING total > 0
+                    ORDER BY total DESC
+                    LIMIT 3
+                """, (owner_user_id,)).fetchall()
+            else:
+                bot_performance = conn.execute("""
+                    SELECT b.name, 
+                           COUNT(s.id) as total,
+                           SUM(CASE WHEN s.turn_count > 2 THEN 1 ELSE 0 END) as success
+                    FROM bots b JOIN sessions s ON b.id = s.bot_id
+                    WHERE b.is_active = 1
+                    GROUP BY b.id
+                    HAVING total > 0
+                    ORDER BY total DESC
+                    LIMIT 3
+                """).fetchall()
+            
+            perf_data = [
+                {"name": r["name"], "rate": int((r["success"] / r["total"]) * 100)} 
+                for r in bot_performance
+            ]
+            
+            # 10. Call Duration Distribution
+            duration_bins = [
+                {"range": "< 1m", "max": 60, "min": 0},
+                {"range": "1-3m", "max": 180, "min": 60},
+                {"range": "3-5m", "max": 300, "min": 180},
+                {"range": "> 5m", "max": 999999, "min": 300},
+            ]
+            duration_data = []
+            for bin in duration_bins:
+                if owner_user_id:
+                    count = conn.execute("""
+                        SELECT COUNT(*) FROM sessions 
+                        WHERE ended_at IS NOT NULL AND (ended_at - started_at) >= ? AND (ended_at - started_at) < ? AND user_id = ?
+                    """, (bin["min"], bin["max"], owner_user_id)).fetchone()[0]
+                else:
+                    count = conn.execute("""
+                        SELECT COUNT(*) FROM sessions 
+                        WHERE ended_at IS NOT NULL AND (ended_at - started_at) >= ? AND (ended_at - started_at) < ?
+                    """, (bin["min"], bin["max"])).fetchone()[0]
+                duration_data.append({"range": bin["range"], "count": count})
+            
+            # 11. KPI: Average Latency (from __metrics__ tool logs)
+            if owner_user_id:
+                avg_lat_row = conn.execute("""
+                    SELECT AVG(json_extract(arguments, '$.total_ms')) as avg_lat
+                    FROM tool_logs tl JOIN sessions s ON tl.session_id = s.id
+                    WHERE tl.tool_name = '__metrics__' AND s.user_id = ?
+                """, (owner_user_id,)).fetchone()
+            else:
+                avg_lat_row = conn.execute("""
+                    SELECT AVG(json_extract(arguments, '$.total_ms')) as avg_lat
+                    FROM tool_logs
+                    WHERE tool_name = '__metrics__'
+                """).fetchone()
+            avg_latency_ms = avg_lat_row["avg_lat"] if avg_lat_row and avg_lat_row["avg_lat"] else 0
+
+            # 12. KPI: Total Tokens (from session metadata)
+            if owner_user_id:
+                tokens_row = conn.execute("""
+                    SELECT SUM(json_extract(metadata, '$.tokens_total')) as total
+                    FROM sessions
+                    WHERE metadata IS NOT NULL AND user_id = ?
+                """, (owner_user_id,)).fetchone()
+            else:
+                tokens_row = conn.execute("""
+                    SELECT SUM(json_extract(metadata, '$.tokens_total')) as total
+                    FROM sessions
+                    WHERE metadata IS NOT NULL
+                """).fetchone()
+            total_tokens = tokens_row["total"] if tokens_row and tokens_row["total"] else 0
+            
+            # 7. Sentiment — Calculated from session engagement (heuristic)
+            if owner_user_id:
+                pos = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 5 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+                neu = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count BETWEEN 2 AND 5 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+                neg = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count <= 1 AND user_id = ?", (owner_user_id,)).fetchone()[0]
+            else:
+                pos = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count > 5").fetchone()[0]
+                neu = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count BETWEEN 2 AND 5").fetchone()[0]
+                neg = conn.execute("SELECT COUNT(*) FROM sessions WHERE turn_count <= 1").fetchone()[0]
+            
+            total_sent = max(pos + neu + neg, 1)
+            sentiment = {
+                "positive": int((pos / total_sent) * 100),
+                "neutral": int((neu / total_sent) * 100),
+                "negative": int((neg / total_sent) * 100),
+                "note": "Based on engagement"
+            }
 
             return {
                 "metrics": {
                     "totalSessions": total_sessions,
                     "activeBots": active_bots,
-                    "avgLatency": "—",
+                    "avgLatency": f"{int(avg_latency_ms)}ms" if avg_latency_ms else "—",
+                    "totalTokens": f"{int(total_tokens / 1000)}k" if total_tokens > 1000 else str(int(total_tokens)),
                     "successRate": f"{int(success_rate)}%",
                     "avgDuration": f"{int(avg_duration)}s" if avg_duration else "—",
                 },
                 "botUsage": usage_data,
                 "peakHours": hour_data,
+                "sessionHistory": history_data,
+                "toolUsage": tool_data,
+                "botPerformance": perf_data,
+                "durationDistribution": duration_data,
                 "sentiment": sentiment,
             }
         return await self._run(_do)
@@ -1638,6 +1940,8 @@ class SQLiteProvider:
         first_audio_ms: float = 0.0,
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
+        sentiment_score: float = 0.0,
+        interrupt_type: str = "clean",
     ) -> None:
         """Persist per-turn pipeline latency and token metrics."""
         def _do():
@@ -1653,7 +1957,9 @@ class SQLiteProvider:
                 "first_audio_ms": round(first_audio_ms, 1),
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens
+                "total_tokens": prompt_tokens + completion_tokens,
+                "sentiment_score": round(sentiment_score, 2),
+                "interrupt_type": interrupt_type
             })))
             conn.commit()
         await self._run(_do)
@@ -1935,9 +2241,171 @@ class SQLiteProvider:
             conn.commit()
         return await self._run(_do)
 
+    async def get_customer(self, account_number: str) -> Optional[dict]:
+        """Fetch a single customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT * FROM customer_accounts WHERE account_number = ?",
+                (account_number.upper().strip(),)
+            ).fetchone()
+            return dict(row) if row else None
+        return await self._run(_do)
+    
+    async def get_customer_schema(self) -> list[dict]:
+        """Return the current columns and types of the customer_accounts table."""
+        def _do():
+            conn = self._get_conn()
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def add_customer_column(self, name: str, data_type: str = "TEXT") -> tuple[bool, str]:
+        """
+        Dynamically add a new column to the customer_accounts table.
+        Returns (success, message).
+        """
+        # 1. Auto-correction: Replace spaces/hyphens with underscores, lowercase everything
+        clean_name = name.strip().replace(" ", "_").replace("-", "_").lower()
+        
+        # 2. Strict Validation: Alphanumeric and underscores only
+        if not clean_name:
+            return False, "Column name cannot be empty"
+            
+        if not clean_name[0].isalpha() and clean_name[0] != "_":
+            return False, "Column name must start with a letter or underscore"
+            
+        if not all(c.isalnum() or c == "_" for c in clean_name):
+            return False, "Column name can only contain letters, numbers, and underscores"
+
+        # Valid SQLite types
+        valid_types = {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
+        clean_type = data_type.upper() if data_type.upper() in valid_types else "TEXT"
+        
+        def _do():
+            conn = self._get_conn()
+            try:
+                conn.execute(f"ALTER TABLE customer_accounts ADD COLUMN {clean_name} {clean_type}")
+                conn.commit()
+                return True, f"Column '{clean_name}' added successfully"
+            except sqlite3.OperationalError as e:
+                error_str = str(e).lower()
+                if "duplicate column name" in error_str:
+                    return False, f"Column '{clean_name}' already exists"
+                return False, f"Database error: {str(e)}"
+        return await self._run(_do)
+
+    async def list_customers_dynamic(self, limit: int = 200) -> list[dict]:
+        """Fetch all customer records with all columns dynamically."""
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute(f"SELECT * FROM customer_accounts ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def upsert_customer_dynamic(self, data: dict[str, Any]) -> str:
+        """Upsert a customer record using all provided keys as columns."""
+        if not data.get("account_number"):
+            raise ValueError("account_number is required for dynamic upsert")
+        
+        account_number = data["account_number"].upper().strip()
+        
+        def _do():
+            conn = self._get_conn()
+            # 1. Get current columns
+            cursor = conn.execute("PRAGMA table_info(customer_accounts)")
+            columns = {r["name"] for r in cursor.fetchall()}
+            
+            # 2. Filter data for only valid columns
+            valid_data = {k: v for k, v in data.items() if k in columns}
+            valid_data["account_number"] = account_number
+            
+            keys = list(valid_data.keys())
+            placeholders = ", ".join(["?" for _ in keys])
+            cols_clause = ", ".join(keys)
+            
+            # 3. Handle conflict (Update everything except account_number)
+            update_clause = ", ".join([f"{k} = excluded.{k}" for k in keys if k != "account_number"])
+            
+            sql = f"""
+                INSERT INTO customer_accounts ({cols_clause})
+                VALUES ({placeholders})
+                ON CONFLICT(account_number) DO UPDATE SET
+                    {update_clause}
+            """
+            conn.execute(sql, list(valid_data.values()))
+            conn.commit()
+            return account_number
+        return await self._run(_do)
+
+    async def delete_customer(self, account_number: str) -> bool:
+        """Delete a customer record by account number."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("DELETE FROM customer_accounts WHERE account_number = ?", (account_number,))
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
     # ─── Cleanup ─────────────────────────────────────────────────────────────
+    async def update_customer_metadata(self, account_number: str, metadata: dict) -> bool:
+        """Update the test_meta_data JSON for a customer."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE customer_accounts SET test_meta_data = ? WHERE account_number = ?",
+                (json.dumps(metadata), account_number.upper().strip())
+            )
+            conn.commit()
+            return True
+        return await self._run(_do)
+
+    async def save_learned_affinity(self, intent: str, pattern: str, is_verified: bool = False) -> bool:
+        """Save a new learned intent pattern (UPSERT)."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("""
+                INSERT INTO learned_affinities (intent_label, pattern, is_verified)
+                VALUES (?, ?, ?)
+                ON CONFLICT(pattern) DO UPDATE SET
+                    intent_label = excluded.intent_label,
+                    is_verified = MAX(is_verified, excluded.is_verified)
+            """, (intent, pattern, 1 if is_verified else 0))
+            conn.commit()
+            return True
+        return await self._run(_do)
+
+    async def list_learned_affinities(self, intent_label: Optional[str] = None) -> list[dict]:
+        """Fetch all learned patterns, optionally filtered by intent."""
+        def _do():
+            conn = self._get_conn()
+            if intent_label:
+                rows = conn.execute(
+                    "SELECT * FROM learned_affinities WHERE intent_label = ? ORDER BY hit_count DESC",
+                    (intent_label,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM learned_affinities ORDER BY hit_count DESC"
+                ).fetchall()
+            return [dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def increment_affinity_hit(self, pattern: str) -> bool:
+        """Increment the usage counter for a learned pattern."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                "UPDATE learned_affinities SET hit_count = hit_count + 1 WHERE pattern = ?",
+                (pattern,)
+            )
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
 
     async def close(self) -> None:
+
         """Close the connection pool."""
         if self._conn:
             self._conn.close()

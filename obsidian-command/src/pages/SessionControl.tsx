@@ -20,12 +20,15 @@ import {
   UserCircle2,
   Tags,
   Brain,
+  Languages,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { PERSONAS } from '../constants';
 import { Room as LiveKitRoom, createLocalAudioTrack } from 'livekit-client';
 import { api, Bot, getVoiceWebSocketUrl } from '../lib/api';
+import { TelemetryCharts } from '../components/TelemetryCharts';
+
 
 type SentimentLabel = 'positive' | 'neutral' | 'negative';
 interface Entity { key: string; value: string; }
@@ -36,6 +39,17 @@ interface TranscriptEntry {
   isFinal: boolean;
   sentiment?: SentimentLabel;
 }
+
+const SUPPORTED_LANGUAGES = [
+  { code: 'hi', name: 'Hindi' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'bn', name: 'Bengali' },
+];
 
 export default function SessionControl() {
   const [availableBots, setAvailableBots] = useState<Bot[]>([]);
@@ -66,6 +80,8 @@ export default function SessionControl() {
   });
   const [tokenPulse, setTokenPulse] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({ input: 0, output: 0, total: 0 });
+  const [historicalMetrics, setHistoricalMetrics] = useState<any[]>([]);
+
   const [modelLimits, setModelLimits] = useState<any[]>([]);
   const [toolSuccessRate, setToolSuccessRate] = useState(100.0);
 
@@ -76,6 +92,17 @@ export default function SessionControl() {
   const [negativeSentimentCount, setNegativeSentimentCount] = useState(0);
   // Entity extraction
   const [entities, setEntities] = useState<Entity[]>([]);
+  
+  // User selection (for Caller ID)
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [isUserSelectorOpen, setIsUserSelectorOpen] = useState(false);
+
+  // Translation
+  const [targetLanguage, setTargetLanguage] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [originalTranscripts, setOriginalTranscripts] = useState<TranscriptEntry[]>([]);
+  const [translationCache, setTranslationCache] = useState<Record<string, TranscriptEntry[]>>({});
+  const abortControllerRef = React.useRef<AbortController | null>(null);
 
   const transcriptRef = React.useRef<HTMLDivElement>(null);
   const logRef = React.useRef<HTMLDivElement>(null);
@@ -109,6 +136,43 @@ export default function SessionControl() {
     api.getModels()
       .then(models => setModelLimits(models || []))
       .catch(err => console.error("Failed to load model specs:", err));
+
+    api.listUsers().then(users => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        users.forEach(u => {
+          if (!merged.find(m => m.id === u.id)) {
+            merged.push({ id: u.id, username: u.username, source: 'auth' });
+          }
+        });
+        return merged;
+      });
+    }).catch(() => {});
+
+    api.getTestCustomers().then(customers => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        customers.forEach(c => {
+          // Use customer_name and account_number
+          if (!merged.find(m => m.id === c.account_number)) {
+            merged.push({ 
+              id: c.account_number, 
+              username: `${c.customer_name} (Lead)`, 
+              source: 'db' 
+            });
+          }
+        });
+        return merged;
+      });
+    }).catch(err => {
+      console.warn("Failed to load test customers:", err);
+      // Fallback only if both fail and list is empty
+      setAvailableUsers(prev => prev.length > 0 ? prev : [
+        { id: 'vaibhav', username: 'Vaibhav (Lead)' },
+        { id: 'rahul', username: 'Rahul (Test)' },
+        { id: 'priya', username: 'Priya (Customer)' },
+      ]);
+    });
 
     // Cleanup on page exit: Ensure all session handles are closed immediately
     return () => {
@@ -146,7 +210,6 @@ export default function SessionControl() {
   /** Larger post-prime chunks → fewer scheduled AudioBufferSource nodes → less scheduling jitter. */
   const BOT_FLUSH_MIN_BYTES = 4096; // ~128ms @ 16kHz mono int16
   const BOT_IDLE_FLUSH_MS = 72;
-  const [micActivity, setMicActivity] = useState(0);
   const [sessionTransport, setSessionTransport] = useState<'websocket' | 'webrtc'>('websocket');
   const [livekitHint, setLivekitHint] = useState<string | null>(null);
   const [isHandoffAnimating, setIsHandoffAnimating] = useState(false);
@@ -356,7 +419,7 @@ export default function SessionControl() {
         if (socket.readyState !== WebSocket.OPEN) return;
         const { audio, rms } = e.data;
         socket.send(audio);
-        setMicActivity(rms * 100);
+        // setMicActivity is removed as high-frequency state updates cause Infinite Re-renders
       };
 
       processorRef.current = micWorkletNode; // Store it for cleanup
@@ -382,7 +445,92 @@ export default function SessionControl() {
         audioContextRef.current = null;
       });
     }
-    setMicActivity(0);
+  };
+
+  const handleTranslate = async (langName: string) => {
+    if (!langName) {
+      setTargetLanguage('');
+      if (originalTranscripts.length > 0) {
+        setTranscripts(originalTranscripts);
+      }
+      return;
+    }
+
+    if (!sessionId) {
+      alert('Start a session first to translate.');
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const cached = translationCache[langName];
+    // Only use cache if the length matches (live session transcripts might have grown)
+    if (cached && cached.length === transcripts.length) {
+      setTargetLanguage(langName);
+      setTranscripts(cached);
+      return;
+    }
+
+    setTargetLanguage(langName);
+    setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Keep a copy of originals if not already kept
+    if (originalTranscripts.length === 0) {
+      setOriginalTranscripts(transcripts);
+    }
+
+    try {
+      const translatedRaw = await api.translateSession(sessionId, langName, controller.signal);
+      let translatedTexts: string[] = [];
+      try {
+        const cleanJson = translatedRaw.replace(/```json|```/g, '').trim();
+        translatedTexts = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.error("Translation JSON parse failed", parseErr, translatedRaw);
+        translatedTexts = translatedRaw.split('\n').filter(l => l.trim()).map(l => l.replace(/^[-\*\s]+/, '').trim());
+      }
+
+      if (Array.isArray(translatedTexts)) {
+        let translatedIdx = 0;
+        const newTranscripts = transcripts.map((t) => {
+          // In live sessions, we filter manually during translation prep in backend
+          const role = t.role.toLowerCase();
+          if (['user', 'bot', 'assistant'].includes(role) && translatedIdx < translatedTexts.length) {
+            const newText = translatedTexts[translatedIdx];
+            translatedIdx++;
+            return { ...t, text: newText };
+          }
+          return t;
+        });
+        setTranslationCache(prev => ({ ...prev, [langName]: newTranscripts }));
+        setTranscripts(newTranscripts);
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
+      console.error(e);
+      alert('Translation failed.');
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsTranslating(false);
+      setTargetLanguage('');
+    }
   };
 
   const startSession = async (isTestModeArg: any = false) => {
@@ -396,6 +544,8 @@ export default function SessionControl() {
     setCurrentSentiment('neutral');
     setNegativeSentimentCount(0);
     setEntities([]);
+    setTranslationCache({});
+    setTargetLanguage('');
 
     const handleIncomingMessage = async (msg: any) => {
       if (msg.type === 'status') {
@@ -499,6 +649,17 @@ export default function SessionControl() {
           tts: msg.tts || 0,
           total: msg.total || 0
         });
+
+        // 📈 [TELEMETRY] Append to historical timeline
+        setHistoricalMetrics((prev: any[]) => [...prev, {
+          turn: prev.length + 1,
+          stt: msg.stt || 0,
+          llm: msg.llm || 0,
+          tts: msg.tts || 0,
+          total: msg.total || 0,
+          sentiment: msg.sentiment_score ?? 0,
+          interruptType: msg.interrupt_type
+        }]);
 
         if (msg.tool_success_rate !== undefined) {
           setToolSuccessRate(msg.tool_success_rate);
@@ -660,16 +821,6 @@ export default function SessionControl() {
       socket.onclose = (event) => {
         setIsLive(false);
         setIsConnecting(false);
-        setStatus(event.code === 4000 ? 'Init Failed' : 'Disconnected');
-        setWs(null);
-        stopAudio();
-      };
-
-      setWs(socket);
-
-      socket.onclose = (event) => {
-        setIsLive(false);
-        setIsConnecting(false);
         if (event.code === 4000) {
           setStatus('Initialization Failed');
         } else if (event.code !== 1000 && event.code !== 1005) {
@@ -684,6 +835,7 @@ export default function SessionControl() {
           setStatus('Disconnected');
         }
         setWs(null);
+        wsRef.current = null;
         stopAudio();
       };
 
@@ -766,7 +918,6 @@ export default function SessionControl() {
       setIsExporting(false);
     }, 1500);
   };
-
   return (
     <div className="flex-1 flex flex-col  relative">
       <Header
@@ -825,17 +976,55 @@ export default function SessionControl() {
             {!isLive ? (
               <>
                 {/* Caller ID + Transport — grouped as a pill pair on sm+, stacked on xs */}
-                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl overflow-hidden px-1">
+                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl px-1 relative">
                   <UserCircle2 className="size-3.5 text-on-surface-variant ml-2 shrink-0" />
-                  <input
-                    type="text"
-                    placeholder="Caller ID"
-                    value={userId}
-                    onChange={e => setUserId(e.target.value)}
-                    disabled={isConnecting}
-                    title="Enables cross-session memory. Leave blank for anonymous session."
-                    className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
-                  />
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Caller ID"
+                      value={userId}
+                      onChange={e => setUserId(e.target.value)}
+                      onFocus={() => setIsUserSelectorOpen(true)}
+                      onBlur={() => setTimeout(() => setIsUserSelectorOpen(false), 200)}
+                      disabled={isConnecting}
+                      title="Enables cross-session memory. Leave blank for anonymous session."
+                      className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
+                    />
+                    
+                    {isUserSelectorOpen && availableUsers.length > 0 && !isLive && (
+                      <div className="absolute top-full left-0 mt-2 w-56 glass-panel rounded-xl p-1.5 z-110 shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center justify-between px-2 py-1 mb-1">
+                          <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Select User</span>
+                          <button onClick={() => setIsUserSelectorOpen(false)} className="text-outline hover:text-on-surface">
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {availableUsers.map((u) => (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                setUserId(u.id);
+                                setIsUserSelectorOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/5 text-left transition-colors group"
+                            >
+                              <div className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold group-hover:bg-primary/20">
+                                {(u.username || u.id).charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-semibold truncate text-on-surface">
+                                  {u.username || u.id}
+                                </span>
+                                <span className="text-[9px] text-outline truncate">{u.id}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="w-px h-5 bg-outline-variant/20 mx-0.5 shrink-0" />
                   <select
                     value={sessionTransport}
@@ -974,9 +1163,9 @@ export default function SessionControl() {
                   onToggle={() => setConfig(prev => ({ ...prev, noiseSuppression: !prev.noiseSuppression }))}
                 />
 
-                <ConfigToggle 
+                <ConfigToggle
                   icon={Zap}
-                  label="Test Interruption" 
+                  label="Test Interruption"
                   description="Enable barge-in testing button in logs"
                   active={config.testInterruption}
                   onToggle={() => setConfig(prev => ({ ...prev, testInterruption: !prev.testInterruption }))}
@@ -1148,6 +1337,11 @@ export default function SessionControl() {
               <MetricCard label="TTS Latency" value={metrics.tts.toString()} unit="ms" color="border-indigo-500/40" />
               <MetricCard label="Total RTT" value={metrics.total.toString()} unit="ms" color="border-white/20" highlight />
             </div>
+            
+            {/* Real-time Performance Visualization */}
+            <div className="mt-4 sm:mt-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <TelemetryCharts data={historicalMetrics} />
+            </div>
           </div>
 
           {/* Right Panel */}
@@ -1257,7 +1451,7 @@ export default function SessionControl() {
               </div> */}
             {/* </div> */}
 
-            <div className="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col flex-1 min-h-[320px] max-h-[550px] overflow-hidden">
+            <div className="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col flex-1 min-h-[320px] max-h-[calc(100vh-250px)] overflow-hidden">
               {/* Transcript Header */}
               <div className="flex items-center justify-between mb-3 shrink-0">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Live Transcript</h4>
@@ -1274,6 +1468,35 @@ export default function SessionControl() {
                         currentSentiment === 'positive' ? "text-emerald-400" :
                           currentSentiment === 'negative' ? "text-red-400" : "text-yellow-400"
                       )}>{currentSentiment}</span>
+                    </div>
+                  )}
+                  {isLive && (
+                    <div className="flex items-center gap-1.5 bg-surface-highest/30 px-2 py-1 rounded-lg ghost-border">
+                      {isTranslating ? (
+                        <Loader2 className="size-3 text-primary animate-spin" />
+                      ) : (
+                        <Languages className="size-3 text-outline" />
+                      )}
+                      <select
+                        value={targetLanguage}
+                        onChange={(e) => handleTranslate(e.target.value)}
+                        disabled={isTranslating}
+                        className="bg-transparent border-none text-[9px] font-bold uppercase tracking-wider outline-none focus:ring-0 cursor-pointer"
+                      >
+                        <option value="" className="bg-surface-low text-on-surface">Original</option>
+                        {SUPPORTED_LANGUAGES.map(l => (
+                          <option key={l.code} value={l.name} className="bg-surface-low text-on-surface">{l.name}</option>
+                        ))}
+                      </select>
+                      {isTranslating && (
+                        <button
+                          onClick={cancelTranslate}
+                          className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-0.5 rounded transition-all ml-1"
+                          title="Cancel Translation"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      )}
                     </div>
                   )}
                   {isLive && (
@@ -1382,7 +1605,7 @@ export default function SessionControl() {
                   <Terminal className="size-4 text-primary" />
                   <span className="uppercase tracking-widest font-bold text-on-surface-variant">Neural Logs</span>
                   {isLive && config.testInterruption && sessionTransport === 'websocket' && (
-                    <button 
+                    <button
                       onClick={() => ws?.send(JSON.stringify({ type: 'test_interruption' }))}
                       className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/20 transition-all flex items-center gap-1 shadow-sm"
                       title="Test barge-in logic without LLM latency"
@@ -1406,7 +1629,15 @@ export default function SessionControl() {
                 ref={logRef}
                 className="flex-1 overflow-y-auto space-y-1 custom-scrollbar"
               >
-                {activeLogTab === 'entities' ? (
+                {activeLogTab === 'vitals' ? (
+                  <div className="py-2 flex flex-col items-center justify-center h-full text-outline/30 space-y-2">
+                    <Zap className="size-8 opacity-20" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-center">
+                      Telemetry Active<br/>
+                      <span className="font-normal normal-case">Charts moved to primary status display</span>
+                    </p>
+                  </div>
+                ) : activeLogTab === 'entities' ? (
                   entities.length === 0 ? (
                     <div className="text-outline/40 italic flex items-center justify-center h-full pt-10">
                       {isLive ? 'Listening for entities...' : 'No entities extracted yet'}
@@ -1426,7 +1657,6 @@ export default function SessionControl() {
                     const filtered = optimizedLogs.filter(log => {
                       if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]', '[THINKING]'].includes(log.tag);
                       if (activeLogTab === 'tools') return ['[TOOL]', '[RESULT]', '[PLAN]'].includes(log.tag);
-                      if (activeLogTab === 'vitals') return ['[STT]', '[STREAM]', '[METRIC]'].includes(log.tag);
                       return true;
                     });
 
@@ -1454,8 +1684,8 @@ export default function SessionControl() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 

@@ -296,13 +296,46 @@ async def create_session(
         if bot_lang:
             session_language = bot_lang
 
+    # Hydrate metadata if this user_id is a customer account
+    metadata = {}
+    if owner_user_id:
+        customer = await db.get_customer(owner_user_id)
+        if customer:
+            # Map database columns to standard metadata keys
+            metadata = {
+                # Display-friendly keys (for [Customer Name])
+                "Customer Name": customer.get("customer_name"),
+                "Account Number": customer.get("account_number"),
+                "Balance": customer.get("balance"),
+                "Account Type": customer.get("account_type"),
+                "Due Date": customer.get("emi_due_date") or customer.get("next_due"),
+                "EMI Amount": customer.get("emi_amount"),
+                # Database-style keys (for [customer_name] or pointers)
+                "customer_name": customer.get("customer_name"),
+                "account_number": customer.get("account_number"),
+                "balance": customer.get("balance"),
+                "account_type": customer.get("account_type"),
+                "emi_due_date": customer.get("emi_due_date"),
+                "next_due": customer.get("next_due"),
+                "emi_amount": customer.get("emi_amount"),
+            }
+            # Also include any custom metadata stored in the customer record
+            test_meta = customer.get("test_meta_data")
+            if test_meta:
+                 try:
+                     metadata.update(json.loads(test_meta))
+                 except:
+                     pass
+
     await db.create_session(
         session_id,
         bot_id=bot_id,
         user_id=owner_user_id,
         language=session_language,
+        metadata=metadata
     )
-    logger.info("Created session %s for user %s (bot=%s) transport=%s", session_id[:8], owner_user_id, bot_id, transport)
+    logger.info("Created session %s for user %s (bot=%s, metadata_keys=%s) transport=%s", 
+                session_id[:8], owner_user_id, bot_id, list(metadata.keys()), transport)
 
     ws_url = f"/ws/voice/{session_id}"
     if bot_id:
@@ -326,9 +359,10 @@ async def create_session(
             # Automate: Trigger the LiveKit Voice Agent in the background
             try:
                 from voicebot.livekit_agent import LiveKitVoiceAgent
-                agent = LiveKitVoiceAgent(lk["room_name"], bot_id=bot_id)
+                # 🔑 PASS FULL UUID: We pass the full session_id to the agent so it can hydrate metadata.
+                agent = LiveKitVoiceAgent(lk["room_name"], bot_id=bot_id, session_id=session_id)
                 background_tasks.add_task(agent.start)
-                logger.info("Triggered LiveKit Agent for room %s", lk["room_name"])
+                logger.info("Triggered LiveKit Agent for room %s (session: %s)", lk["room_name"], session_id[:8])
             except Exception as e:
                 logger.error("Failed to trigger LiveKit Agent: %s", e)
         if lk is None and lk_err:
@@ -348,6 +382,28 @@ async def list_sessions(request: Request, limit: int = 50):
     if actor_role != "admin":
         sessions = [s for s in sessions if str(s.get("user_id") or "") == actor_user_id]
     return {"sessions": sessions, "count": len(sessions)}
+
+
+@router.post("/sessions/{session_id}/translate", tags=["sessions"])
+async def translate_session_transcript(
+    session_id: str,
+    request: Request,
+    target_lang: str = Query(..., description="Target language for translation"),
+):
+    from voicebot.core.translation import translate_transcript
+    db = await get_db()
+    session = await db.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    bot_config = await db.get_bot(session['bot_id']) or {}
+    log_entries = await db.get_session_log(session_id)
+    
+    if not log_entries:
+        return {"translated_text": ""}
+        
+    translated = await translate_transcript(log_entries, target_lang, bot_config)
+    return {"translated_text": translated}
 
 
 @router.get("/sessions/{session_id}", tags=["sessions"])
@@ -817,6 +873,7 @@ async def create_bot(data: dict, request: Request):
             proactive_prompts=data.get("proactive_prompts", []),
             owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id),
             min_stt_confidence=data.get("min_stt_confidence", 0.35),
+            tts_model=data.get("tts_model"),
         )
         bid = result.get("id")
         if bid:
@@ -1057,6 +1114,62 @@ async def delete_session(session_id: str, request: Request):
     return {"status": "deleted", "session_id": session_id}
 
 
+# ─── Dynamic Test Customer Management ──────────────────────────────────────────
+@router.get("/test-customers/schema", tags=["testing"])
+async def get_test_customer_schema():
+    """Get the current structure of the customer_accounts table."""
+    db = await get_db()
+    schema = await db.get_customer_schema()
+    return {"columns": schema}
+
+@router.post("/test-customers/schema/columns", tags=["testing"])
+async def add_test_customer_column(data: dict):
+    """Dynamically add a new column to the test database."""
+    name = data.get("name")
+    data_type = data.get("type", "TEXT")
+    if not name:
+        raise HTTPException(status_code=422, detail="Column 'name' is required")
+    db = await get_db()
+    ok, message = await db.add_customer_column(name, data_type)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"status": "success", "column": name, "message": message}
+
+@router.get("/test-customers", tags=["testing"])
+async def list_test_customers():
+    """List all test customer accounts with their current data."""
+    db = await get_db()
+    customers = await db.list_customers_dynamic()
+    return {"customers": customers, "count": len(customers)}
+
+@router.post("/test-customers", tags=["testing"])
+async def upsert_test_customer(data: dict):
+    """Create or update a test customer record."""
+    if "account_number" not in data:
+         raise HTTPException(status_code=422, detail="account_number is required")
+    db = await get_db()
+    try:
+        account_number = await db.upsert_customer_dynamic(data)
+        return {"status": "success", "account_number": account_number}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/test-customers/{account_number}", tags=["testing"])
+async def delete_test_customer(account_number: str):
+    """Remove a test customer account."""
+    db = await get_db()
+    ok = await db.delete_customer(account_number)
+    return {"status": "deleted" if ok else "not_found"}
+
+
+@router.put("/test-customers/{account_number}/metadata", tags=["testing"])
+async def update_test_customer_metadata(account_number: str, data: dict):
+    """Update simulation overrides (test_meta_data) in the database."""
+    db = await get_db()
+    metadata = data.get("metadata", {})
+    await db.update_customer_metadata(account_number, metadata)
+    return {"status": "updated"}
+
 # ─── Workflow Endpoints ───────────────────────────────────────────────────────
 
 # Icon mapping: node type → icon name (matches mock structure)
@@ -1138,11 +1251,15 @@ async def test_workflow(data: dict):
     user_input = data.get("user_input", "")
     current_node_id = data.get("current_node_id")
     node_visit_counts = data.get("node_visit_counts", {})
+    metadata = data.get("metadata", {}) # Allow injecting test variables
 
     if current_node_id:
         workflow_data["start_node_id"] = current_node_id
 
     session = SessionState(session_id="test_simulator")
+    if metadata:
+        session.metadata.update(metadata) # Inject the test data
+        
     llm = GroqStreamingProvider(model="llama-3.3-70b-versatile")
 
     brain = AgenticBrain(
@@ -1633,6 +1750,15 @@ async def get_supported_models():
                 "tags": ["fastest", "realtime"]
             },
             {
+                "id": "gemini-2.5-flash-preview-tts",
+                "name": "Gemini 2.5 Flash (TTS Preview)",
+                "provider": "gemini",
+                "context_window": 1048576,
+                "max_tpm": 1000000,
+                "cost_per_1k": 0.00002,
+                "tags": ["premium", "native-audio"]
+            },
+            {
                 "id": "gemini-2.5-flash",
                 "name": "Gemini 2.5 Flash (Production)",
                 "provider": "gemini",
@@ -1759,6 +1885,15 @@ async def get_supported_voices():
             {"id": "aura-athena-en", "name": "Athena (Hinglish / Deepgram)", "provider": "deepgram"},
         ]
 
+    # ✅ GEMINI (Native TTS)
+    if is_valid_key(settings.gemini_api_key):
+        voices += [
+            {"id": "Zephyr", "name": "Zephyr (Warm / Gemini)", "provider": "gemini"},
+            {"id": "Puck", "name": "Puck (Energetic / Gemini)", "provider": "gemini"},
+            {"id": "Charon", "name": "Charon (Deep / Gemini)", "provider": "gemini"},
+            {"id": "Corey", "name": "Corey (Natural / Gemini)", "provider": "gemini"},
+        ]
+
     # ✅ ELEVENLABS (Dynamic Fetch)
     if is_valid_key(settings.elevenlabs_api_key):
         try:
@@ -1810,6 +1945,27 @@ async def suggest_bot_rules(bot_id: str):
         "suggested_rules": [r.dict() for r in suggestions],
         "library_rules": [r.dict() for r in library]
     }
+
+@router.post("/bots/suggest-prompt", tags=["bots"])
+async def suggest_bot_prompt(data: dict):
+    """Generate a high-quality system prompt based on bot identity and role."""
+    name = str(data.get("name") or "").strip()
+    role = str(data.get("role") or "").strip()
+    persona = str(data.get("persona") or "").strip()
+    
+    if not name or not role:
+        raise HTTPException(status_code=422, detail="'name' and 'role' are required for suggestion")
+    
+    from voicebot.core.guardrails.prompt_suggestor import SystemPromptSuggestor
+    suggestor = SystemPromptSuggestor()
+    suggested = await suggestor.suggest_prompt(
+        name=name, 
+        role=role, 
+        persona=persona, 
+        current_prompt=data.get("current_prompt")
+    )
+    
+    return suggested
 
 
 @router.get("/scopes", tags=["bots"])
@@ -2276,6 +2432,49 @@ async def get_intent_analytics(request: Request, limit: int = 100):
         owner_user_id=None if actor_role == "admin" else actor_user_id,
     )
     return {"intents": intents, "count": len(intents)}
+
+
+@router.get("/analytics/training-data", tags=["analytics"])
+async def get_training_data(
+    type: Optional[str] = None,
+    feedback: Optional[str] = None,
+    format: str = "json",
+    limit: int = 1000,
+):
+    """
+    Export commitment training examples for fine-tuning.
+
+    - **type**: filter by task_type (`extract_commitment` | `check_contradiction`)
+    - **feedback**: filter by label (`correct` | `false_positive` | `missed` | null for all)
+    - **format**: `json` (default) or `jsonl` (OpenAI/Groq fine-tune format)
+    - **limit**: max rows (default 1000)
+    """
+    db = await get_db()
+    if not hasattr(db, "get_commitment_training_export"):
+        return {"examples": [], "count": 0}
+    examples = await db.get_commitment_training_export(
+        task_type=type, feedback=feedback, limit=limit
+    )
+    if format == "jsonl":
+        import json as _json
+        from fastapi.responses import PlainTextResponse
+        lines = []
+        for ex in examples:
+            sys_msg = (
+                "You are a strict commitment extractor. Reply with ONE sentence or NONE."
+                if ex["task_type"] == "extract_commitment"
+                else "You are a strict contradiction detector. Reply CONTRADICTION:... or NONE."
+            )
+            obj = {
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": ex["input_text"]},
+                    {"role": "assistant", "content": ex["prediction"]},
+                ]
+            }
+            lines.append(_json.dumps(obj, ensure_ascii=False))
+        return PlainTextResponse("\n".join(lines), media_type="application/jsonl")
+    return {"examples": examples, "count": len(examples)}
 
 
 _vector_db: Optional[VectorMemoryProvider] = None

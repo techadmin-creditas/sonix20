@@ -106,6 +106,13 @@ def _parse_entity_tuples(text: str) -> List[Tuple[str, str]]:
         "schedule",
         "product",
         "other",
+        # Collections-specific structured fields
+        "ptp_amount",
+        "ptp_date",
+        "partial_payment",
+        "contact_time_preference",
+        "strategy_worked",
+        "strategy_failed",
     }
     out: list[tuple[str, str]] = []
     for item in data[:8]:
@@ -245,6 +252,33 @@ async def analyze_transcript_with_bot_llm(
                 entity_rows = _parse_entity_tuples("".join(ent_parts))
         except Exception as ent_err:
             logger.warning("Entity extraction step failed: %s", ent_err)
+
+        # Collections-specific structured extraction (PTP, strategy, contact preference)
+        try:
+            collections_prompt = (
+                "Read this call transcript. Extract ONLY facts that are explicitly stated. "
+                "Output ONLY a JSON array. Empty array [] if nothing applies. No markdown.\n"
+                "Extract these fields if present:\n"
+                '- {"fact": "PTP amount: <amount>", "category": "ptp_amount"}\n'
+                '- {"fact": "PTP date: <date>", "category": "ptp_date"}\n'
+                '- {"fact": "Partial payment made: <amount> on <date>", "category": "partial_payment"}\n'
+                '- {"fact": "Prefers to be called: <time/day>", "category": "contact_time_preference"}\n'
+                '- {"fact": "Strategy that worked: <description>", "category": "strategy_worked"}\n'
+                '- {"fact": "Strategy that failed: <description>", "category": "strategy_failed"}\n\n'
+                + transcript_text
+            )
+            col_parts: list[str] = []
+            async for chunk in sum_llm.stream_completion(
+                system_prompt="You output only a JSON array of structured collections facts.",
+                messages=[{"role": "user", "content": collections_prompt}],
+            ):
+                if chunk.content:
+                    col_parts.append(chunk.content)
+            if col_parts:
+                collections_rows = _parse_entity_tuples("".join(col_parts))
+                entity_rows.extend(collections_rows)
+        except Exception as col_err:
+            logger.warning("Collections extraction step failed: %s", col_err)
 
     except Exception as llm_err:
         logger.error("LLM transcript analysis failed: %s", llm_err, exc_info=True)

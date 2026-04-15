@@ -65,8 +65,7 @@ def deepgram_listen_language_params(listen_language: str) -> dict[str, str]:
     if _lang in ("auto", "detect", "multilingual"):
         return {"language": "multi"}
     if _lang == "en":
-        # Note: Handled as hi for specific bot logic preference preserved from original
-        return {"language": "hi"} 
+        return {"language": "en"}
     if _lang in ("hi", "hindi", "hi-in"):
         return {"language": "hi"}
     return {"language": _lang}
@@ -188,6 +187,9 @@ class DeepgramStreamingProvider:
         forward_all_pcm: bool = False,
     ):
         self.api_key = api_key or settings.deepgram_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.language = language
         self.model = model
         self.sample_rate = sample_rate
