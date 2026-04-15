@@ -574,10 +574,10 @@ const PersonaCard = ({
                <div className="flex items-center gap-2">
                   <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{persona.language}</p>
                   {persona.isDeployed && (
-                     <>
-                        <span className="size-1 rounded-full bg-primary pulse-neural" />
-                        <span className="text-[8px] font-bold text-primary uppercase">Active</span>
-                     </>
+                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                        <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
+                     </div>
                   )}
                   {!persona.isActive && (
                      <span className="text-[8px] font-bold text-outline uppercase bg-outline/10 px-1.5 py-0.5 rounded">Inactive</span>
