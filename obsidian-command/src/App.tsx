@@ -115,6 +115,9 @@ function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile currentUser={currentUser} />} />
+               <Route path="/persona" element={<StudioLayout />}>
+                <Route index element={<StudioPersonas />} />
+              </Route>
 
               {/* --- Voice Persona Studio Routes --- */}
               <Route path="/studio" element={<StudioLayout />}>
