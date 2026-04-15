@@ -210,8 +210,8 @@ const QuickForgeView = ({
                            <div className="space-y-4">
                               <div className="space-y-2">
                                  <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Linguistic Objective</label>
-                                 <div className="flex gap-2">
-                                    {['English', 'Hindi', 'Hinglish'].map(lang => (
+                                 <div className="flex flex-wrap gap-2">
+                                    {['English', 'Hindi', 'Hinglish', 'Tamil', 'Telugu'].map(lang => (
                                        <button
                                           key={lang}
                                           onClick={() => patch({ language: lang })}
@@ -525,7 +525,7 @@ const QuickForgeView = ({
                      {isSaving ? (
                         <><Loader2 className="size-4 animate-spin" /> Deploying...</>
                      ) : (
-                        <><Save className="size-4" /> Deploy Persona</>
+                        <><Save className="size-4" /> Finalize & Deploy Agent</>
                      )}
                   </button>
                )}
@@ -810,12 +810,15 @@ export default function StudioPersonas() {
    return (
       <div className="space-y-10">
          {/* Top bar */}
-         <div className="flex justify-between items-center border-b border-outline-variant/10 pb-8">
-            <div>
+         <div className="flex justify-between items-start border-b border-outline-variant/10 pb-8">
+            <div className="space-y-1">
                <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p>
-               <h1 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight">
-                  {personas.length} Persona{personas.length !== 1 ? 's' : ''} Deployed
+               <h1 className="text-3xl font-headline font-extrabold text-on-surface uppercase tracking-tight">
+                  {personas.length} Voice Agents Deployed
                </h1>
+               <p className="text-[10px] text-outline font-medium max-w-md uppercase tracking-widest leading-relaxed">
+                  Manage and create your AI voice agents. <span className="text-primary">Active capacity: {personas.length}/500</span>
+               </p>
             </div>
             <div className="flex items-center gap-3">
                <button

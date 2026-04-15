@@ -145,71 +145,79 @@ export default function StudioDashboard() {
                <div className="flex justify-between items-center shrink-0">
                   <div>
                      <h3 className="text-lg font-headline font-bold">Neural Distribution</h3>
-                     <p className="text-[10px] font-bold text-outline uppercase tracking-widest">Real-time Performance Relay</p>
+                     <p className="text-[10px] font-bold text-outline uppercase tracking-widest">Global Provider Mapping</p>
                   </div>
-                  <div className="flex gap-2">
-                     {['1H', '24H', '7D'].map(t => (
+                  <div className="flex gap-2 p-1 bg-surface-low rounded-xl border border-outline-variant/5">
+                     {['Latency', 'Load', 'Distribution'].map(t => (
                         <button key={t} className={cn(
-                           "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
-                           t === '1H' ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline hover:bg-surface-high"
+                           "px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest transition-all",
+                           t === 'Distribution' ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline hover:bg-surface-high"
                         )}>{t}</button>
                      ))}
                   </div>
                </div>
 
                <div className="flex-1 min-h-0 flex flex-col justify-center">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                      {engineStats.map(([provider, count], i) => (
                         <motion.button
                            key={provider}
                            initial={{ opacity: 0, scale: 0.9 }}
                            animate={{ opacity: 1, scale: 1 }}
-                           transition={{ delay: i * 0.1 }}
+                           transition={{ delay: i * 0.05 }}
                            onClick={() => setSelectedProvider(provider)}
                            className={cn(
-                              "p-6 rounded-3xl border transition-all text-left relative overflow-hidden group/card",
+                              "p-5 rounded-4xl border transition-all text-left relative overflow-hidden group/card",
                               selectedProvider === provider
                                  ? "bg-primary/10 border-primary/30 shadow-lg ring-1 ring-primary/20"
-                                 : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
+                                 : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/10"
                            )}
                         >
                            <div className="flex justify-between items-start mb-4">
                               <div className={cn(
-                                 "size-10 rounded-xl flex items-center justify-center border shadow-inner transition-colors",
+                                 "size-10 rounded-2xl flex items-center justify-center border shadow-inner transition-colors",
                                  selectedProvider === provider ? "bg-primary text-on-primary-fixed border-primary/20" : "bg-surface-lowest text-primary border-outline-variant/10"
                               )}>
                                  <Database className="size-4" />
                               </div>
                               <div className="text-right">
-                                 <p className={cn("text-xl font-headline font-extrabold", selectedProvider === provider ? "text-primary" : "text-on-surface")}>{count}</p>
-                                 <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Active Links</p>
+                                 <p className={cn("text-lg font-headline font-extrabold", selectedProvider === provider ? "text-primary" : "text-on-surface")}>{count}</p>
+                                 <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Active</p>
                               </div>
                            </div>
                            <div className="space-y-2">
-                              <p className={cn("text-[10px] font-bold uppercase tracking-widest", selectedProvider === provider ? "text-on-surface" : "text-outline")}>{provider}</p>
-                              <div className="h-1.5 w-full bg-surface-lowest rounded-full overflow-hidden border border-outline-variant/5">
+                              <p className={cn("text-[9px] font-bold uppercase tracking-widest truncate", selectedProvider === provider ? "text-on-surface" : "text-outline")}>{provider}</p>
+                              <div className="h-1 w-full bg-surface-lowest rounded-full overflow-hidden">
                                  <motion.div
                                     initial={{ width: 0 }}
                                     animate={{ width: `${personas.length > 0 ? (count / personas.length) * 100 : 0}%` }}
-                                    className="h-full bg-primary"
-                                 />
+                                    className="h-full bg-primary shadow-[0_0_8px_rgba(255,193,7,0.4)]"
+                                  />
                               </div>
                            </div>
+                           {selectedProvider === provider && (
+                              <div className="absolute top-2 right-2">
+                                 <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+                              </div>
+                           )}
                         </motion.button>
                      ))}
                   </div>
                </div>
 
-               <div className="pt-6 border-t border-outline-variant/5 shrink-0">
+               <div className="pt-6 border-t border-outline-variant/5 shrink-0 flex items-center justify-between">
                   <div className="flex items-center gap-10">
                      <div className="flex items-center gap-3">
-                        <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[9px] font-bold text-outline uppercase tracking-widest">P99 Latency: 350ms</span>
+                        <div className="size-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                        <span className="text-[9px] font-bold text-outline uppercase tracking-widest">Relay Integrity: 99.9%</span>
                      </div>
                      <div className="flex items-center gap-3">
-                        <div className="size-2 rounded-full bg-blue-500 animate-pulse" />
-                        <span className="text-[9px] font-bold text-outline uppercase tracking-widest">Neural Load: Optimal</span>
+                        <div className="size-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                        <span className="text-[9px] font-bold text-outline uppercase tracking-widest">Neural Load: Balanced</span>
                      </div>
+                  </div>
+                  <div className="text-[9px] font-bold text-outline uppercase tracking-widest bg-surface-low px-3 py-1 rounded-full border border-outline-variant/5">
+                     Sync: 3s ago
                   </div>
                </div>
             </div>
@@ -217,15 +225,15 @@ export default function StudioDashboard() {
             <div className="col-span-12 lg:col-span-4 bg-surface-lowest rounded-4xl border border-outline-variant/10 p-8 flex flex-col gap-6 premium-forge-border overflow-hidden">
                <div className="shrink-0 space-y-1">
                   <div className="flex justify-between items-center">
-                     <h3 className="text-lg font-headline font-bold">Engine Insights</h3>
-                     <div className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-[8px] font-bold text-primary uppercase tracking-widest">
-                        {selectedProvider}
+                     <h3 className="text-lg font-headline font-bold">Fleet Insights</h3>
+                     <div className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[8px] font-bold text-primary uppercase tracking-widest">
+                        {selectedProvider} Deep-Dive
                      </div>
                   </div>
-                  <p className="text-[9px] font-bold text-outline uppercase tracking-widest">Persona Distribution Deep-Dive</p>
+                  <p className="text-[9px] font-bold text-outline uppercase tracking-widest">Real-time Performance Relay</p>
                </div>
 
-               <div className="flex-1 overflow-y-auto pr-2 scrollbar-hide space-y-3">
+               <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
                   <AnimatePresence mode="popLayout">
                      {filteredPersonas.map((p, i) => (
                         <motion.div
@@ -234,46 +242,64 @@ export default function StudioDashboard() {
                            animate={{ opacity: 1, y: 0 }}
                            exit={{ opacity: 0, scale: 0.95 }}
                            transition={{ delay: i * 0.05 }}
-                           className="p-4 rounded-2xl bg-surface-low border border-outline-variant/5 group hover:border-primary/20 transition-all"
+                           className="p-4 rounded-3xl bg-surface-low border border-outline-variant/5 group hover:border-primary/20 transition-all cursor-pointer"
+                           onClick={() => {
+                              setActivePersonaId(p.id);
+                              navigate('/studio/test');
+                           }}
                         >
-                           <div className="flex justify-between items-start mb-3">
+                           <div className="flex justify-between items-start mb-4">
                               <div className="flex items-center gap-3">
-                                 <div className={cn("size-8 rounded-lg flex items-center justify-center text-[10px] font-bold", p.themeColor === 'amber' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary')}>
+                                 <div className={cn(
+                                    "size-10 rounded-xl flex items-center justify-center text-[12px] font-bold border border-outline-variant/5 shadow-inner",
+                                    p.themeColor === 'amber' || p.emotion === 'Empathetic' ? 'bg-amber-500/10 text-amber-500' : 'bg-primary/10 text-primary'
+                                 )}>
                                     {p.name.charAt(0)}
                                  </div>
                                  <div>
-                                    <p className="text-[10px] font-bold text-on-surface">{p.name}</p>
-                                    <p className="text-[8px] font-medium text-outline uppercase tracking-widest">{p.useCase}</p>
+                                    <p className="text-xs font-bold text-on-surface">{p.name}</p>
+                                    <p className="text-[8px] font-bold text-outline uppercase tracking-[0.2em]">{p.useCase}</p>
                                  </div>
                               </div>
-                              <button
-                                 onClick={() => {
-                                    setActivePersonaId(p.id);
-                                    navigate('/studio/test');
-                                 }}
-                                 className="size-7 rounded-lg bg-surface-lowest border border-outline-variant/10 flex items-center justify-center text-outline hover:text-primary hover:border-primary/30 transition-all group-hover:shadow-sm"
-                                 title="Launch Neural Test"
-                              >
-                                 <ChevronRight className="size-4" />
-                              </button>
+                              <div className="text-right">
+                                 <p className="text-[10px] font-mono text-primary font-bold">340ms</p>
+                                 <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Lat</p>
+                              </div>
                            </div>
 
-                           <div className="flex items-center justify-between pt-3 border-t border-outline-variant/5">
-                              <div className="flex items-center gap-2">
-                                 <div className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
-                                 <span className="text-[8px] font-bold text-outline uppercase">Active Stream</span>
+                           <div className="grid grid-cols-2 gap-3 mb-4">
+                              <div className="px-3 py-2 rounded-xl bg-surface-lowest border border-outline-variant/5">
+                                 <p className="text-[7px] font-bold text-outline uppercase mb-1">Live Calls</p>
+                                 <p className="text-[11px] font-bold text-on-surface">1.2k <span className="text-[8px] text-emerald-500">+12%</span></p>
                               </div>
-                              <div className="text-right">
-                                 <span className="text-[9px] font-mono text-primary">340ms</span>
+                              <div className="px-3 py-2 rounded-xl bg-surface-lowest border border-outline-variant/5">
+                                 <p className="text-[7px] font-bold text-outline uppercase mb-1">Sentiment</p>
+                                 <p className="text-[11px] font-bold text-on-surface">Positive</p>
+                              </div>
+                           </div>
+
+                           <div className="flex items-center justify-between pt-4 border-t border-outline-variant/5">
+                              <div className="flex items-center gap-2">
+                                 <div className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
+                                 <span className="text-[8px] font-bold text-outline uppercase tracking-widest">Active Link</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <span className="text-[9px] font-bold text-primary uppercase tracking-widest">Launch Test</span>
+                                 <ChevronRight className="size-3 text-primary" />
                               </div>
                            </div>
                         </motion.div>
                      ))}
                   </AnimatePresence>
                   {filteredPersonas.length === 0 && (
-                     <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-3">
-                        <Monitor className="size-10 text-outline/20" />
-                        <p className="text-[10px] font-bold text-outline uppercase tracking-widest">Select a provider to drill down</p>
+                     <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4">
+                        <div className="size-16 rounded-full bg-surface-low border border-outline-variant/5 flex items-center justify-center">
+                           <Monitor className="size-8 text-outline shadow-xl" />
+                        </div>
+                        <div className="space-y-1">
+                           <p className="text-sm font-bold text-on-surface">No Active Nodes</p>
+                           <p className="text-[10px] text-outline uppercase tracking-widest leading-relaxed">Select a neural provider to analyze<br/>localized distribution</p>
+                        </div>
                      </div>
                   )}
                </div>

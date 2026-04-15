@@ -22,8 +22,8 @@ export function StudioLayout() {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Overview', path: '/studio' },
-    // { icon: Mic2, label: 'Workbench', path: '/persona' },
-    { icon: Library, label: 'Voice Library', path: '/studio/library' },
+    { icon: Mic2, label: 'Voice Agents', path: '/studio/agents' },
+    { icon: Library, label: 'Fleet Registry', path: '/studio/library' },
     { icon: Zap, label: 'Test Console', path: '/studio/test' },
   ];
 

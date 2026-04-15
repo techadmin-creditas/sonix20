@@ -137,7 +137,7 @@ export const VOICE_PERSONAS: PersonaProfile[] = [
     urgency: 10, empathy: 80, stability: 60, baseModel: 'Sonix-Flash-1', selectedVoice: 'v2'
   },
 
-  // --- EXTENDED FLEET (42 NEW PERSONAS) ---
+  // --- EXTENDED FLEET (100+ NEW PERSONAS) ---
   ...(() => {
     const fleet: PersonaProfile[] = [];
     const names = [
@@ -146,10 +146,11 @@ export const VOICE_PERSONAS: PersonaProfile[] = [
       'Surya', 'Lakshmi', 'Meenakshi', 'Swaroop', 'Sarah', 'David', 'Emily', 'Leo',
       'Maya', 'Neha', 'Rahul', 'Sameer', 'Tanvi', 'Vikas', 'Yash', 'Zoya',
       'Abhinav', 'Bhavya', 'Chaitra', 'Daksh', 'Eesha', 'Faizan', 'Gauri', 'Hritik',
-      'Ira', 'Jiya'
+      'Ira', 'Jiya', 'Advait', 'Anika', 'Arav', 'Arnab', 'Bhavini', 'Charu', 'Dev', 'Esha',
+      'Hrishi', 'Indu', 'Jatin', 'Kashvi', 'Lokesh', 'Mihika', 'Nishant', 'Ojas', 'Prisha', 'Rishit'
     ];
 
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < 92; i++) {
       const stage = i % 4;
       const name = names[i % names.length];
       const gender = i % 2 === 0 ? 'Female' : 'Male';
@@ -167,18 +168,18 @@ export const VOICE_PERSONAS: PersonaProfile[] = [
 
       fleet.push({
         id: `fleet-${i}`,
-        name: name,
+        name: `${name} ${i + 1}`,
         gender: gender as any,
         language: i % 3 === 0 ? 'Hinglish' : i % 3 === 1 ? 'Hindi' : 'English',
         tone: conf.tone,
         useCase: conf.use,
-        psychology: `Neural profile for ${conf.tone}.`,
+        psychology: `Neural profile for ${conf.tone}. Optimized for ${conf.use}.`,
         themeColor: conf.color,
         description: `Fleet agent ${i + 1}.`,
         isPrebuilt: true,
         provider: 'Fleet',
-        urgency: conf.u + (i % 10),
-        empathy: conf.e + (i % 10),
+        urgency: Math.min(100, conf.u + (i % 15)),
+        empathy: Math.min(100, conf.e + (i % 15)),
         stability: 70 + (i % 20),
         baseModel: model,
         selectedVoice: engine
