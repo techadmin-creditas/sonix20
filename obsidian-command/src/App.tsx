@@ -103,7 +103,9 @@ function App() {
               <Route path="/sessions/:id" element={<SessionDetail />} />
               <Route path="/diy-with-ai" element={<DiyWithAI />} />
               <Route path="/diy-with-ai/personas" element={<DiyPersonaPresets />} />
-              <Route path="/persona" element={<DiyPersonaBuilder />} />
+              <Route path="/persona" element={<StudioLayout />}>
+                <Route index element={<StudioPersonas />} />
+              </Route>
               <Route path="/voice-personas" element={<VoicePersonas />} />
               <Route path="/personas" element={<Personas />} />
               <Route path="/personas/create" element={<BotConfig />} />
@@ -122,7 +124,6 @@ function App() {
               <Route path="/studio" element={<StudioLayout />}>
                 <Route index element={<StudioDashboard />} />
                 <Route path="overview" element={<StudioDashboard />} />
-                <Route path="personas" element={<StudioPersonas />} />
                 <Route path="library" element={<StudioLibrary />} />
                 <Route path="test" element={<StudioTest />} />
               </Route>

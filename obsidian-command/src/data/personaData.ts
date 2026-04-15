@@ -141,30 +141,30 @@ export const VOICE_PERSONAS: PersonaProfile[] = [
   ...(() => {
     const fleet: PersonaProfile[] = [];
     const names = [
-      'Aarav', 'Ishaan', 'Vihaan', 'Saanvi', 'Kiara', 'Myra', 'Kabir', 'Rohan', 
+      'Aarav', 'Ishaan', 'Vihaan', 'Saanvi', 'Kiara', 'Myra', 'Kabir', 'Rohan',
       'Sanya', 'Ishita', 'Arnav', 'Siddharth', 'Meera', 'Zara', 'Karthik', 'Madhav',
       'Surya', 'Lakshmi', 'Meenakshi', 'Swaroop', 'Sarah', 'David', 'Emily', 'Leo',
       'Maya', 'Neha', 'Rahul', 'Sameer', 'Tanvi', 'Vikas', 'Yash', 'Zoya',
       'Abhinav', 'Bhavya', 'Chaitra', 'Daksh', 'Eesha', 'Faizan', 'Gauri', 'Hritik',
       'Ira', 'Jiya'
     ];
-    
+
     for (let i = 0; i < 42; i++) {
-      const stage = i % 4; 
+      const stage = i % 4;
       const name = names[i % names.length];
       const gender = i % 2 === 0 ? 'Female' : 'Male';
       const model = i % 2 === 0 ? 'Sonix-Flash-1' : 'Sonix-Pro-3';
       const engine = `v${(i % 6) + 1}`;
-      
+
       const configs = [
         { use: 'Early Debt', tone: 'Polite Reminder', color: 'emerald', u: 25, e: 80 },
         { use: 'Mid Debt', tone: 'Consistent Follow-up', color: 'blue', u: 55, e: 45 },
         { use: 'Late Debt', tone: 'Commanding Authority', color: 'rose', u: 85, e: 15 },
         { use: 'Sales', tone: 'Persuasive Advisor', color: 'amber', u: 40, e: 60 }
       ];
-      
+
       const conf = configs[stage];
-      
+
       fleet.push({
         id: `fleet-${i}`,
         name: name,
@@ -174,7 +174,7 @@ export const VOICE_PERSONAS: PersonaProfile[] = [
         useCase: conf.use,
         psychology: `Neural profile for ${conf.tone}.`,
         themeColor: conf.color,
-        description: `Fleet agent ${i+1}.`,
+        description: `Fleet agent ${i + 1}.`,
         isPrebuilt: true,
         provider: 'Fleet',
         urgency: conf.u + (i % 10),

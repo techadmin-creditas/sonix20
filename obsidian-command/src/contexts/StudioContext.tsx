@@ -63,7 +63,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const parsed = JSON.parse(saved);
       return { ...defaults, ...parsed };
     }
-    
+
     return defaults;
   });
 
@@ -133,8 +133,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const isActive = prev.deployedIds.includes(id);
       return {
         ...prev,
-        deployedIds: isActive 
-          ? prev.deployedIds.filter(i => i !== id) 
+        deployedIds: isActive
+          ? prev.deployedIds.filter(i => i !== id)
           : [...prev.deployedIds, id]
       };
     });
@@ -158,11 +158,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <StudioContext.Provider value={{ 
+    <StudioContext.Provider value={{
       ...state,
-      addPersona, 
+      addPersona,
       updatePersona,
-      deletePersona, 
+      deletePersona,
       toggleDeployment,
       setActivePersonaId,
       recordActivity,

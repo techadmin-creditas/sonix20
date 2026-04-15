@@ -734,134 +734,134 @@ export default function DiyWithAI() {
                 </div>
               </div>
             ) : (
-            <div className="bg-surface-low rounded-3xl ghost-border p-6 lg:p-8">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-outline">
-                  <Sparkles className="size-4 text-primary" />
-                  DIY With AI
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Step 2/4</span>
-              </div>
-
-              <div className="rounded-2xl border border-outline-variant/15 p-5">
-                <p className="text-sm font-bold">{isLive || isConnecting ? 'Live session' : 'Select persona + start'}</p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  {isLive || isConnecting ? 'Speak normally. Your transcript will appear below.' : 'Pick a persona and start a live session.'}
-                </p>
-
-                {!isLive && !isConnecting && (
-                  <>
-                    <div className="mt-4 flex items-center justify-between gap-3">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-outline">Quick picks</p>
-                    </div>
-
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      {customPersonaDraft && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedPresetKey('custom');
-                            setRecommendedConfig(null);
-                          }}
-                          className={cn(
-                            'text-left rounded-2xl border border-outline-variant/15 bg-surface-highest/60 p-4 hover:bg-surface-highest transition-all',
-                            selectedPresetKey === 'custom' && 'ring-2 ring-primary/50 border-primary/30',
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-extrabold">{customPersonaDraft.title}</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {(customPersonaDraft.tags || []).slice(0, 8).map((t) => (
-                                  <span
-                                    key={t}
-                                    className="rounded-full border border-outline-variant/20 bg-surface px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-outline"
-                                  >
-                                    {t}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <TileAvatar label={customPersonaDraft.title} tags={customPersonaDraft.tags} />
-                          </div>
-                          <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{customPersonaDraft.persona}</p>
-                        </button>
-                      )}
-                      {PERSONA_PRESETS.map((p) => (
-                        <button
-                          key={p.key}
-                          type="button"
-                          onClick={() => {
-                            setSelectedPresetKey(p.key);
-                            setRecommendedConfig(null);
-                          }}
-                          className={cn(
-                            'text-left rounded-2xl border border-outline-variant/15 bg-surface-highest/60 p-4 hover:bg-surface-highest transition-all',
-                            selectedPresetKey === p.key && 'ring-2 ring-primary/50 border-primary/30',
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-extrabold">{p.title}</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {p.tags.map((t) => (
-                                  <span
-                                    key={t}
-                                    className="rounded-full border border-outline-variant/20 bg-surface px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-outline"
-                                  >
-                                    {t}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                            <TileAvatar label={p.title} tags={p.tags} active={selectedPresetKey === p.key} />
-                          </div>
-                          <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{p.persona}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {applyError && (
-                  <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-300">
-                    {applyError}
+              <div className="bg-surface-low rounded-3xl ghost-border p-6 lg:p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-outline">
+                    <Sparkles className="size-4 text-primary" />
+                    DIY With AI
                   </div>
-                )}
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    onClick={startSession}
-                    disabled={(!selectedPresetKey && !recommendedConfig) || isConnecting || isLive || (selectedPresetKey === 'custom' && !customPersonaDraft)}
-                    className={cn(
-                      'inline-flex items-center justify-center gap-2 rounded-xl ember-gradient px-6 py-3 text-xs font-bold text-on-primary-fixed',
-                      ((!selectedPresetKey && !recommendedConfig) || isConnecting || isLive || (selectedPresetKey === 'custom' && !customPersonaDraft)) && 'opacity-60 cursor-not-allowed',
-                    )}
-                  >
-                    {isConnecting ? <Loader2 className="size-4 animate-spin" /> : <Mic2 className="size-4" />}
-                    {isLive ? 'Live…' : 'Start session'}
-                  </button>
-                  <button
-                    onClick={endSession}
-                    disabled={!isLive}
-                    className={cn(
-                      'rounded-xl border border-outline-variant/20 bg-surface-highest px-6 py-3 text-xs font-bold',
-                      !isLive && 'opacity-50 cursor-not-allowed',
-                    )}
-                  >
-                    End
-                  </button>
-                  <button
-                    onClick={() => setStep(1)}
-                    className="rounded-xl border border-outline-variant/20 bg-surface-highest px-6 py-3 text-xs font-bold"
-                  >
-                    Back
-                  </button>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-outline">Step 2/4</span>
                 </div>
 
-                {sessionId && <p className="mt-3 text-[10px] text-outline font-mono">session_id: {sessionId}</p>}
+                <div className="rounded-2xl border border-outline-variant/15 p-5">
+                  <p className="text-sm font-bold">{isLive || isConnecting ? 'Live session' : 'Select persona + start'}</p>
+                  <p className="mt-1 text-xs text-on-surface-variant">
+                    {isLive || isConnecting ? 'Speak normally. Your transcript will appear below.' : 'Pick a persona and start a live session.'}
+                  </p>
+
+                  {!isLive && !isConnecting && (
+                    <>
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-outline">Quick picks</p>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {customPersonaDraft && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPresetKey('custom');
+                              setRecommendedConfig(null);
+                            }}
+                            className={cn(
+                              'text-left rounded-2xl border border-outline-variant/15 bg-surface-highest/60 p-4 hover:bg-surface-highest transition-all',
+                              selectedPresetKey === 'custom' && 'ring-2 ring-primary/50 border-primary/30',
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-extrabold">{customPersonaDraft.title}</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {(customPersonaDraft.tags || []).slice(0, 8).map((t) => (
+                                    <span
+                                      key={t}
+                                      className="rounded-full border border-outline-variant/20 bg-surface px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-outline"
+                                    >
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <TileAvatar label={customPersonaDraft.title} tags={customPersonaDraft.tags} />
+                            </div>
+                            <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{customPersonaDraft.persona}</p>
+                          </button>
+                        )}
+                        {PERSONA_PRESETS.map((p) => (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPresetKey(p.key);
+                              setRecommendedConfig(null);
+                            }}
+                            className={cn(
+                              'text-left rounded-2xl border border-outline-variant/15 bg-surface-highest/60 p-4 hover:bg-surface-highest transition-all',
+                              selectedPresetKey === p.key && 'ring-2 ring-primary/50 border-primary/30',
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-extrabold">{p.title}</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {p.tags.map((t) => (
+                                    <span
+                                      key={t}
+                                      className="rounded-full border border-outline-variant/20 bg-surface px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-outline"
+                                    >
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <TileAvatar label={p.title} tags={p.tags} active={selectedPresetKey === p.key} />
+                            </div>
+                            <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{p.persona}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {applyError && (
+                    <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-300">
+                      {applyError}
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      onClick={startSession}
+                      disabled={(!selectedPresetKey && !recommendedConfig) || isConnecting || isLive || (selectedPresetKey === 'custom' && !customPersonaDraft)}
+                      className={cn(
+                        'inline-flex items-center justify-center gap-2 rounded-xl ember-gradient px-6 py-3 text-xs font-bold text-on-primary-fixed',
+                        ((!selectedPresetKey && !recommendedConfig) || isConnecting || isLive || (selectedPresetKey === 'custom' && !customPersonaDraft)) && 'opacity-60 cursor-not-allowed',
+                      )}
+                    >
+                      {isConnecting ? <Loader2 className="size-4 animate-spin" /> : <Mic2 className="size-4" />}
+                      {isLive ? 'Live…' : 'Start session'}
+                    </button>
+                    <button
+                      onClick={endSession}
+                      disabled={!isLive}
+                      className={cn(
+                        'rounded-xl border border-outline-variant/20 bg-surface-highest px-6 py-3 text-xs font-bold',
+                        !isLive && 'opacity-50 cursor-not-allowed',
+                      )}
+                    >
+                      End
+                    </button>
+                    <button
+                      onClick={() => setStep(1)}
+                      className="rounded-xl border border-outline-variant/20 bg-surface-highest px-6 py-3 text-xs font-bold"
+                    >
+                      Back
+                    </button>
+                  </div>
+
+                  {sessionId && <p className="mt-3 text-[10px] text-outline font-mono">session_id: {sessionId}</p>}
+                </div>
               </div>
-            </div>
             )}
           </div>
         )}
