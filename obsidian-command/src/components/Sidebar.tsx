@@ -46,7 +46,7 @@ export function Sidebar({
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.0</h1>
+            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.1</h1>
             {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
           <ThemeToggle />

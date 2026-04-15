@@ -18,6 +18,7 @@ import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 import Home from './pages/Home';
+import TestUserManagement from './pages/TestUserManagement';
 import HomeOld from './pages/HomeOld';
 import HomeNew from './pages/HomeNew';
 import VoicePersonas from './pages/VoicePersonas';
@@ -29,7 +30,6 @@ import StudioPersonas from './pages/StudioPersonas';
 import StudioLibrary from './pages/StudioLibrary';
 import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
-import TestUserManagement from './pages/TestUserManagement';
 
 function App() {
   const [checkingAuth, setCheckingAuth] = React.useState(true);

@@ -2940,7 +2940,7 @@ class AgenticBrain:
                 _is_hallucinated = False
                 for key, val in args.items():
                     val_str = str(val).strip()
-                    _tool_error_msg: str | None = None
+                    _tool_error_msg: Optional[str] = None
 
                     # 5a — String dummy patterns
                     if any(re.search(p, val_str, re.IGNORECASE) for p in DUMMY_PATTERNS):
@@ -3789,7 +3789,7 @@ class AgenticBrain:
         # Balanced JSON extractor (avoids catastrophic backtracking from greedy .*)
         _BALANCED_JSON = r'(\{(?:[^{}]|\{[^{}]*\})*\})'
 
-        def _try_parse_json(raw: str) -> dict | None:
+        def _try_parse_json(raw: str) -> Optional[dict]:
             """Find and parse first balanced JSON object in raw string."""
             for m in re.finditer(_BALANCED_JSON, raw, flags=re.DOTALL):
                 try:

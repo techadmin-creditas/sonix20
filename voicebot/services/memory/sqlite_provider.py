@@ -979,8 +979,8 @@ class SQLiteProvider:
             bot_id = str(uuid.uuid4())[:8]
             tools_json = json.dumps(tools_enabled or [])
             conn.execute("""
-                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence,is_landing_page_default)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO bots (id, name, description, persona, system_prompt, greeting, tools_enabled, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, proactive_prompts, topic_restriction, refuse_off_topic, owner_user_id, min_stt_confidence, is_landing_page_default)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (bot_id, name, description, persona, system_prompt, greeting, tools_json, llm_provider, llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, default_language, tts_provider, tts_model, json.dumps(proactive_prompts or []), topic_restriction, 1 if refuse_off_topic else 0, owner_user_id, min_stt_confidence, 1 if is_landing_page_default else 0))
             conn.commit()
             return {"id": bot_id, "name": name, "persona": persona}

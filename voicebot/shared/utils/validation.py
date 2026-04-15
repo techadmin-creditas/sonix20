@@ -4,11 +4,11 @@ Includes checks for credentials, PII patterns, and common configuration errors.
 """
 
 from __future__ import annotations
-
+from typing import Optional
 import re
 
 
-def is_valid_api_key(key: str | None, service: str = "any") -> bool:
+def is_valid_api_key(key: Optional[str], service: str = "any") -> bool:
     """
     Validate that an API key is present and is not a known placeholder.
     

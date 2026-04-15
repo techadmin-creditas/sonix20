@@ -31,14 +31,14 @@ function Block({ children, className }: { children: React.ReactNode; className?:
 export default function HomeNew() {
   const reduce = useReducedMotion();
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#08090c] text-zinc-100">
+    <div className="min-h-screen  bg-[#08090c] text-zinc-100">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-20 top-20 h-72 w-72 rounded-full bg-orange-500/25 blur-3xl" />
         <div className="absolute -right-24 bottom-10 h-80 w-80 rounded-full bg-amber-700/25 blur-3xl" />
       </div>
 
       <header className="sticky top-0 z-50 border-b border-zinc-700/30 bg-[#090b10]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="mx-auto flex items-center justify-between px-4 py-4 sm:px-6">
           <Link to="/" className="font-headline text-lg font-extrabold tracking-wider text-zinc-100">Sonix 2.0</Link>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -49,7 +49,7 @@ export default function HomeNew() {
         </div>
       </header>
 
-      <main className="relative mx-auto w-[96%] max-w-[1600px] px-4 pb-20 sm:px-6">
+      <main className="relative mx-auto w-[96%] max-w-[1600px] px-4 sm:px-6">
         <section className="pt-10 sm:pt-14">
           <div className="rounded-3xl border border-zinc-800 bg-gradient-to-b from-zinc-900/80 to-zinc-950/80 p-6 sm:p-8">
             <div className="grid gap-8 lg:grid-cols-[1fr_0.95fr] lg:items-center">

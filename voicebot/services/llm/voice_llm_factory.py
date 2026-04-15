@@ -10,7 +10,7 @@ from voicebot.shared.config import AppSettings
 from voicebot.shared.utils.validation import is_valid_api_key
 
 
-def _instantiate_voice_llm(provider: str, model: str, settings: AppSettings) -> Any | None:
+def _instantiate_voice_llm(provider: str, model: str, settings: AppSettings) -> Optional[Any]:
     provider = (provider or "").lower()
     if provider == "groq" and is_valid_api_key(settings.groq_api_key):
         from voicebot.services.llm.groq_provider import GroqStreamingProvider
@@ -51,7 +51,7 @@ def wrap_llm_with_fallbacks(primary: Any, bot_config: dict, settings: AppSetting
     labels: list[str] = [str(bot_config.get("llm_provider") or "primary").lower() or "primary"]
     seen_types: set[str] = {type(primary).__name__}
 
-    def add(p: Any | None, label: str) -> None:
+    def add(p: Optional[Any], label: str) -> None:
         if p is None:
             return
         t = type(p).__name__

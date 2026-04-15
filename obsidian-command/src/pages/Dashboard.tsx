@@ -199,6 +199,7 @@ export default function Dashboard() {
                   </defs>
                   <Tooltip
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
                     itemStyle={{ color: '#ffb77b' }}
                   />
                   <Area type="monotone" dataKey="value" stroke="#fb8c00" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
@@ -268,6 +269,8 @@ export default function Dashboard() {
                         <Tooltip
                           cursor={{ fill: 'transparent' }}
                           contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                          labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
+                          itemStyle={{ color: '#fff' }}
                         />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
                           {sData.map((entry, index) => (
@@ -303,6 +306,8 @@ export default function Dashboard() {
                   <Tooltip
                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
+                    itemStyle={{ color: '#fff' }}
                   />
                   <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                     {((stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA).map((entry, index) => (
@@ -331,6 +336,8 @@ export default function Dashboard() {
                   <Tooltip
                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
+                    itemStyle={{ color: '#fff' }}
                   />
                   <Bar dataKey="rate" fill="#fb8c00" radius={[4, 4, 0, 0]}>
                     {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map((entry, index) => (
@@ -367,6 +374,7 @@ export default function Dashboard() {
                   <YAxis hide />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
                     itemStyle={{ color: '#06b6d4' }}
                   />
                   <Line type="monotone" dataKey="sessions" stroke="#06b6d4" strokeWidth={3} dot={{ fill: '#06b6d4', r: 4 }} activeDot={{ r: 6 }} />
