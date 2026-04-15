@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Header } from '../components/Header';
-import { api, DiyPersonaDraft, getVoiceWebSocketUrl } from '../lib/api';
+import { api, DiyPersonaDraft, getVoiceWebSocketUrl, type AiPersona, type UserFact } from '../lib/api';
 import { cn } from '../lib/utils';
 import { ArrowRight, Bot as BotIcon, Download, Loader2, Mic2, Pause, Play, Sparkles, Wand2, UserRound, Smile, Angry, Focus } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -15,6 +15,7 @@ type PersonaPreset = {
   persona: string;
   system_prompt: string;
   tts_provider?: string;
+  voice_id?: string;
 };
 
 const PERSONA_PRESETS: PersonaPreset[] = [
@@ -142,7 +143,7 @@ function demoPostCall(goalPrompt: string): { latency: LatencyMetrics; transcript
 export default function DiyWithAI() {
   const [step, setStep] = useState<StepId>(1);
   const [params] = useSearchParams();
-  const [demoMode] = useState(true);
+  const [demoMode] = useState(false);
   const demoTimersRef = useRef<number[]>([]);
 
   // Step 1
@@ -151,9 +152,40 @@ export default function DiyWithAI() {
   // Step 2 (persona presets only)
   const [selectedPresetKey, setSelectedPresetKey] = useState<string | null>(null);
   const [customPersonaDraft, setCustomPersonaDraft] = useState<DiyPersonaDraft | null>(null);
+  const [dbPersonas, setDbPersonas] = useState<AiPersona[]>([]);
+
+  useEffect(() => {
+    api.listAiPersonas().then(setDbPersonas).catch(console.error);
+  }, []);
+
+  const ALL_PRESETS = useMemo<PersonaPreset[]>(() => {
+    const dynamicPresets: PersonaPreset[] = dbPersonas.map(p => {
+      const isHi = p.language.toLowerCase().includes('hi');
+      let sysPrompt = `You are a ${p.tone.toLowerCase()} voice agent named ${p.name}. `;
+      if (p.useCase) sysPrompt += `Your primary role is to handle ${p.useCase}. `;
+      if (p.psychology) sysPrompt += `Behavioral guidelines: ${p.psychology} `;
+      sysPrompt += `Speak as a ${p.gender.toLowerCase()} in ${p.language}. Be clear, ask one question at a time. `;
+      if (p.urgency > 60) sysPrompt += `Maintain a firm, outcome-oriented pace. `;
+      else sysPrompt += `Take your time and ensure the user's comfort. `;
+
+      return {
+        key: `db_${p.id}`,
+        title: `${p.name} · ${p.gender} · ${p.language}`,
+        tags: [p.gender, p.emotion, ...(p.useCase ? [p.useCase.split(' ')[0]] : [])]
+          .filter(Boolean).map(s => s.toLowerCase().substring(0, 15)),
+        default_language: isHi ? 'hi' : 'en',
+        persona: `A ${p.tone.toLowerCase()} ${p.gender.toLowerCase()} ${p.language} agent. ${p.psychology}`,
+        system_prompt: sysPrompt,
+        tts_provider: 'elevenlabs',
+        voice_id: p.selectedVoice,
+      };
+    });
+    return [...dynamicPresets, ...PERSONA_PRESETS];
+  }, [dbPersonas]);
+
   const selectedPreset = useMemo(
-    () => PERSONA_PRESETS.find((p) => p.key === selectedPresetKey) ?? null,
-    [selectedPresetKey],
+    () => ALL_PRESETS.find((p) => p.key === selectedPresetKey) ?? null,
+    [selectedPresetKey, ALL_PRESETS],
   );
 
   // Live session (websocket only in v1)
@@ -176,6 +208,10 @@ export default function DiyWithAI() {
   const [recordingUrl, setRecordingUrl] = useState<string | undefined>(undefined);
   const [postTranscript, setPostTranscript] = useState<TranscriptEntry[]>([]);
   const [latency, setLatency] = useState<LatencyMetrics>({ sttLatency: null, llmLatency: null, ttsLatency: null, totalRtt: null });
+  const [postSummary, setPostSummary] = useState<string | null>(null);
+  const [postIntent, setPostIntent] = useState<string | null>(null);
+  const [postInsights, setPostInsights] = useState<string[]>([]);
+  const [postFacts, setPostFacts] = useState<UserFact[]>([]);
 
   // Player
   const audioElRef = useRef<HTMLAudioElement>(null);
@@ -254,7 +290,7 @@ export default function DiyWithAI() {
       const llm_model = overrides?.llm_model ?? 'gemini-2.0-flash-001';
       const default_language = overrides?.default_language ?? p.default_language;
       const tts_provider = overrides?.tts_provider ?? p.tts_provider;
-      const voice_id = overrides?.voice_id;
+      const voice_id = overrides?.voice_id ?? p.voice_id;
       const res = await api.createBot({
         name,
         description: overrides?.description ?? 'Created from DIY With AI persona preset.',
@@ -395,7 +431,7 @@ export default function DiyWithAI() {
     try {
       // Create a fresh bot for each run (do not use existing project bots).
       let botId: string | null = null;
-      const base = selectedPreset ?? PERSONA_PRESETS[0];
+      const base = selectedPreset ?? ALL_PRESETS[0];
       if (recommendedConfig) {
         // Second run uses the recommended config (no further recommendations).
         botId = await createPresetBot(base, {
@@ -505,13 +541,31 @@ export default function DiyWithAI() {
     }
     setDetailsLoading(true);
     try {
-      const [d, t] = await Promise.all([
+      let [d, t, f] = await Promise.all([
         api.getSessionDetails(sessionId),
         api.getSessionTranscript(sessionId),
+        api.getSessionFacts(sessionId).catch(() => [] as UserFact[]),
       ]);
-      const meta = (d as any).metadata || {};
+
+      let meta = (d as any).metadata || {};
+      const needSummary = !meta.summary || meta.summary.includes('No summary generated') || meta.summary.includes('No meaningful conversation');
+      if (((d as any).turn_count || 0) > 1 && needSummary) {
+        try {
+          const out = await api.summarizeSession(sessionId);
+          meta = { ...meta, summary: out.summary, intent: out.intent, insights: out.insights };
+          // refresh facts as they might have been extracted via summarization pipeline
+          f = await api.getSessionFacts(sessionId).catch(() => f);
+        } catch (e) {
+          console.error('Failed to summarize session in DIY', e);
+        }
+      }
+
       setRecordingUrl((meta.recording_url as string | undefined) || undefined);
       setLatency(buildLatencyMetrics(meta));
+      setPostSummary(meta.summary || null);
+      setPostIntent(meta.intent || null);
+      setPostInsights(Array.isArray(meta.insights) ? meta.insights : []);
+      setPostFacts(f);
       setPostTranscript(
         (t || []).map((m: any) => {
           const atSec = toEpochSeconds(m.timestamp);
@@ -787,7 +841,7 @@ export default function DiyWithAI() {
                             <p className="mt-3 text-xs text-on-surface-variant leading-relaxed line-clamp-3">{customPersonaDraft.persona}</p>
                           </button>
                         )}
-                        {PERSONA_PRESETS.map((p) => (
+                        {ALL_PRESETS.map((p) => (
                           <button
                             key={p.key}
                             type="button"
@@ -970,9 +1024,45 @@ export default function DiyWithAI() {
                   )}
                 </div>
               </div>
+
+              {(postSummary || postInsights.length > 0) && (
+                <div className="rounded-2xl border border-outline-variant/15 bg-surface-high/50 p-5 flex flex-col gap-4">
+                  <p className="text-sm font-bold">Session Analysis</p>
+                  {postSummary && (
+                    <div className="p-4 rounded-xl bg-surface-low ghost-border">
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-1">
+                        Summary {postIntent && `- ${postIntent}`}
+                      </p>
+                      <p className="text-sm text-on-surface-variant italic">{postSummary}</p>
+                    </div>
+                  )}
+                  {postInsights.length > 0 && (
+                    <div className="p-4 rounded-xl bg-surface-low ghost-border">
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Insights</p>
+                      <ul className="list-disc pl-4 space-y-1 text-sm text-on-surface-variant">
+                        {postInsights.map((insight, idx) => (
+                          <li key={idx}>{insight}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {postFacts.length > 0 && (
+                    <div className="p-4 rounded-xl bg-surface-low ghost-border">
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Extracted Facts</p>
+                      <div className="flex flex-wrap gap-2">
+                        {postFacts.map((fact) => (
+                          <span key={fact.id} className="text-xs px-2 py-1 bg-surface-highest rounded border border-outline-variant/10 text-on-surface-variant">
+                            {fact.category ? `${fact.category.replace('session_extracted.', '')}: ` : ''}{fact.fact}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="mt-6 flex justify-between gap-3">
+            <div className="mt-8 flex items-center justify-between gap-3">
               <button
                 onClick={() => setStep(2)}
                 className="rounded-xl border border-outline-variant/20 bg-surface-highest px-6 py-3 text-xs font-bold"

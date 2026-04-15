@@ -6,7 +6,6 @@ import {
    Filter,
    X,
    Save,
-   Play,
    Check,
    Mic2,
    ChevronRight,
@@ -18,56 +17,60 @@ import {
    ShieldCheck,
    Activity,
    ArrowRight,
-   TrendingUp,
    BrainCircuit,
    Settings2,
    Sparkles,
-   UserPlus
+   Loader2,
+   RefreshCw,
+   AlertTriangle,
 } from 'lucide-react';
-import { PERSONA_TEMPLATES } from '../data/personaData';
 import { cn } from '../lib/utils';
-import { useStudio, type PersonaProfile, type PersonaTemplate } from '../contexts/StudioContext';
-import { VOICE_RELAYS, type VoiceRelay } from '../data/voiceData';
+import { VOICE_RELAYS } from '../data/voiceData';
 import { StudioSlider } from '../components/StudioSlider';
+import { api, type AiPersona } from '../lib/api';
 
-// --- Sub-components ---
+// ─────────────────────────────────────────────────────────────────────────────
+// QuickForgeView — multi-step persona builder form
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INITIAL_FORM = {
+   name: '',
+   gender: 'Female' as AiPersona['gender'],
+   tone: 'Warm · Empathetic',
+   stability: 80,
+   clarity: 60,
+   emotion: 'Empathetic',
+   selectedVoice: 'v1',
+   urgency: 45,
+   empathy: 75,
+   styleExaggeration: 35,
+   baseModel: 'Sonix-Flash-1',
+   useCase: '',
+   language: 'English',
+   psychology: '',
+};
 
 const QuickForgeView = ({
    onClose,
    onSave,
-   initialPersona
+   initialPersona,
+   isSaving,
 }: {
    onClose: () => void;
-   onSave: (p: any) => void;
-   initialPersona?: any;
+   onSave: (p: Partial<AiPersona>) => void;
+   initialPersona?: Partial<AiPersona> | null;
+   isSaving: boolean;
 }) => {
    const [step, setStep] = React.useState(1);
    const [isScanning, setIsScanning] = React.useState(false);
    const [showAdvanced, setShowAdvanced] = React.useState(false);
-   const [formData, setFormData] = React.useState<any>(initialPersona || {
-      name: '',
-      templateId: 'nurturer',
-      gender: 'Female',
-      tone: 'Warm · Empathetic',
-      stability: 80,
-      clarity: 60,
-      speed: 50,
-      emotion: 'Empathetic',
-      style: 'consultative',
-      selectedVoice: 'v1',
-      urgency: 45,
-      empathy: 75,
-      styleExaggeration: 35,
-      baseModel: 'Sonix-Flash-1',
-      useCase: '',
-      language: 'English'
-   });
+   const [formData, setFormData] = React.useState<Partial<AiPersona>>(
+      initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM }
+   );
 
    React.useEffect(() => {
       setStep(1);
-      if (initialPersona) {
-         setFormData({ ...formData, ...initialPersona });
-      }
+      setFormData(initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM });
    }, [initialPersona]);
 
    const handleNext = () => {
@@ -76,33 +79,15 @@ const QuickForgeView = ({
          setTimeout(() => {
             setStep(prev => prev + 1);
             setIsScanning(false);
-         }, 1200); // Cinematic pause
+         }, 1200);
       } else {
          setStep(prev => prev + 1);
       }
    };
 
-   const handleBack = () => {
-      setStep(prev => Math.max(1, prev - 1));
-   };
+   const handleBack = () => setStep(prev => Math.max(1, prev - 1));
 
-   const applyTemplate = (tpl: PersonaTemplate) => {
-      setFormData({
-         ...formData,
-         templateId: tpl.id,
-         gender: tpl.defaultGender,
-         tone: tpl.defaultTone,
-         stability: tpl.behavior.stability,
-         clarity: tpl.behavior.clarity,
-         emotion: tpl.behavior.emotion,
-         style: tpl.behavior.style,
-         urgency: formData.urgency || 45,
-         empathy: formData.empathy || 75,
-         baseModel: formData.baseModel || 'Sonix-Flash-1'
-      });
-   };
-
-
+   const patch = (val: Partial<AiPersona>) => setFormData(prev => ({ ...prev, ...val }));
 
    return (
       <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto py-4">
@@ -118,20 +103,26 @@ const QuickForgeView = ({
                <div>
                   <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Persona Builder</p>
                   <div className="flex items-center gap-3">
-                     <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight line-clamp-1">Create AI Persona</h2>
+                     <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight line-clamp-1">
+                        {initialPersona?.id ? 'Edit AI Persona' : 'Create AI Persona'}
+                     </h2>
                      <div className="flex items-center gap-2">
                         <button
                            onClick={() => setShowAdvanced(!showAdvanced)}
                            className={cn(
                               "px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border transition-all",
-                              showAdvanced ? "bg-primary text-on-primary-fixed border-primary shadow-[0_0_10px_rgba(255,193,7,0.3)]" : "bg-surface-low border-outline-variant/10 text-outline hover:text-on-surface"
+                              showAdvanced
+                                 ? "bg-primary text-on-primary-fixed border-primary shadow-[0_0_10px_rgba(255,193,7,0.3)]"
+                                 : "bg-surface-low border-outline-variant/10 text-outline hover:text-on-surface"
                            )}
                         >
                            {showAdvanced ? 'Advanced Tuning: ON' : 'Show Advanced'}
                         </button>
                         <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                           <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">{formData.baseModel || 'Sonix-Flash-1'} Active</span>
+                           <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">
+                              {formData.baseModel || 'Sonix-Flash-1'} Active
+                           </span>
                         </div>
                      </div>
                   </div>
@@ -178,6 +169,7 @@ const QuickForgeView = ({
                </AnimatePresence>
 
                <AnimatePresence mode="wait">
+                  {/* ── Step 1: Identity & Role ── */}
                   {step === 1 && (
                      <motion.div
                         key="step1"
@@ -200,8 +192,8 @@ const QuickForgeView = ({
                                     autoFocus
                                     placeholder="Maya / Arjun / Priya..."
                                     className="w-full bg-surface-low border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                    value={formData.name || ''}
+                                    onChange={e => patch({ name: e.target.value })}
                                  />
                               </div>
                               <div className="space-y-2">
@@ -210,8 +202,8 @@ const QuickForgeView = ({
                                     type="text"
                                     placeholder="Debt Collection / Sales / Support..."
                                     className="w-full bg-surface-low border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
-                                    value={formData.useCase}
-                                    onChange={e => setFormData({ ...formData, useCase: e.target.value })}
+                                    value={formData.useCase || ''}
+                                    onChange={e => patch({ useCase: e.target.value })}
                                  />
                               </div>
                            </div>
@@ -222,10 +214,12 @@ const QuickForgeView = ({
                                     {['English', 'Hindi', 'Hinglish'].map(lang => (
                                        <button
                                           key={lang}
-                                          onClick={() => setFormData({ ...formData, language: lang })}
+                                          onClick={() => patch({ language: lang })}
                                           className={cn(
                                              "px-4 py-2 rounded-lg text-[9px] font-bold border transition-all",
-                                             formData.language === lang ? "bg-primary/10 border-primary/20 text-primary shadow-sm" : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
+                                             formData.language === lang
+                                                ? "bg-primary/10 border-primary/20 text-primary shadow-sm"
+                                                : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
                                           )}
                                        >
                                           {lang}
@@ -233,17 +227,18 @@ const QuickForgeView = ({
                                     ))}
                                  </div>
                               </div>
-
                               <div className="space-y-2">
                                  <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Talking Style</label>
                                  <div className="grid grid-cols-2 gap-2">
                                     {['Analytical', 'Casual', 'Empathetic', 'Firm'].map(st => (
                                        <button
                                           key={st}
-                                          onClick={() => setFormData({ ...formData, emotion: st })}
+                                          onClick={() => patch({ emotion: st })}
                                           className={cn(
                                              "p-3.5 rounded-lg text-[10px] font-bold border transition-all truncate",
-                                             formData.emotion === st ? "bg-primary/10 border-primary/20 text-primary" : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
+                                             formData.emotion === st
+                                                ? "bg-primary/10 border-primary/20 text-primary"
+                                                : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
                                           )}
                                        >
                                           {st}
@@ -256,6 +251,7 @@ const QuickForgeView = ({
                      </motion.div>
                   )}
 
+                  {/* ── Step 2: Soul Alignment ── */}
                   {step === 2 && (
                      <motion.div
                         key="step2"
@@ -278,26 +274,14 @@ const QuickForgeView = ({
                               <p className="text-[9px] font-bold text-outline uppercase tracking-[0.3em]">Fine-tuning behavioral neural intent</p>
                            </div>
                         </div>
-
                         <div className="space-y-6 bg-surface-low/30 p-6 rounded-3xl border border-outline-variant/5">
-                           <StudioSlider
-                              label="Urgency Profile"
-                              value={formData.urgency}
-                              onChange={v => setFormData({ ...formData, urgency: v })}
-                              leftLabel="Patient"
-                              rightLabel="Aggressive"
-                           />
-                           <StudioSlider
-                              label="Empathy Depth"
-                              value={formData.empathy}
-                              onChange={v => setFormData({ ...formData, empathy: v })}
-                              leftLabel="Rational"
-                              rightLabel="Warm"
-                           />
+                           <StudioSlider label="Urgency Profile" value={formData.urgency ?? 45} onChange={v => patch({ urgency: v })} leftLabel="Patient" rightLabel="Aggressive" />
+                           <StudioSlider label="Empathy Depth" value={formData.empathy ?? 75} onChange={v => patch({ empathy: v })} leftLabel="Rational" rightLabel="Warm" />
                         </div>
                      </motion.div>
                   )}
 
+                  {/* ── Step 3: Sonic DNA ── */}
                   {step === 3 && (
                      <motion.div
                         key="step3"
@@ -311,40 +295,14 @@ const QuickForgeView = ({
                               <p className="text-[10px] font-bold text-primary uppercase tracking-[0.4em]">Neural Texture</p>
                               <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Sonic DNA Layering</h2>
                            </div>
-                           <div className="flex gap-3">
-                              <button className="px-5 py-2 rounded-xl bg-surface-low border border-outline-variant/10 text-[9px] font-bold uppercase tracking-widest text-outline hover:text-primary transition-all">
-                                 Preview Baseline
-                              </button>
-                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                            <div className="space-y-8 bg-surface-low/20 p-6 rounded-3xl border border-outline-variant/5">
-                              <StudioSlider
-                                 label="Stability"
-                                 value={formData.stability}
-                                 onChange={v => setFormData({ ...formData, stability: v })}
-                                 leftLabel="Variable"
-                                 rightLabel="Monotone"
-                              />
-                              <StudioSlider
-                                 label="Clarity"
-                                 value={formData.clarity}
-                                 onChange={v => setFormData({ ...formData, clarity: v })}
-                                 leftLabel="Natural"
-                                 rightLabel="Crystalline"
-                              />
+                              <StudioSlider label="Stability" value={formData.stability ?? 80} onChange={v => patch({ stability: v })} leftLabel="Variable" rightLabel="Monotone" />
+                              <StudioSlider label="Clarity" value={formData.clarity ?? 60} onChange={v => patch({ clarity: v })} leftLabel="Natural" rightLabel="Crystalline" />
                            </div>
-
                            <div className="space-y-8 bg-surface-low/20 p-6 rounded-3xl border border-outline-variant/5">
-                              <StudioSlider
-                                 label="Style Exaggeration"
-                                 value={formData.styleExaggeration}
-                                 onChange={v => setFormData({ ...formData, styleExaggeration: v })}
-                                 leftLabel="Subtle"
-                                 rightLabel="Extreme"
-                              />
-
+                              <StudioSlider label="Style Exaggeration" value={formData.styleExaggeration ?? 35} onChange={v => patch({ styleExaggeration: v })} leftLabel="Subtle" rightLabel="Extreme" />
                               <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10">
                                  <div className="flex gap-3 items-start">
                                     <Zap className="size-4 text-primary shrink-0 mt-1" />
@@ -356,6 +314,7 @@ const QuickForgeView = ({
                      </motion.div>
                   )}
 
+                  {/* ── Step 4: Final Synthesis ── */}
                   {step === 4 && (
                      <motion.div
                         key="step4"
@@ -369,40 +328,39 @@ const QuickForgeView = ({
                               <h2 className="text-xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Final Synthesis</h2>
                               <p className="text-[9px] font-bold text-outline uppercase tracking-widest mt-0.5">Review vocal profile & deployment nodes</p>
                            </div>
-                           <div className="space-y-4">
-                              <div className="space-y-2">
-                                 <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Selected Voice Relay</label>
-                                 <div className="grid grid-cols-2 gap-2">
-                                    {VOICE_RELAYS.slice(0, 4).map(v => (
-                                       <button
-                                          key={v.id}
-                                          onClick={() => setFormData({ ...formData, selectedVoice: v.id })}
-                                          className={cn(
-                                             "p-3 rounded-xl border flex flex-col gap-1.5 transition-all text-left",
-                                             formData.selectedVoice === v.id ? "bg-primary/5 border-primary/30 shadow-lg ring-1 ring-primary/20" : "bg-surface-low border-outline-variant/5 text-outline hover:bg-surface-high"
-                                          )}
-                                       >
-                                          <Mic2 className={cn("size-3.5", formData.selectedVoice === v.id ? 'text-primary' : 'text-outline')} />
-                                          <div>
-                                             <p className={cn("text-[11px] font-bold", formData.selectedVoice === v.id ? 'text-on-surface' : 'text-outline')}>{v.name}</p>
-                                             <p className="text-[7px] uppercase tracking-widest font-bold opacity-60">{v.provider}</p>
-                                          </div>
-                                       </button>
-                                    ))}
-                                 </div>
+                           <div className="space-y-2">
+                              <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Selected Voice Relay</label>
+                              <div className="grid grid-cols-2 gap-2">
+                                 {VOICE_RELAYS.slice(0, 4).map(v => (
+                                    <button
+                                       key={v.id}
+                                       onClick={() => patch({ selectedVoice: v.id })}
+                                       className={cn(
+                                          "p-3 rounded-xl border flex flex-col gap-1.5 transition-all text-left",
+                                          formData.selectedVoice === v.id
+                                             ? "bg-primary/5 border-primary/30 shadow-lg ring-1 ring-primary/20"
+                                             : "bg-surface-low border-outline-variant/5 text-outline hover:bg-surface-high"
+                                       )}
+                                    >
+                                       <Mic2 className={cn("size-3.5", formData.selectedVoice === v.id ? 'text-primary' : 'text-outline')} />
+                                       <div>
+                                          <p className={cn("text-[11px] font-bold", formData.selectedVoice === v.id ? 'text-on-surface' : 'text-outline')}>{v.name}</p>
+                                          <p className="text-[7px] uppercase tracking-widest font-bold opacity-60">{v.provider}</p>
+                                       </div>
+                                    </button>
+                                 ))}
                               </div>
                            </div>
                         </div>
+
+                        {/* Neural Certificate */}
                         <div className="space-y-6">
                            <div className="bg-surface-low/80 backdrop-blur-sm rounded-3xl p-6 border border-outline-variant/10 shadow-sm relative overflow-hidden h-full flex flex-col">
                               <div className="absolute top-0 right-0 p-4">
                                  <ShieldCheck className="size-4 text-emerald-500" />
                               </div>
-
                               <p className="text-[8px] font-bold text-primary uppercase tracking-[0.4em] mb-4">Neural Certificate</p>
-
                               <div className="flex-1 space-y-6">
-                                 {/* Layer 1: Identity */}
                                  <div className="space-y-2">
                                     <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Linguistic Objective</p>
                                     <div className="flex items-center justify-between">
@@ -410,11 +368,11 @@ const QuickForgeView = ({
                                           <h4 className="text-base font-headline font-extrabold text-on-surface">{formData.name}</h4>
                                           <p className="text-[8px] font-bold text-primary uppercase tracking-widest">{formData.language}</p>
                                        </div>
-                                       <span className="px-1.5 py-0.5 rounded bg-surface-lowest border border-outline-variant/5 text-[7px] font-bold text-outline uppercase">{formData.useCase || 'General Agent'}</span>
+                                       <span className="px-1.5 py-0.5 rounded bg-surface-lowest border border-outline-variant/5 text-[7px] font-bold text-outline uppercase">
+                                          {formData.useCase || 'General Agent'}
+                                       </span>
                                     </div>
                                  </div>
-
-                                 {/* Layer 2: Behavioral DNA */}
                                  <div className="space-y-2">
                                     <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Behavioral DNA</p>
                                     <div className="grid grid-cols-2 gap-3">
@@ -432,8 +390,6 @@ const QuickForgeView = ({
                                        </div>
                                     </div>
                                  </div>
-
-                                 {/* Layer 3: Technical Trace */}
                                  <div className="space-y-2 pt-3 border-t border-outline-variant/10">
                                     <p className="text-[7px] font-bold text-primary uppercase tracking-widest">Neural Infrastructure</p>
                                     <div className="flex items-center justify-between p-2.5 rounded-xl bg-primary/5 border border-primary/10">
@@ -451,7 +407,6 @@ const QuickForgeView = ({
                                     </div>
                                  </div>
                               </div>
-
                               <div className="mt-4 pt-4 border-t border-outline-variant/5">
                                  <p className="text-[9px] leading-relaxed italic text-outline/80">&ldquo;Synthesizing {formData.emotion?.toLowerCase() || 'neutral'} intent...&rdquo;</p>
                               </div>
@@ -477,7 +432,6 @@ const QuickForgeView = ({
                            </div>
                            <button onClick={() => setShowAdvanced(false)} className="p-2 rounded-lg hover:bg-surface-low text-outline"><X className="size-4" /></button>
                         </div>
-
                         <div className="grid grid-cols-2 gap-10 flex-1 overflow-y-auto pr-4 scrollbar-hide">
                            <div className="space-y-6">
                               <div className="space-y-3">
@@ -486,10 +440,12 @@ const QuickForgeView = ({
                                     {['Sonix-Flash-1', 'Sonix-Pro-3', 'Eleven-Turbo-v2.5'].map(m => (
                                        <button
                                           key={m}
-                                          onClick={() => setFormData({ ...formData, baseModel: m })}
+                                          onClick={() => patch({ baseModel: m })}
                                           className={cn(
                                              "p-4 rounded-xl border flex justify-between items-center transition-all",
-                                             formData.baseModel === m ? "bg-primary/10 border-primary/30 text-primary" : "bg-surface-low border-outline-variant/5 text-outline"
+                                             formData.baseModel === m
+                                                ? "bg-primary/10 border-primary/30 text-primary"
+                                                : "bg-surface-low border-outline-variant/5 text-outline"
                                           )}
                                        >
                                           <span className="text-[11px] font-bold">{m}</span>
@@ -498,19 +454,7 @@ const QuickForgeView = ({
                                     ))}
                                  </div>
                               </div>
-
-                              <div className="space-y-3">
-                                 <label className="text-[9px] font-bold text-outline uppercase tracking-widest">Response Latency Target</label>
-                                 <StudioSlider
-                                    label="Strictness"
-                                    value={45}
-                                    onChange={() => { }}
-                                    leftLabel="Quality"
-                                    rightLabel="Speed"
-                                 />
-                              </div>
                            </div>
-
                            <div className="space-y-6">
                               <div className="p-6 rounded-2xl bg-surface-low border border-outline-variant/10 space-y-4">
                                  <div className="flex items-center gap-3">
@@ -524,7 +468,7 @@ const QuickForgeView = ({
                               </div>
                               <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 space-y-2">
                                  <p className="text-[10px] font-bold text-primary uppercase">Expert Control</p>
-                                 <p className="text-[9px] leading-relaxed text-outline">These settings bypass the standard "Soul Alignment" logic and interact directly with the hardware acceleration layer.</p>
+                                 <p className="text-[9px] leading-relaxed text-outline">These settings bypass the standard Soul Alignment logic and interact directly with the hardware acceleration layer.</p>
                               </div>
                            </div>
                         </div>
@@ -546,10 +490,12 @@ const QuickForgeView = ({
                {step < 4 ? (
                   <button
                      onClick={handleNext}
-                     disabled={step === 1 && !formData.name}
+                     disabled={step === 1 && !formData.name?.trim()}
                      className={cn(
-                        "flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl relative overflow-hidden group/save",
-                        (step === 1 && !formData.name) ? "bg-outline/20 text-outline cursor-not-allowed opacity-50" : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-105"
+                        "flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl relative overflow-hidden",
+                        (step === 1 && !formData.name?.trim())
+                           ? "bg-outline/20 text-outline cursor-not-allowed opacity-50"
+                           : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-105"
                      )}
                   >
                      <span className="relative z-10 flex items-center gap-3">
@@ -559,24 +505,28 @@ const QuickForgeView = ({
                   </button>
                ) : (
                   <button
+                     disabled={isSaving}
                      onClick={() => {
-                        // Dynamic Synthesis of Metadata
-                        const finalPersona = { ...formData };
-                        if (!finalPersona.useCase) finalPersona.useCase = `${formData.emotion} Agent`;
-
-                        // Psychological Profile Synthesis
-                        const urgLabel = formData.urgency > 70 ? 'assertive' : formData.urgency > 30 ? 'balanced' : 'deliberate';
-                        const empLabel = formData.empathy > 70 ? 'high-resonance' : formData.empathy > 30 ? 'measured' : 'analytical';
-
-                        finalPersona.psychology = `Synthesizing ${formData.emotion?.toLowerCase() || 'neutral'} intent with ${urgLabel} urgency and ${empLabel} empathy profiles.`;
-                        finalPersona.tone = `${formData.emotion || 'Neural'} · ${formData.baseModel?.split('-')[1] || 'Neural'}`;
-
+                        const urgLabel = (formData.urgency ?? 45) > 70 ? 'assertive' : (formData.urgency ?? 45) > 30 ? 'balanced' : 'deliberate';
+                        const empLabel = (formData.empathy ?? 75) > 70 ? 'high-resonance' : (formData.empathy ?? 75) > 30 ? 'measured' : 'analytical';
+                        const finalPersona: Partial<AiPersona> = {
+                           ...formData,
+                           useCase: formData.useCase || `${formData.emotion} Agent`,
+                           psychology: `Synthesizing ${formData.emotion?.toLowerCase() || 'neutral'} intent with ${urgLabel} urgency and ${empLabel} empathy profiles.`,
+                           tone: `${formData.emotion || 'Neural'} · ${formData.baseModel?.split('-')[1] || 'Neural'}`,
+                        };
                         onSave(finalPersona);
                      }}
-                     className="flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] bg-primary text-on-primary-fixed studio-glow-amber shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3"
+                     className={cn(
+                        "flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] bg-primary text-on-primary-fixed studio-glow-amber shadow-xl transition-all flex items-center justify-center gap-3",
+                        isSaving ? "opacity-60 cursor-not-allowed" : "hover:scale-105 active:scale-95"
+                     )}
                   >
-                     <Save className="size-4" />
-                     Deploy Persona
+                     {isSaving ? (
+                        <><Loader2 className="size-4 animate-spin" /> Deploying...</>
+                     ) : (
+                        <><Save className="size-4" /> Deploy Persona</>
+                     )}
                   </button>
                )}
             </div>
@@ -585,92 +535,331 @@ const QuickForgeView = ({
    );
 };
 
-// --- Main Page ---
+// ─────────────────────────────────────────────────────────────────────────────
+// PersonaCard — individual card with edit / activate / delete
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PersonaCard = ({
+   persona,
+   index,
+   onEdit,
+   onDelete,
+   onToggleDeploy,
+   isDeleting,
+   isToggling,
+}: {
+   key?: React.Key;
+   persona: AiPersona;
+   index: number;
+   onEdit: (p: AiPersona) => void;
+   onDelete: (p: AiPersona) => void | Promise<void>;
+   onToggleDeploy: (p: AiPersona) => void | Promise<void>;
+   isDeleting: boolean;
+   isToggling: boolean;
+}) => (
+   <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      className="bg-surface-lowest rounded-4xl p-6 group relative overflow-hidden transition-all border border-outline-variant/10 hover:border-primary/30 shadow-sm hover:shadow-xl"
+   >
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6 relative z-10 border-b border-outline-variant/5 pb-4">
+         <div className="flex items-center gap-4">
+            <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary/5 transition-colors">
+               <UserRound className="size-7" />
+            </div>
+            <div>
+               <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
+               <div className="flex items-center gap-2">
+                  <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{persona.language}</p>
+                  {persona.isDeployed && (
+                     <>
+                        <span className="size-1 rounded-full bg-primary pulse-neural" />
+                        <span className="text-[8px] font-bold text-primary uppercase">Active</span>
+                     </>
+                  )}
+                  {!persona.isActive && (
+                     <span className="text-[8px] font-bold text-outline uppercase bg-outline/10 px-1.5 py-0.5 rounded">Inactive</span>
+                  )}
+               </div>
+            </div>
+         </div>
+
+         {/* Action buttons */}
+         <div className="flex gap-1.5">
+            <button
+               onClick={() => onEdit(persona)}
+               className="p-2.5 rounded-lg bg-surface-low hover:bg-surface-high text-outline hover:text-primary transition-all border border-outline-variant/10 shadow-sm"
+               title="Edit Persona"
+            >
+               <Edit2 className="size-3.5" />
+            </button>
+            <button
+               onClick={() => onDelete(persona)}
+               disabled={isDeleting}
+               className="p-2.5 rounded-lg bg-surface-low hover:bg-error/10 text-outline hover:text-error transition-all border border-outline-variant/10 shadow-sm disabled:opacity-50"
+               title="Delete Persona"
+            >
+               {isDeleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            </button>
+         </div>
+      </div>
+
+      {/* Body */}
+      <div className="space-y-4 relative z-10">
+         <p className="text-[11px] font-medium leading-relaxed line-clamp-2 text-outline/80">{persona.tone} · {persona.useCase}</p>
+
+         <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors">
+            <p className="text-[10px] leading-relaxed italic text-on-surface-variant line-clamp-2">
+               &ldquo;{persona.psychology || 'Neural persona profile loaded.'}&rdquo;
+            </p>
+         </div>
+
+         {/* Behavioral stats */}
+         <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+               <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1"><Activity className="size-2.5" /> Urgency</p>
+               <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                  <div className="h-full bg-primary transition-all" style={{ width: `${persona.urgency ?? 45}%` }} />
+               </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+               <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1"><Sparkles className="size-2.5" /> Empathy</p>
+               <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${persona.empathy ?? 75}%` }} />
+               </div>
+            </div>
+         </div>
+
+         {/* Deploy / Decommission */}
+         <button
+            onClick={() => onToggleDeploy(persona)}
+            disabled={isToggling}
+            className={cn(
+               "w-full flex items-center justify-between p-3.5 rounded-xl transition-all group/btn border disabled:opacity-60",
+               persona.isDeployed
+                  ? "bg-primary/10 border-primary/20 text-primary"
+                  : "bg-surface-low hover:bg-primary text-outline hover:text-on-primary-fixed border-outline-variant/5"
+            )}
+         >
+            <span className="text-[9px] font-bold uppercase tracking-[0.2em]">
+               {persona.isDeployed ? 'Decommission Node' : 'Activate Persona'}
+            </span>
+            {isToggling
+               ? <Loader2 className="size-3.5 animate-spin" />
+               : persona.isDeployed
+                  ? <Check className="size-3.5" />
+                  : <ChevronRight className="size-3.5 group-hover/btn:translate-x-1 transition-transform" />
+            }
+         </button>
+      </div>
+   </motion.div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RECOMMENDATIONS = [
+   { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'v1', emotion: 'Empathetic' },
+   { name: 'Early Bird', trigger: 'DPD -5', voice: 'v2', emotion: 'Firm' },
+   { name: 'Loyalty Guide', trigger: 'Churn Risk', voice: 'v3', emotion: 'Analytical' },
+];
 
 export default function StudioPersonas() {
-   const { personas, deploymentIds, addPersona, updatePersona, toggleDeployment, deletePersona } = useStudio();
+   const [personas, setPersonas] = React.useState<AiPersona[]>([]);
+   const [isLoading, setIsLoading] = React.useState(true);
+   const [loadError, setLoadError] = React.useState<string | null>(null);
    const [isForgeMode, setIsForgeMode] = React.useState(false);
-   const [editingPersona, setEditingPersona] = React.useState<any>(null);
+   const [editingPersona, setEditingPersona] = React.useState<AiPersona | null>(null);
    const [search, setSearch] = React.useState('');
+   const [isSaving, setIsSaving] = React.useState(false);
+   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+   const [togglingId, setTogglingId] = React.useState<string | null>(null);
 
-   const recommendations = [
-      { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'Rachel' },
-      { name: 'Early Bird', trigger: 'DPD -5', voice: 'Marcus' },
-      { name: 'Loyalty Guide', trigger: 'Churn Risk', voice: 'Saira' },
-   ];
+   // ── Load personas from API ──
+   const loadPersonas = React.useCallback(async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+         const data = await api.listAiPersonas();
+         setPersonas(data);
+      } catch (e: any) {
+         setLoadError(e?.message || 'Failed to load personas');
+      } finally {
+         setIsLoading(false);
+      }
+   }, []);
 
-   const handleForgeClose = () => {
-      setIsForgeMode(false);
-      setEditingPersona(null);
+   React.useEffect(() => { loadPersonas(); }, [loadPersonas]);
+
+   // ── Save (create / update) ──
+   const handleSave = async (formData: Partial<AiPersona>) => {
+      setIsSaving(true);
+      try {
+         if (editingPersona?.id) {
+            const updated = await api.updateAiPersona(editingPersona.id, formData);
+            setPersonas(prev => prev.map(p => p.id === updated.id ? updated : p));
+         } else {
+            const created = await api.createAiPersona(formData);
+            setPersonas(prev => [created, ...prev]);
+         }
+         setIsForgeMode(false);
+         setEditingPersona(null);
+      } catch (e: any) {
+         alert(e?.message || 'Failed to save persona');
+      } finally {
+         setIsSaving(false);
+      }
    };
 
-   const handleSuggest = (rec: any) => {
+   // ── Delete ──
+   const handleDelete = async (persona: AiPersona) => {
+      if (!confirm(`Delete "${persona.name}"? This cannot be undone.`)) return;
+      setDeletingId(persona.id);
+      try {
+         await api.deleteAiPersona(persona.id);
+         setPersonas(prev => prev.filter(p => p.id !== persona.id));
+      } catch (e: any) {
+         alert(e?.message || 'Failed to delete persona');
+      } finally {
+         setDeletingId(null);
+      }
+   };
+
+   // ── Toggle deploy ──
+   const handleToggleDeploy = async (persona: AiPersona) => {
+      setTogglingId(persona.id);
+      try {
+         const updated = await api.toggleAiPersonaDeploy(persona.id);
+         setPersonas(prev => prev.map(p => p.id === updated.id ? updated : p));
+      } catch (e: any) {
+         alert(e?.message || 'Failed to toggle persona');
+      } finally {
+         setTogglingId(null);
+      }
+   };
+
+   // ── Suggest & adopt ──
+   const handleSuggest = (rec: typeof RECOMMENDATIONS[0]) => {
       setEditingPersona({
          name: rec.name,
          useCase: rec.trigger,
-         selectedVoice: rec.voice === 'Rachel' ? 'v1' : 'v2',
-         emotion: 'Empathetic',
-      });
+         selectedVoice: rec.voice,
+         emotion: rec.emotion,
+      } as AiPersona);
       setIsForgeMode(true);
    };
 
+   // ── Forge mode ──
    if (isForgeMode) {
       return (
          <QuickForgeView
-            onClose={handleForgeClose}
+            onClose={() => { setIsForgeMode(false); setEditingPersona(null); }}
             initialPersona={editingPersona}
-            onSave={(data) => {
-               if (editingPersona?.id) {
-                  updatePersona(editingPersona.id, data);
-               } else {
-                  addPersona({
-                     ...data,
-                     name: data.name || 'New Identity'
-                  });
-               }
-               handleForgeClose();
-            }}
+            onSave={handleSave}
+            isSaving={isSaving}
          />
       );
    }
 
-   const filteredPersonas = personas.filter(p =>
-      p.name.toLowerCase().includes(search.toLowerCase())
+   const filtered = personas.filter(p =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      (p.useCase || '').toLowerCase().includes(search.toLowerCase())
    );
+
+   // ── Loading state ──
+   if (isLoading) {
+      return (
+         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+            <div className="size-16 rounded-full border-2 border-primary/20 flex items-center justify-center relative">
+               <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                  className="absolute inset-0 rounded-full border-t-2 border-primary"
+               />
+               <BrainCircuit className="size-7 text-primary/60" />
+            </div>
+            <p className="text-[10px] font-bold text-outline uppercase tracking-widest">Loading Neural Registry...</p>
+         </div>
+      );
+   }
+
+   // ── Error state ──
+   if (loadError) {
+      return (
+         <div className="flex flex-col items-center justify-center min-h-[400px] gap-6">
+            <div className="size-16 rounded-full bg-error/10 border border-error/20 flex items-center justify-center">
+               <AlertTriangle className="size-7 text-error" />
+            </div>
+            <div className="text-center">
+               <p className="text-sm font-bold text-on-surface">Failed to load personas</p>
+               <p className="text-[10px] text-outline mt-1">{loadError}</p>
+            </div>
+            <button
+               onClick={loadPersonas}
+               className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all"
+            >
+               <RefreshCw className="size-3.5" /> Retry
+            </button>
+         </div>
+      );
+   }
 
    return (
       <div className="space-y-10">
-         <div className="flex justify-end border-b border-outline-variant/10 pb-8">
-            <button
-               onClick={() => setIsForgeMode(true)}
-               className="flex items-center gap-2.5 bg-primary text-on-primary-fixed px-8 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/10 hover:scale-105 active:scale-95 transition-all w-full lg:w-auto justify-center"
-            >
-               <Plus className="size-4" />
-               Create New Persona
-            </button>
+         {/* Top bar */}
+         <div className="flex justify-between items-center border-b border-outline-variant/10 pb-8">
+            <div>
+               <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p>
+               <h1 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight">
+                  {personas.length} Persona{personas.length !== 1 ? 's' : ''} Deployed
+               </h1>
+            </div>
+            <div className="flex items-center gap-3">
+               <button
+                  onClick={loadPersonas}
+                  className="p-2.5 rounded-xl bg-surface-low border border-outline-variant/10 text-outline hover:text-primary transition-all"
+                  title="Refresh"
+               >
+                  <RefreshCw className="size-4" />
+               </button>
+               <button
+                  onClick={() => { setEditingPersona(null); setIsForgeMode(true); }}
+                  className="flex items-center gap-2.5 bg-primary text-on-primary-fixed px-8 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/10 hover:scale-105 active:scale-95 transition-all"
+               >
+                  <Plus className="size-4" />
+                  Create New Persona
+               </button>
+            </div>
          </div>
 
-
-         {/* Recommendations & Filtering */}
+         {/* Search + Recommendations */}
          <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 flex gap-3 p-1.5 bg-surface-low rounded-2xl border border-outline-variant/10 shadow-sm">
                <div className="flex-1 flex items-center gap-2 px-3">
                   <Search className="size-3.5 text-outline" />
                   <input
                      type="text"
-                     placeholder="Search agents..."
-                     className="bg-transparent border-none focus:ring-0 text-xs flex-1 shadow-none"
+                     placeholder="Search personas by name or use case..."
+                     className="bg-transparent border-none focus:ring-0 text-xs flex-1 shadow-none outline-none"
                      value={search}
                      onChange={e => setSearch(e.target.value)}
                   />
                </div>
+               {search && (
+                  <button onClick={() => setSearch('')} className="p-2 text-outline hover:text-on-surface">
+                     <X className="size-3.5" />
+                  </button>
+               )}
                <button className="p-2.5 bg-surface-lowest rounded-xl text-outline hover:text-on-surface border border-outline-variant/5 transition-all">
                   <Filter className="size-3.5" />
                </button>
             </div>
 
             <div className="flex gap-2 scrollbar-hide overflow-x-auto">
-               {recommendations.map((rec, i) => (
+               {RECOMMENDATIONS.map((rec, i) => (
                   <button
                      key={i}
                      onClick={() => handleSuggest(rec)}
@@ -686,90 +875,66 @@ export default function StudioPersonas() {
             </div>
          </div>
 
+         {/* Stats bar */}
+         {personas.length > 0 && (
+            <div className="grid grid-cols-3 gap-4">
+               {[
+                  { label: 'Total Personas', value: personas.length, icon: UserRound },
+                  { label: 'Deployed', value: personas.filter(p => p.isDeployed).length, icon: Activity },
+                  { label: 'Active', value: personas.filter(p => p.isActive).length, icon: Cpu },
+               ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="bg-surface-lowest rounded-2xl p-4 border border-outline-variant/10 flex items-center gap-4">
+                     <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <Icon className="size-4 text-primary" />
+                     </div>
+                     <div>
+                        <p className="text-[8px] font-bold text-outline uppercase tracking-widest">{label}</p>
+                        <p className="text-2xl font-headline font-extrabold text-on-surface">{value}</p>
+                     </div>
+                  </div>
+               ))}
+            </div>
+         )}
+
          {/* Grid */}
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-            {personas.filter(p => p.name.toLowerCase().includes(search.toLowerCase())).map((persona, i) => (
-               <motion.div
-                  key={persona.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
-                  className="bg-surface-lowest rounded-4xl p-6 group relative overflow-hidden transition-all border border-outline-variant/10 hover:border-primary/30 shadow-sm hover:shadow-xl"
-               >
-                  <div className="flex justify-between items-center mb-6 relative z-10 border-b border-outline-variant/5 pb-4">
-                     <div className="flex items-center gap-4">
-                        <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary/5 transition-colors">
-                           <UserRound className="size-7" />
-                        </div>
-                        <div>
-                           <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
-                           <div className="flex items-center gap-2">
-                              <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{persona.language}</p>
-                              {deploymentIds?.includes(persona.id) && (
-                                 <>
-                                    <span className="size-1 rounded-full bg-primary pulse-neural" />
-                                    <span className="text-[8px] font-bold text-primary uppercase">Active</span>
-                                 </>
-                              )}
-                           </div>
-                        </div>
-                     </div>
-                     <div className="flex gap-1.5">
-                        <button
-                           onClick={() => {
-                              setEditingPersona(persona);
-                              setIsForgeMode(true);
-                           }}
-                           className="p-2.5 rounded-lg bg-surface-low hover:bg-surface-high text-outline hover:text-primary transition-all border border-outline-variant/10 shadow-sm"
-                           title="Edit Persona"
-                        >
-                           <Edit2 className="size-3.5" />
-                        </button>
-                        <button
-                           onClick={() => {
-                              if (confirm(`Are you sure you want to delete ${persona.name}?`)) {
-                                 deletePersona(persona.id);
-                              }
-                           }}
-                           className="p-2.5 rounded-lg bg-surface-low hover:bg-error/10 text-outline hover:text-error transition-all border border-outline-variant/10 shadow-sm"
-                           title="Delete Persona"
-                        >
-                           <Trash2 className="size-3.5" />
-                        </button>
-                     </div>
-                  </div>
-
-                  <div className="space-y-4 relative z-10">
-                     <p className="text-[11px] font-medium leading-relaxed line-clamp-2 text-outline/80">{persona.tone} · {persona.useCase}</p>
-                     <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors">
-                        <p className="text-[10px] leading-relaxed italic text-on-surface-variant line-clamp-2">
-                           &ldquo;{persona.psychology}&rdquo;
-                        </p>
-                     </div>
-
-                     <button
-                        onClick={() => toggleDeployment(persona.id)}
-                        className={cn(
-                           "w-full flex items-center justify-between p-3.5 rounded-xl transition-all group/btn border",
-                           deploymentIds?.includes(persona.id)
-                              ? "bg-primary/10 border-primary/20 text-primary"
-                              : "bg-surface-low hover:bg-primary text-outline hover:text-on-primary-fixed border-outline-variant/5"
-                        )}
-                     >
-                        <span className="text-[9px] font-bold uppercase tracking-[0.2em]">
-                           {deploymentIds?.includes(persona.id) ? 'Decommission Node' : 'Activate Persona'}
-                        </span>
-                        {deploymentIds?.includes(persona.id) ? (
-                           <Check className="size-3.5" />
-                        ) : (
-                           <ChevronRight className="size-3.5 group-hover/btn:translate-x-1 transition-transform" />
-                        )}
-                     </button>
-                  </div>
-               </motion.div>
-            ))}
-         </div>
-
-      </div >
+         {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+               <div className="size-20 rounded-3xl bg-surface-low border border-outline-variant/10 flex items-center justify-center">
+                  <UserRound className="size-9 text-outline/40" />
+               </div>
+               <div className="text-center">
+                  <p className="text-base font-bold text-on-surface">
+                     {search ? `No personas match "${search}"` : 'No personas yet'}
+                  </p>
+                  <p className="text-[11px] text-outline mt-1">
+                     {search ? 'Try a different search term' : 'Create your first AI persona to get started'}
+                  </p>
+               </div>
+               {!search && (
+                  <button
+                     onClick={() => setIsForgeMode(true)}
+                     className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
+                  >
+                     <Plus className="size-4" /> Create First Persona
+                  </button>
+               )}
+            </div>
+         ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+               {filtered.map((persona, i) => (
+                  <PersonaCard
+                     key={persona.id}
+                     persona={persona}
+                     index={i}
+                     onEdit={p => { setEditingPersona(p); setIsForgeMode(true); }}
+                     onDelete={handleDelete}
+                     onToggleDeploy={handleToggleDeploy}
+                     isDeleting={deletingId === persona.id}
+                     isToggling={togglingId === persona.id}
+                  />
+               ))}
+            </div>
+         )}
+      </div>
    );
 }

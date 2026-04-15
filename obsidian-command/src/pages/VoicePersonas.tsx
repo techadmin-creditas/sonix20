@@ -1,23 +1,24 @@
 import React from 'react';
 import { motion, useMotionValue, useSpring, useTransform, AnimatePresence } from 'framer-motion';
-import { 
-  Mic2, 
-  Sparkles, 
-  Play, 
-  Pause, 
-  ChevronRight, 
-  Brain, 
-  Target, 
-  Users, 
-  Globe, 
-  ShieldCheck, 
+import {
+  Mic2,
+  Sparkles,
+  Play,
+  Pause,
+  ChevronRight,
+  Brain,
+  Target,
+  Users,
+  Globe,
+  ShieldCheck,
   Zap,
   UserRound,
   ArrowRight
 } from 'lucide-react';
-import { VOICE_PERSONAS, PersonaProfile } from '../data/personaData';
+import { api, type AiPersona } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Header } from '../components/Header';
+import { Loader2 } from 'lucide-react';
 
 // --- Components ---
 
@@ -45,7 +46,7 @@ const VoiceWave = ({ isPlaying, color }: { isPlaying: boolean; color: string }) 
   );
 };
 
-const PerspectiveCard = ({ children, className, ...props }: { children: React.ReactNode; className?: string; [key: string]: any }) => {
+const PerspectiveCard = ({ children, className, ...props }: { children: React.ReactNode; className?: string;[key: string]: any }) => {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const mouseXSpring = useSpring(x);
@@ -74,7 +75,7 @@ const PerspectiveCard = ({ children, className, ...props }: { children: React.Re
       className={cn("group relative transition-all duration-300", className)}
       {...props}
     >
-      <motion.div 
+      <motion.div
         className="absolute -inset-2 bg-primary/5 blur-2xl rounded-[2rem] opacity-0 group-hover:opacity-100 transition-opacity"
         style={{ x: shadowX, y: shadowY }}
       />
@@ -85,7 +86,7 @@ const PerspectiveCard = ({ children, className, ...props }: { children: React.Re
   );
 };
 
-const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: PersonaProfile; isPlaying: boolean; onTogglePlay: () => void }) => {
+const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: AiPersona; isPlaying: boolean; onTogglePlay: () => void }) => {
   const colorMap: Record<string, string> = {
     amber: "text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-amber-500/10",
     blue: "text-blue-500 bg-blue-500/10 border-blue-500/20 shadow-blue-500/10",
@@ -109,9 +110,9 @@ const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: PersonaPro
       )}>
         <div className="flex justify-between items-start">
           <div className={cn("size-14 rounded-2xl flex items-center justify-center border shadow-inner", colorClass)}>
-             <UserRound className="size-8" />
+            <UserRound className="size-8" />
           </div>
-          <button 
+          <button
             onClick={onTogglePlay}
             className={cn(
               "p-3 rounded-full transition-all duration-300 active:scale-90",
@@ -148,23 +149,23 @@ const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: PersonaPro
           </div>
 
           <div className="p-4 rounded-2xl bg-surface-low border border-outline-variant/5 bg-gradient-to-br from-surface-low to-surface-low/30 relative overflow-hidden group/psych">
-             <div className="absolute inset-y-0 left-0 w-1 bg-primary/20 group-hover/psych:bg-primary transition-colors" />
-             <div className="flex items-center gap-1.5 text-xs font-bold text-primary uppercase tracking-widest mb-2">
-                <Brain className="size-3.5" />
-                Psychology
-             </div>
-             <p className="text-[11px] leading-relaxed text-on-surface-variant italic">
-               &ldquo;{persona.psychology}&rdquo;
-             </p>
+            <div className="absolute inset-y-0 left-0 w-1 bg-primary/20 group-hover/psych:bg-primary transition-colors" />
+            <div className="flex items-center gap-1.5 text-xs font-bold text-primary uppercase tracking-widest mb-2">
+              <Brain className="size-3.5" />
+              Psychology
+            </div>
+            <p className="text-[11px] leading-relaxed text-on-surface-variant italic">
+              &ldquo;{persona.psychology}&rdquo;
+            </p>
           </div>
         </div>
 
         <div className="mt-auto pt-4 border-t border-outline-variant/10 flex items-center justify-between">
-            <VoiceWave isPlaying={isPlaying} color={barColor} />
-            <button className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary hover:gap-2 transition-all group/btn">
-              Select Persona
-              <ChevronRight className="size-3 group-hover/btn:translate-x-1 transition-transform" />
-            </button>
+          <VoiceWave isPlaying={isPlaying} color={barColor} />
+          <button className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary hover:gap-2 transition-all group/btn">
+            Select Persona
+            <ChevronRight className="size-3 group-hover/btn:translate-x-1 transition-transform" />
+          </button>
         </div>
       </div>
     </PerspectiveCard>
@@ -174,13 +175,29 @@ const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: PersonaPro
 // --- Main Page ---
 
 export default function VoicePersonas() {
+  const [personas, setPersonas] = React.useState<AiPersona[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
   const [playingId, setPlayingId] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [activeTheme, setActiveTheme] = React.useState<string | null>(null);
 
-  const filtered = VOICE_PERSONAS.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  React.useEffect(() => {
+    const fetch = async () => {
+      try {
+        const data = await api.listAiPersonas();
+        setPersonas(data);
+      } catch (err) {
+        console.error('Failed to load personas:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetch();
+  }, []);
+
+  const filtered = personas.filter(p =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.language.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -198,104 +215,116 @@ export default function VoicePersonas() {
     <div className="flex-1 flex flex-col relative">
       {/* Animated Background Glow that shifts with Persona */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-         <motion.div 
-           animate={{ 
-             backgroundColor: playingId ? "rgba(var(--primary-rgb), 0.05)" : "rgba(0,0,0,0)",
-             scale: playingId ? 1.2 : 1
-           }}
-           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] rounded-full blur-[160px] opacity-20 transition-all duration-1000"
-         />
+        <motion.div
+          animate={{
+            backgroundColor: playingId ? "rgba(var(--primary-rgb), 0.05)" : "rgba(0,0,0,0)",
+            scale: playingId ? 1.2 : 1
+          }}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] rounded-full blur-[160px] opacity-20 transition-all duration-1000"
+        />
       </div>
 
-      <Header 
-        title="Persona Studio" 
-        subtitle="Voice Character Gallery" 
+      <Header
+        title="Persona Studio"
+        subtitle="Voice Character Gallery"
         actions={
           <div className="flex items-center gap-4">
-             <div className="bg-surface-low rounded-2xl p-1 pr-3 flex items-center gap-3 border border-outline-variant/10 focus-within:border-primary/50 transition-all shadow-sm shadow-primary/5">
-                <input 
-                  type="text" 
-                  placeholder="Describe a voice persona..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent border-none focus:ring-0 text-sm px-4 py-2 w-72"
-                />
-                <button 
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
-                >
-                  {isGenerating ? (
-                    <div className="flex items-center gap-2">
-                      <div className="size-3 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-                      <span>Creating...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <Sparkles className="size-3.5" />
-                      <span>One-Step Create</span>
-                    </>
-                  )}
-                </button>
-             </div>
+            <div className="bg-surface-low rounded-2xl p-1 pr-3 flex items-center gap-3 border border-outline-variant/10 focus-within:border-primary/50 transition-all shadow-sm shadow-primary/5">
+              <input
+                type="text"
+                placeholder="Describe a voice persona..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-transparent border-none focus:ring-0 text-sm px-4 py-2 w-72"
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                {isGenerating ? (
+                  <div className="flex items-center gap-2">
+                    <div className="size-3 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
+                    <span>Creating...</span>
+                  </div>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" />
+                    <span>One-Step Create</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         }
       />
 
       <main className="p-8 lg:p-12 relative z-10">
         <div className="max-w-7xl mx-auto space-y-12">
-          
+
           <div className="flex items-center justify-between pb-6 border-b border-outline-variant/5">
             <div className="space-y-1">
               <h2 className="text-xl font-headline font-bold">Recommended Personas</h2>
               <p className="text-xs text-outline font-medium tracking-wide uppercase">Psychology-tuned agents for every debt stage</p>
             </div>
             <div className="flex gap-2">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-outline-variant/20 bg-surface-low text-[10px] font-bold uppercase tracking-widest">
-                  <Globe className="size-3 text-primary" />
-                  8 Languages
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-outline-variant/20 bg-surface-low text-[10px] font-bold uppercase tracking-widest">
-                  <ShieldCheck className="size-3 text-primary" />
-                  Enterprise Trained
-                </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-outline-variant/20 bg-surface-low text-[10px] font-bold uppercase tracking-widest">
+                <Globe className="size-3 text-primary" />
+                8 Languages
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-outline-variant/20 bg-surface-low text-[10px] font-bold uppercase tracking-widest">
+                <ShieldCheck className="size-3 text-primary" />
+                Enterprise Trained
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-             <AnimatePresence mode="popLayout">
-               {filtered.map((persona, i) => (
-                 <motion.div
-                   key={persona.id}
-                   initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                   transition={{ delay: i * 0.05, duration: 0.5 }}
-                   onMouseEnter={() => setActiveTheme(persona.themeColor)}
-                   onMouseLeave={() => setActiveTheme(null)}
-                   layout
-                 >
-                   <PersonaCard 
-                     persona={persona} 
-                     isPlaying={playingId === persona.id}
-                     onTogglePlay={() => togglePlay(persona.id)}
-                   />
-                 </motion.div>
-               ))}
-             </AnimatePresence>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 min-h-[400px]">
+            <AnimatePresence mode="popLayout">
+              {isLoading ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-20 gap-4">
+                  <Loader2 className="size-12 text-primary animate-spin" />
+                  <p className="text-sm font-bold text-outline animate-pulse">Syncing Neural Grid...</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="col-span-full flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+                  <UserRound className="size-16 text-outline" />
+                  <p className="text-sm font-bold text-outline">No personas found matching your search.</p>
+                </div>
+              ) : (
+                filtered.map((persona, i) => (
+                  <motion.div
+                    key={persona.id}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: i * 0.05, duration: 0.5 }}
+                    onMouseEnter={() => setActiveTheme(persona.themeColor)}
+                    onMouseLeave={() => setActiveTheme(null)}
+                    layout
+                  >
+                    <PersonaCard
+                      persona={persona}
+                      isPlaying={playingId === persona.id}
+                      onTogglePlay={() => togglePlay(persona.id)}
+                    />
+                  </motion.div>
+                ))
+              )}
+            </AnimatePresence>
           </div>
 
-          <motion.section 
-             initial={{ opacity: 0 }}
-             whileInView={{ opacity: 1 }}
-             className="mt-20 p-12 rounded-[3rem] border border-primary/10 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 relative overflow-hidden"
+          <motion.section
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            className="mt-20 p-12 rounded-[3rem] border border-primary/10 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 p-12 opacity-10">
-               <Brain className="size-48" />
+              <Brain className="size-48" />
             </div>
             <div className="max-w-2xl space-y-6 relative z-10">
               <div className="flex items-center gap-2 text-primary font-bold uppercase tracking-[0.3em] text-xs">
-                 <Zap className="size-4" />
-                 Neural Synergy
+                <Zap className="size-4" />
+                Neural Synergy
               </div>
               <h3 className="text-4xl font-headline font-extrabold tracking-tight leading-[1.1]">
                 Voice isn&apos;t just audio.<br />
@@ -305,13 +334,13 @@ export default function VoicePersonas() {
                 Sonix personas aren&apos;t just synthesized text. Each one is trained on a specific behavioral economics model—from warmth-first cooperative triggers (Empathy) to data-driven decision pressure (Authority).
               </p>
               <div className="flex gap-4 pt-4">
-                 <button className="px-6 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-xl shadow-primary/20 flex items-center gap-2 group">
-                   Deep Configuration
-                   <ArrowRight className="size-4 group-hover:translate-x-1 transition-transform" />
-                 </button>
-                 <button className="px-6 py-3 rounded-xl border border-outline-variant/30 font-bold text-sm bg-surface-low/50 backdrop-blur-md">
-                   Persona Documentation
-                 </button>
+                <button className="px-6 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-xl shadow-primary/20 flex items-center gap-2 group">
+                  Deep Configuration
+                  <ArrowRight className="size-4 group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button className="px-6 py-3 rounded-xl border border-outline-variant/30 font-bold text-sm bg-surface-low/50 backdrop-blur-md">
+                  Persona Documentation
+                </button>
               </div>
             </div>
           </motion.section>

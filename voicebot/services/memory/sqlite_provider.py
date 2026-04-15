@@ -361,6 +361,34 @@ class SQLiteProvider:
         """)
         conn.commit()
 
+        # 4. AI Persona Builder Registry
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS aiPersonas (
+                id                 TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+                name               TEXT NOT NULL,
+                gender             TEXT DEFAULT 'Female',
+                language           TEXT DEFAULT 'English',
+                tone               TEXT DEFAULT '',
+                use_case           TEXT DEFAULT '',
+                psychology         TEXT DEFAULT '',
+                emotion            TEXT DEFAULT 'Empathetic',
+                urgency            REAL DEFAULT 45,
+                empathy            REAL DEFAULT 75,
+                stability          REAL DEFAULT 80,
+                clarity            REAL DEFAULT 60,
+                style_exaggeration REAL DEFAULT 35,
+                base_model         TEXT DEFAULT 'Sonix-Flash-1',
+                selected_voice     TEXT DEFAULT 'v1',
+                theme_color        TEXT DEFAULT 'blue',
+                is_active          INTEGER NOT NULL DEFAULT 1,
+                is_deployed        INTEGER NOT NULL DEFAULT 0,
+                created_at         REAL NOT NULL DEFAULT (strftime('%s','now')),
+                updated_at         REAL NOT NULL DEFAULT (strftime('%s','now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_personas_active ON aiPersonas(is_active);
+        """)
+        conn.commit()
+
         # 3b. Migrate legacy rows missing columns
         existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(workflows)").fetchall()}
         if "is_active" not in existing_cols:
@@ -376,11 +404,25 @@ class SQLiteProvider:
         if "source" not in existing_kb_cols:
             conn.execute("ALTER TABLE knowledge_base ADD COLUMN source TEXT")
             logger.info("KB Migration: Added 'source' column for filename-based filtering.")
+        
+        # AI Personas Migration
+        existing_persona_cols = {row[1] for row in conn.execute("PRAGMA table_info(aiPersonas)").fetchall()}
+        if "theme_color" not in existing_persona_cols:
+            conn.execute("ALTER TABLE aiPersonas ADD COLUMN theme_color TEXT DEFAULT 'blue'")
+            # Backfill core personas with their specific colors
+            color_map = {
+                'ananya': 'amber', 'arjun': 'blue', 'priya': 'emerald', 'ravi': 'rose',
+                'kavitha': 'purple', 'vikram': 'cyan', 'diya': 'teal', 'aditya': 'orange'
+            }
+            for pid, color in color_map.items():
+                conn.execute("UPDATE aiPersonas SET theme_color = ? WHERE id = ?", (color, pid))
+            logger.info("Migrated aiPersonas: Added theme_color column.")
         conn.commit()
 
         admin_id = self._seed_default_admin()
         self._backfill_owner_columns(admin_id)
         self._seed_default_bots()
+        self._seed_ai_personas()
 
     def _seed_default_bots(self) -> None:
         """
@@ -581,6 +623,163 @@ class SQLiteProvider:
 
         conn.commit()
         logger.info("Seeded starter bot pack (%d)", len(starter))
+
+    def _seed_ai_personas(self) -> None:
+        """
+        Seed the aiPersonas table with the 8 core personas on a fresh database.
+        Skips if any rows already exist.
+        """
+        conn = self._get_conn()
+        count = conn.execute("SELECT COUNT(1) FROM aiPersonas").fetchone()[0]
+        if count > 0:
+            return  # already seeded — skip
+
+        core = [
+            {
+                "id": "ananya",
+                "name": "Ananya",
+                "gender": "Female",
+                "language": "Hindi/Hinglish",
+                "tone": "Warm · Empathetic",
+                "use_case": "Soft collections (DPD 1-30)",
+                "psychology": "Helpful sister persona. Trust-builder.",
+                "emotion": "Empathetic",
+                "urgency": 30, "empathy": 85, "stability": 80, "clarity": 60,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v1",
+                "theme_color": "amber",
+            },
+            {
+                "id": "arjun",
+                "name": "Arjun",
+                "gender": "Male",
+                "language": "Hindi/Hinglish",
+                "tone": "Firm · Professional",
+                "use_case": "Mid-stage (DPD 30-90)",
+                "psychology": "Senior RM energy.",
+                "emotion": "Firm",
+                "urgency": 70, "empathy": 40, "stability": 90, "clarity": 80,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Pro-3",
+                "selected_voice": "v2",
+                "theme_color": "blue",
+            },
+            {
+                "id": "priya",
+                "name": "Priya",
+                "gender": "Female",
+                "language": "English",
+                "tone": "Upbeat · Professional",
+                "use_case": "Cards acquisition",
+                "psychology": "Smart financial advisor.",
+                "emotion": "Analytical",
+                "urgency": 60, "empathy": 50, "stability": 70, "clarity": 90,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v1",
+                "theme_color": "emerald",
+            },
+            {
+                "id": "ravi",
+                "name": "Ravi",
+                "gender": "Male",
+                "language": "Hindi",
+                "tone": "Authoritative · Measured",
+                "use_case": "NPA settlement",
+                "psychology": "Data-driven pressure.",
+                "emotion": "Firm",
+                "urgency": 85, "empathy": 20, "stability": 95, "clarity": 75,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Pro-3",
+                "selected_voice": "v2",
+                "theme_color": "rose",
+            },
+            {
+                "id": "kavitha",
+                "name": "Kavitha",
+                "gender": "Female",
+                "language": "Tamil + English",
+                "tone": "Patient · Respectful",
+                "use_case": "Regional collections",
+                "psychology": "Cultural respect + patience.",
+                "emotion": "Empathetic",
+                "urgency": 40, "empathy": 90, "stability": 85, "clarity": 60,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v3",
+                "theme_color": "purple",
+            },
+            {
+                "id": "vikram",
+                "name": "Vikram",
+                "gender": "Male",
+                "language": "English",
+                "tone": "Energetic · Consultative",
+                "use_case": "Cross-sell, upsell",
+                "psychology": "Consultative expert.",
+                "emotion": "Analytical",
+                "urgency": 55, "empathy": 45, "stability": 75, "clarity": 90,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v1",
+                "theme_color": "cyan",
+            },
+            {
+                "id": "diya",
+                "name": "Diya",
+                "gender": "Female",
+                "language": "Hinglish",
+                "tone": "Calm · Supportive",
+                "use_case": "Hardship cases",
+                "psychology": "Dignity-preserving.",
+                "emotion": "Empathetic",
+                "urgency": 20, "empathy": 95, "stability": 88, "clarity": 60,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v3",
+                "theme_color": "teal",
+            },
+            {
+                "id": "aditya",
+                "name": "Aditya",
+                "gender": "Male",
+                "language": "English/Hindi",
+                "tone": "Friendly · Celebratory",
+                "use_case": "Relationship building",
+                "psychology": "Positive reinforcement logic.",
+                "emotion": "Casual",
+                "urgency": 10, "empathy": 80, "stability": 60, "clarity": 60,
+                "style_exaggeration": 35,
+                "base_model": "Sonix-Flash-1",
+                "selected_voice": "v2",
+                "theme_color": "orange",
+            },
+        ]
+
+        insert_sql = """
+            INSERT OR IGNORE INTO aiPersonas (
+                id, name, gender, language, tone, use_case, psychology,
+                emotion, urgency, empathy, stability, clarity,
+                style_exaggeration, base_model, selected_voice, theme_color
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        for p in core:
+            try:
+                conn.execute(insert_sql, (
+                    p["id"], p["name"], p["gender"], p["language"],
+                    p["tone"], p["use_case"], p["psychology"], p["emotion"],
+                    float(p["urgency"]), float(p["empathy"]),
+                    float(p["stability"]), float(p["clarity"]),
+                    float(p["style_exaggeration"]),
+                    p["base_model"], p["selected_voice"], p["theme_color"],
+                ))
+            except Exception as _e:
+                logger.warning("AI persona seed failed for %s: %s", p.get("id"), _e)
+
+        conn.commit()
+        logger.info("Seeded 8 core AI personas")
+
 
     def _hash_password_seed(self, password: str, *, iterations: int = 150_000) -> str:
         salt = os.urandom(16).hex()
@@ -1745,3 +1944,157 @@ class SQLiteProvider:
             self._conn = None
         self._executor.shutdown(wait=False)
         logger.info("SQLite provider closed")
+
+    # ─── 🧠 AI Persona Builder CRUD ───────────────────────────────────────────
+
+    async def create_ai_persona(self, data: dict) -> dict:
+        """Create a new AI Persona in the registry."""
+        def _do():
+            conn = self._get_conn()
+            persona_id = str(uuid.uuid4())[:16]
+            conn.execute(
+                """
+                INSERT INTO aiPersonas (
+                    id, name, gender, language, tone, use_case, psychology,
+                    emotion, urgency, empathy, stability, clarity,
+                    style_exaggeration, base_model, selected_voice, theme_color
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    persona_id,
+                    data.get("name", "Unnamed"),
+                    data.get("gender", "Female"),
+                    data.get("language", "English"),
+                    data.get("tone", ""),
+                    data.get("useCase", data.get("use_case", "")),
+                    data.get("psychology", ""),
+                    data.get("emotion", "Empathetic"),
+                    float(data.get("urgency", 45)),
+                    float(data.get("empathy", 75)),
+                    float(data.get("stability", 80)),
+                    float(data.get("clarity", 60)),
+                    float(data.get("styleExaggeration", data.get("style_exaggeration", 35))),
+                    data.get("baseModel", data.get("base_model", "Sonix-Flash-1")),
+                    data.get("selectedVoice", data.get("selected_voice", "v1")),
+                    data.get("themeColor", data.get("theme_color", "blue")),
+                ),
+            )
+            conn.commit()
+            return {"id": persona_id, **data}
+        return await self._run(_do)
+
+    async def get_ai_persona(self, persona_id: str) -> Optional[dict]:
+        """Retrieve a single AI Persona by ID."""
+        def _do():
+            row = self._get_conn().execute(
+                "SELECT * FROM aiPersonas WHERE id = ?", (persona_id,)
+            ).fetchone()
+            return _persona_row_to_dict(row) if row else None
+        return await self._run(_do)
+
+    async def list_ai_personas(self) -> list[dict]:
+        """List all AI Personas ordered by creation date."""
+        def _do():
+            rows = self._get_conn().execute(
+                "SELECT * FROM aiPersonas ORDER BY created_at DESC"
+            ).fetchall()
+            return [_persona_row_to_dict(r) for r in rows]
+        return await self._run(_do)
+
+    async def update_ai_persona(self, persona_id: str, data: dict) -> bool:
+        """Update fields on an existing AI Persona."""
+        field_map = {
+            "name": "name",
+            "gender": "gender",
+            "language": "language",
+            "tone": "tone",
+            "useCase": "use_case",
+            "use_case": "use_case",
+            "psychology": "psychology",
+            "emotion": "emotion",
+            "urgency": "urgency",
+            "empathy": "empathy",
+            "stability": "stability",
+            "clarity": "clarity",
+            "styleExaggeration": "style_exaggeration",
+            "style_exaggeration": "style_exaggeration",
+            "baseModel": "base_model",
+            "base_model": "base_model",
+            "selectedVoice": "selected_voice",
+            "selected_voice": "selected_voice",
+            "is_active": "is_active",
+            "is_deployed": "is_deployed",
+            "themeColor": "theme_color",
+            "theme_color": "theme_color",
+        }
+        def _do():
+            conn = self._get_conn()
+            updates = {}
+            for k, v in data.items():
+                col = field_map.get(k)
+                if col:
+                    updates[col] = v
+            if not updates:
+                return False
+            updates["updated_at"] = time.time()
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [persona_id]
+            conn.execute(f"UPDATE aiPersonas SET {set_clause} WHERE id = ?", values)
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
+    async def delete_ai_persona(self, persona_id: str) -> bool:
+        """Permanently delete an AI Persona."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute("DELETE FROM aiPersonas WHERE id = ?", (persona_id,))
+            conn.commit()
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+        return await self._run(_do)
+
+    async def toggle_ai_persona_deployment(self, persona_id: str) -> Optional[dict]:
+        """Toggle the is_deployed flag on a persona. Returns updated persona."""
+        def _do():
+            conn = self._get_conn()
+            conn.execute(
+                """
+                UPDATE aiPersonas
+                SET is_deployed = CASE WHEN is_deployed = 1 THEN 0 ELSE 1 END,
+                    updated_at  = strftime('%s','now')
+                WHERE id = ?
+                """,
+                (persona_id,),
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM aiPersonas WHERE id = ?", (persona_id,)).fetchone()
+            return _persona_row_to_dict(row) if row else None
+        return await self._run(_do)
+
+
+def _persona_row_to_dict(row) -> dict:
+    """Convert a sqlite3.Row from aiPersonas to a clean camelCase dict for the API."""
+    d = dict(row)
+    return {
+        "id":               d.get("id"),
+        "name":             d.get("name"),
+        "gender":           d.get("gender"),
+        "language":         d.get("language"),
+        "tone":             d.get("tone"),
+        "useCase":          d.get("use_case"),
+        "psychology":       d.get("psychology"),
+        "emotion":          d.get("emotion"),
+        "urgency":          d.get("urgency"),
+        "empathy":          d.get("empathy"),
+        "stability":        d.get("stability"),
+        "clarity":          d.get("clarity"),
+        "styleExaggeration": d.get("style_exaggeration"),
+        "baseModel":        d.get("base_model"),
+        "selectedVoice":    d.get("selected_voice"),
+        "themeColor":       d.get("theme_color", "blue"),
+        "isActive":         bool(d.get("is_active", 1)),
+        "isDeployed":       bool(d.get("is_deployed", 0)),
+        "createdAt":        d.get("created_at"),
+        "updatedAt":        d.get("updated_at"),
+    }
+

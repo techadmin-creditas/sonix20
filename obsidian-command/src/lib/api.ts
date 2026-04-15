@@ -813,4 +813,74 @@ export const api = {
     if (!res.ok) throw new Error('Failed to upload PDF');
     return res.json();
   },
+
+  // ─── 🧠 AI Persona Builder ───
+  async listAiPersonas(): Promise<AiPersona[]> {
+    const res = await fetch(`${BASE_URL}/ai-personas`);
+    if (!res.ok) throw new Error('Failed to fetch AI personas');
+    const data = await res.json();
+    return data.personas || [];
+  },
+
+  async createAiPersona(data: Partial<AiPersona>): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create AI persona');
+    const body = await res.json();
+    return body.persona;
+  },
+
+  async updateAiPersona(id: string, data: Partial<AiPersona>): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update AI persona');
+    const body = await res.json();
+    return body.persona;
+  },
+
+  async deleteAiPersona(id: string): Promise<void> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete AI persona');
+  },
+
+  async toggleAiPersonaDeploy(id: string): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}/toggle-deploy`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to toggle AI persona deployment');
+    const body = await res.json();
+    return body.persona;
+  },
 };
+
+export interface AiPersona {
+  id: string;
+  name: string;
+  gender: 'Female' | 'Male' | 'Non-binary';
+  language: string;
+  tone: string;
+  useCase: string;
+  psychology: string;
+  emotion: string;
+  urgency: number;
+  empathy: number;
+  stability: number;
+  clarity: number;
+  styleExaggeration: number;
+  baseModel: string;
+  selectedVoice: string;
+  themeColor: string;
+  isActive: boolean;
+  isDeployed: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+

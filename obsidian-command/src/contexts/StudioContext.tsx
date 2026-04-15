@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { VOICE_PERSONAS as INITIAL_PERSONAS, PersonaProfile, PersonaTemplate } from '../data/personaData';
+import { VOICE_PERSONAS as INITIAL_PERSONAS, PersonaTemplate } from '../data/personaData';
 import { VOICE_RELAYS, type VoiceRelay } from '../data/voiceData';
+import { api, type AiPersona } from '../lib/api';
 
-export type { PersonaProfile, PersonaTemplate };
+export type { AiPersona as PersonaProfile, PersonaTemplate };
 
 export interface ActivityItem {
   id: string;
@@ -20,7 +21,7 @@ export interface StudioMetrics {
 }
 
 export interface StudioState {
-  personas: PersonaProfile[];
+  personas: AiPersona[];
   deployedIds: string[];
   activePersonaId: string;
   activityLog: ActivityItem[];
@@ -29,10 +30,11 @@ export interface StudioState {
 }
 
 interface StudioContextType extends StudioState {
-  addPersona: (persona: any) => void;
-  updatePersona: (id: string, data: any) => void;
-  deletePersona: (id: string) => void;
-  toggleDeployment: (id: string) => void;
+  refreshPersonas: () => Promise<void>;
+  addPersona: (persona: Partial<AiPersona>) => Promise<void>;
+  updatePersona: (id: string, data: Partial<AiPersona>) => Promise<void>;
+  deletePersona: (id: string) => Promise<void>;
+  toggleDeployment: (id: string) => Promise<void>;
   setActivePersonaId: (id: string) => void;
   recordActivity: (action: string, user?: string) => void;
   setMetrics: (metrics: Partial<StudioMetrics>) => void;
@@ -45,9 +47,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<StudioState>(() => {
     const saved = localStorage.getItem('studio_unified_state');
     const defaults: StudioState = {
-      personas: INITIAL_PERSONAS,
+      personas: [],
       deployedIds: [],
-      activePersonaId: INITIAL_PERSONAS[0]?.id || '',
+      activePersonaId: '',
       activityLog: [
         { id: '1', user: 'System', action: 'Neural Grid Initialized', time: 'Just now' }
       ],
@@ -67,6 +69,24 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return defaults;
   });
 
+  const refreshPersonas = async () => {
+    try {
+      const personas = await api.listAiPersonas();
+      setState(prev => ({
+        ...prev,
+        personas,
+        deployedIds: personas.filter(p => p.isDeployed).map(p => p.id),
+        activePersonaId: prev.activePersonaId || personas[0]?.id || ''
+      }));
+    } catch (err) {
+      console.error('Failed to refresh personas:', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshPersonas();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('studio_unified_state', JSON.stringify(state));
   }, [state]);
@@ -85,60 +105,66 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const addPersona = (newPersona: any) => {
-    const persona: PersonaProfile = {
-      ...newPersona,
-      id: newPersona.id || `p-${Date.now()}`,
-      language: newPersona.language || 'English',
-      tone: newPersona.tone || 'Neutral',
-      urgency: newPersona.urgency || 50,
-      empathy: newPersona.empathy || 50,
-      stability: newPersona.stability || 75,
-      baseModel: newPersona.baseModel || 'Sonix-Flash-1',
-      selectedVoice: newPersona.selectedVoice || 'v1'
-    };
-    setState(prev => ({
-      ...prev,
-      personas: [persona, ...prev.personas]
-    }));
-    recordActivity(`Forge Synthesis Complete: ${persona.name}`);
-  };
-
-  const updatePersona = (id: string, data: any) => {
-    setState(prev => ({
-      ...prev,
-      personas: prev.personas.map(p => p.id === id ? { ...p, ...data } : p)
-    }));
-    recordActivity(`Updated Persona: ${data.name || id}`);
-  };
-
-  const deletePersona = (id: string) => {
-    setState(prev => {
-      const p = prev.personas.find(pers => pers.id === id);
-      const newState = {
+  const addPersona = async (newPersona: Partial<AiPersona>) => {
+    try {
+      const persona = await api.createAiPersona(newPersona);
+      setState(prev => ({
         ...prev,
-        personas: prev.personas.filter(p => p.id !== id),
-        deployedIds: prev.deployedIds.filter(i => i !== id)
-      };
-      if (prev.activePersonaId === id) {
-        newState.activePersonaId = newState.personas[0]?.id || '';
-      }
-      return newState;
-    });
-    recordActivity(`Deleted Persona: ${id}`);
+        personas: [persona, ...prev.personas]
+      }));
+      recordActivity(`Forge Synthesis Complete: ${persona.name}`);
+    } catch (err) {
+      console.error('Failed to add persona:', err);
+    }
   };
 
-  const toggleDeployment = (id: string) => {
-    setState(prev => {
-      const isActive = prev.deployedIds.includes(id);
-      return {
+  const updatePersona = async (id: string, data: Partial<AiPersona>) => {
+    try {
+      await api.updateAiPersona(id, data);
+      setState(prev => ({
         ...prev,
-        deployedIds: isActive
-          ? prev.deployedIds.filter(i => i !== id)
-          : [...prev.deployedIds, id]
-      };
-    });
-    recordActivity(`Deployment Toggled: ${id}`);
+        personas: prev.personas.map(p => p.id === id ? { ...p, ...data } : p)
+      }));
+      recordActivity(`Updated Persona: ${data.name || id}`);
+    } catch (err) {
+      console.error('Failed to update persona:', err);
+    }
+  };
+
+  const deletePersona = async (id: string) => {
+    try {
+      await api.deleteAiPersona(id);
+      setState(prev => {
+        const newState = {
+          ...prev,
+          personas: prev.personas.filter(p => p.id !== id),
+          deployedIds: prev.deployedIds.filter(i => i !== id)
+        };
+        if (prev.activePersonaId === id) {
+          newState.activePersonaId = newState.personas[0]?.id || '';
+        }
+        return newState;
+      });
+      recordActivity(`Deleted Persona: ${id}`);
+    } catch (err) {
+      console.error('Failed to delete persona:', err);
+    }
+  };
+
+  const toggleDeployment = async (id: string) => {
+    try {
+      const updated = await api.toggleAiPersonaDeploy(id);
+      setState(prev => ({
+        ...prev,
+        personas: prev.personas.map(p => p.id === id ? updated : p),
+        deployedIds: updated.isDeployed
+          ? [...prev.deployedIds, id]
+          : prev.deployedIds.filter(i => i !== id)
+      }));
+      recordActivity(`Deployment Toggled: ${id}`);
+    } catch (err) {
+      console.error('Failed to toggle deployment:', err);
+    }
   };
 
   const setActivePersonaId = (id: string) => {
@@ -160,6 +186,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   return (
     <StudioContext.Provider value={{
       ...state,
+      refreshPersonas,
       addPersona,
       updatePersona,
       deletePersona,

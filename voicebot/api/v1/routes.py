@@ -855,6 +855,88 @@ async def update_bot(bot_id: str, data: dict, request: Request):
     return {"status": "updated", "bot_id": bot_id}
 
 
+# ─── AI Persona Builder CRUD ──────────────────────────────────────────────────
+
+@router.get("/ai-personas", tags=["ai-personas"])
+async def list_ai_personas(request: Request):
+    """List all AI Personas."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    personas = await db.list_ai_personas()
+    return {"personas": personas, "count": len(personas)}
+
+
+@router.post("/ai-personas", tags=["ai-personas"])
+async def create_ai_persona(data: dict, request: Request):
+    """Create a new AI Persona."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not data.get("name", "").strip():
+        raise HTTPException(status_code=422, detail="'name' is required")
+    db = await get_db()
+    persona = await db.create_ai_persona(data)
+    return {"status": "created", "persona": persona}
+
+
+@router.get("/ai-personas/{persona_id}", tags=["ai-personas"])
+async def get_ai_persona(persona_id: str, request: Request):
+    """Get a single AI Persona by ID."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    persona = await db.get_ai_persona(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="AI Persona not found")
+    return persona
+
+
+@router.patch("/ai-personas/{persona_id}", tags=["ai-personas"])
+async def update_ai_persona(persona_id: str, data: dict, request: Request):
+    """Update fields on an existing AI Persona."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    persona = await db.get_ai_persona(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="AI Persona not found")
+    ok = await db.update_ai_persona(persona_id, data)
+    updated = await db.get_ai_persona(persona_id)
+    return {"status": "updated" if ok else "noop", "persona": updated}
+
+
+@router.delete("/ai-personas/{persona_id}", tags=["ai-personas"])
+async def delete_ai_persona(persona_id: str, request: Request):
+    """Permanently delete an AI Persona."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    persona = await db.get_ai_persona(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="AI Persona not found")
+    ok = await db.delete_ai_persona(persona_id)
+    return {"status": "deleted" if ok else "noop", "persona_id": persona_id}
+
+
+@router.post("/ai-personas/{persona_id}/toggle-deploy", tags=["ai-personas"])
+async def toggle_ai_persona_deploy(persona_id: str, request: Request):
+    """Toggle active deployment status for a persona."""
+    actor_user_id, _ = _actor(request)
+    if not actor_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db = await get_db()
+    persona = await db.get_ai_persona(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="AI Persona not found")
+    updated = await db.toggle_ai_persona_deployment(persona_id)
+    return {"status": "toggled", "persona": updated}
+
+
 @router.post("/bots/{bot_id}/stt-sandbox", tags=["bots", "stt"])
 async def stt_sandbox(
     bot_id: str,
