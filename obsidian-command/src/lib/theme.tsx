@@ -12,6 +12,8 @@ export function applyThemeToDocument(mode: ThemeMode) {
   }
 }
 
+import { themeConfig } from '../themeConfig';
+
 export function readStoredTheme(): ThemeMode {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
@@ -19,7 +21,7 @@ export function readStoredTheme(): ThemeMode {
   } catch {
     /* ignore */
   }
-  return 'dark';
+  return themeConfig.selectedMode || 'dark';
 }
 
 type ThemeContextValue = {

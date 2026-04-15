@@ -1,13 +1,15 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from 'framer-motion';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
 import { Header } from '../components/Header';
 import { SESSIONS } from '../constants';
-import { Users, Bot, Calendar, Timer, ArrowUpRight, PlusCircle, Sparkles, BarChart3, TrendingUp, Smile, Clock, Loader2 } from 'lucide-react';
+import { Users, Bot, Calendar, Timer, Activity, ArrowUpRight, PlusCircle, Sparkles, BarChart3, TrendingUp, Smile, Clock, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { NeuralBackground } from '../components/NeuralBackground';
 import { api, DashboardStats, SessionRecord } from '../lib/api';
 
 const CHART_DATA = [
@@ -105,29 +107,33 @@ export default function Dashboard() {
   ] : SENTIMENT_DATA;
 
   return (
-    <div className="flex-1 flex flex-col ">
+    <div className="flex-1 flex flex-col relative min-h-screen">
+      <NeuralBackground />
+
       <Header
-        title="Overview"
-        subtitle="Mission Control"
-      // actions={
-      //   <Link
-      //     to="/personas/create"
-      //     className="flex items-center gap-2 px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-lg active:scale-95 transition-all"
-      //   >
-      //     <PlusCircle className="size-5" />
-      //     <span>New Bot</span>
-      //   </Link>
-      // }
+        title="Dashboard"
+        subtitle="Real-time analytics and performance metrics"
       />
 
-      <div className="p-10 flex flex-col gap-10">
+      <div className="relative z-10 p-10 flex flex-col gap-10">
         {/* KPI Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <motion.div 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1 }
+            }
+          }}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        >
           <StatCard
             icon={Users}
             label="Total Sessions"
             value={stats?.metrics.totalSessions.toLocaleString() || "0"}
-            trend="+0%"
+            trend="+12% Active"
             trendColor="text-emerald-500"
             onClick={() => navigate('/sessions')}
           />
@@ -135,7 +141,7 @@ export default function Dashboard() {
             icon={Bot}
             label="Active Bots"
             value={stats?.metrics.activeBots.toString() || "0"}
-            trend="Live"
+            trend="Available now"
             trendColor="text-primary"
             onClick={() => navigate('/personas')}
           />
@@ -143,49 +149,77 @@ export default function Dashboard() {
             icon={Calendar}
             label="Avg Duration"
             value={stats?.metrics.avgDuration || "0s"}
-            trend="Sessions"
+            trend="P99 Latency"
             trendColor="text-on-surface-variant"
             onClick={() => navigate('/sessions')}
           />
           <StatCard
-            icon={Timer}
+            icon={Activity}
             label="Success Rate"
             value={stats?.metrics.successRate || "0%"}
-            trend="Target 95%"
+            trend="Performance"
             trendColor="text-emerald-500"
-            onClick={() => navigate('/sessions')}
+            onClick={() => navigate('/analytics')}
           />
-        </div>
+        </motion.div>
 
         {/* Quick Actions / Featured Section */}
-        <div className="bg-surface-low rounded-3xl ghost-border p-8 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden group cursor-pointer" onClick={() => navigate('/personas/create')}>
-          <div className="absolute inset-0 bg-radial-gradient from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-          <div className="relative z-10 flex flex-col gap-2">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <Sparkles className="size-5" />
+        <motion.div
+          variants={{
+            hidden: { opacity: 0, scale: 0.95 },
+            visible: { opacity: 1, scale: 1 }
+          }}
+          className="bg-surface-lowest rounded-4xl premium-forge-border p-8 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden group cursor-pointer shadow-sm hover:shadow-2xl dark:hover:shadow-primary/5 transition-all duration-700" 
+          onClick={() => navigate('/personas/create')}
+        >
+          <div className="absolute inset-0 studio-mesh-gradient opacity-20 group-hover:opacity-30 transition-opacity duration-1000" />
+          <div className="relative z-10 flex flex-col gap-3">
+            <div className="flex items-center gap-4">
+              <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-all duration-500">
+                <Sparkles className="size-6" />
               </div>
-              <h3 className="text-2xl font-headline font-extrabold">Ready to expand?</h3>
+              <div>
+                <h3 className="text-2xl font-headline font-extrabold text-on-surface tracking-tight">Ready to expand?</h3>
+                <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em]">Scalable Autonomous Agents</p>
+              </div>
             </div>
-            <p className="text-outline text-sm max-w-md">Deploy a new specialized AI agent to handle customer inquiries, bookings, or technical support in minutes.</p>
+            <p className="text-outline text-sm max-w-lg leading-relaxed mt-2 font-medium">Deploy a new specialized AI agent to handle customer inquiries, bookings, or technical support in minutes.</p>
           </div>
-          <div className="relative z-10 flex items-center gap-3 px-8 py-4 rounded-2xl ember-gradient text-on-primary-fixed font-bold tracking-tight shadow-xl shadow-primary/20 active:scale-95 transition-all hover:shadow-primary/40">
+          <div className="relative z-10 flex items-center gap-3 px-10 py-5 rounded-2xl bg-primary text-on-primary-fixed font-bold tracking-tight shadow-xl studio-glow-amber active:scale-95 transition-all hover:scale-105 hover:brightness-110">
             <PlusCircle className="size-6" />
             <span className="text-lg">Create New Bot</span>
           </div>
-        </div>
+          
+          {/* Decorative Elements */}
+          <div className="absolute -bottom-10 -right-10 size-48 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
+        </motion.div>
 
         {/* Charts Row 1 */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/sessions')}>
+        <motion.div 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1, delayChildren: 0.2 }
+            }
+          }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        >
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="lg:col-span-2 bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group" 
+            onClick={() => navigate('/sessions')}
+          >
             <div className="flex justify-between items-center mb-10">
               <div>
-                <h4 className="font-headline text-lg font-bold">Sessions Over Time</h4>
-                <p className="text-outline text-sm">Traffic volume across last 30 days</p>
+                <h4 className="font-headline text-xl font-bold text-on-surface">Sessions Over Time</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Traffic volume across last 30 days</p>
               </div>
-              <div className="flex gap-2">
-                <button className="px-4 py-1.5 rounded-lg bg-surface-highest text-xs font-bold ghost-border">Monthly</button>
-                <button className="px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-surface-highest transition-all">Weekly</button>
+              <div className="flex gap-2 p-1 bg-surface-low rounded-xl border border-outline-variant/10">
+                <button className="px-5 py-2 rounded-lg bg-primary text-on-primary-fixed text-[9px] font-bold uppercase tracking-widest shadow-lg">Monthly</button>
+                <button className="px-5 py-2 rounded-lg text-outline text-[9px] font-bold uppercase tracking-widest hover:bg-surface-highest transition-all">Weekly</button>
               </div>
             </div>
             <div className="h-[300px] w-full">
@@ -193,319 +227,489 @@ export default function Dashboard() {
                 <AreaChart data={stats?.sessionHistory && stats.sessionHistory.length > 0 ? stats.sessionHistory : CHART_DATA}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#fb8c00" stopOpacity={0.3} />
+                      <stop offset="5%" stopColor="#fb8c00" stopOpacity={0.4} />
                       <stop offset="95%" stopColor="#fb8c00" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <Tooltip
-                    contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                    itemStyle={{ color: '#ffb77b' }}
+                    contentStyle={{ backgroundColor: '#121316', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', backdropFilter: 'blur(10px)' }}
+                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px', fontFamily: 'Manrope' }}
+                    itemStyle={{ color: '#ffb77b', fontSize: '12px' }}
                   />
                   <Area type="monotone" dataKey="value" stroke="#fb8c00" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/personas')}>
-            <h4 className="font-headline text-lg font-bold mb-1">Bot Usage</h4>
-            <p className="text-outline text-sm mb-8">Performance distribution</p>
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5" 
+            onClick={() => navigate('/personas')}
+          >
+            <div className="mb-8">
+              <h4 className="font-headline text-xl font-bold text-on-surface">Bot Usage</h4>
+              <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Performance distribution</p>
+            </div>
             <div className="flex-1 flex flex-col items-center justify-center relative">
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie
                     data={pieData}
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
+                    innerRadius={70}
+                    outerRadius={95}
+                    paddingAngle={8}
                     dataKey="value"
+                    stroke="none"
                   >
                     {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+                      <Cell key={`cell-${index}`} fill={entry.color} className="hover:opacity-80 transition-opacity cursor-pointer" />
                     ))}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-3xl font-headline font-extrabold">{stats?.metrics.successRate || '0%'}</span>
-                <span className="text-[10px] text-outline font-bold uppercase tracking-widest">Success Rate</span>
+                <span className="text-4xl font-headline font-extrabold text-on-surface leading-none">{stats?.metrics.successRate || '0%'}</span>
+                <span className="text-[9px] text-primary font-black uppercase tracking-[0.2em] mt-1">Success Rate</span>
               </div>
             </div>
-            <div className="mt-8 flex flex-col gap-3" style={{ maxHeight: '107px', overflow: 'auto' }}>
+            <div className="mt-8 flex flex-col gap-4 overflow-y-auto max-h-[140px] pr-2 custom-scrollbar">
               {pieData.map((item) => (
-                <div key={item.name} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
-                    <span className="font-medium">{item.name}</span>
+                <div key={item.name} className="flex items-center justify-between group/item">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full shadow-[0_0_8px_rgba(251,140,0,0.4)]" style={{ backgroundColor: item.color }}></div>
+                    <span className="text-[11px] font-bold text-on-surface/80 group-hover/item:text-on-surface transition-colors">{item.name}</span>
                   </div>
-                  <span className="font-bold text-on-surface">{item.percentage}%</span>
+                  <span className="text-[11px] font-black text-primary">{item.percentage}%</span>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Charts Row 2 - New Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/sessions')}>
-            <div className="flex items-center gap-3 mb-6">
-              <Smile className="size-5 text-emerald-500" />
-              <h4 className="font-headline text-lg font-bold">Sentiment Analysis</h4>
+        <motion.div 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1, delayChildren: 0.3 }
+            }
+          }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            onClick={() => navigate('/sessions')}
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="size-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20 shadow-inner group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                <Smile className="size-5" />
+              </div>
+              <div>
+                <h4 className="font-headline text-lg font-bold text-on-surface">Sentiment Analysis</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Distribution of user emotions</p>
+              </div>
             </div>
-            <div className="h-[250px] w-full">
-              {(() => {
-                const sData = [
-                  { name: 'Positive', value: stats?.sentiment.positive || 0, color: '#10b981' },
-                  { name: 'Neutral', value: stats?.sentiment.neutral || 0, color: '#94a3b8' },
-                  { name: 'Negative', value: stats?.sentiment.negative || 0, color: '#f43f5e' },
-                ];
-                return (
-                  <>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={sData} layout="vertical">
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 10, fill: '#827568' }} />
-                        <Tooltip
-                          cursor={{ fill: 'transparent' }}
-                          contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                          labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                          itemStyle={{ color: '#fff' }}
-                        />
-                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                          {sData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                    <div className="mt-4 flex justify-around">
-                      {sData.map(item => (
-                        <div key={item.name} className="text-center">
-                          <p className="text-[10px] uppercase font-bold text-outline">{item.name}</p>
-                          <p className="text-lg font-extrabold" style={{ color: item.color }}>{item.value}%</p>
-                        </div>
+            
+            <div className="flex-1 flex flex-col">
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sentimentData} layout="vertical">
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#827568', fontWeight: 700 }} />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                      contentStyle={{ backgroundColor: '#121316', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                      itemStyle={{ color: '#fff', fontSize: '11px' }}
+                    />
+                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={24}>
+                      {sentimentData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
-                    </div>
-                  </>
-                );
-              })()}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-auto pt-8 flex justify-around p-4 bg-surface-low rounded-2xl border border-outline-variant/10">
+                {sentimentData.map(item => (
+                  <div key={item.name} className="text-center">
+                    <p className="text-[8px] uppercase font-black text-outline tracking-wider">{item.name}</p>
+                    <p className="text-xl font-headline font-extrabold" style={{ color: item.color }}>{Math.round(item.value)}%</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/sessions')}>
-            <div className="flex items-center gap-3 mb-6">
-              <Clock className="size-5 text-indigo-500" />
-              <h4 className="font-headline text-lg font-bold">Call Duration Distribution</h4>
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            onClick={() => navigate('/sessions')}
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="size-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20 shadow-inner group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                <Clock className="size-5" />
+              </div>
+              <div>
+                <h4 className="font-headline text-lg font-bold text-on-surface">Call Duration Distribution</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Time spent on active calls</p>
+              </div>
             </div>
-            <div className="h-[250px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={(stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA}>
-                  <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                    contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {((stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={['#ffb77b', '#ffb68e', '#8f4e00', '#fb8c00'][index % 4]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            
+            <div className="flex-1 flex flex-col">
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={(stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA}>
+                    <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#827568', fontWeight: 700 }} />
+                    <YAxis hide />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                      contentStyle={{ backgroundColor: '#121316', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                      itemStyle={{ color: '#fff', fontSize: '11px' }}
+                    />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={40}>
+                      {((stats?.durationDistribution && stats.durationDistribution.some(d => d.count > 0)) ? stats.durationDistribution : DURATION_DATA).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={['#fb8c00', '#ffb68e', '#8f4e00', '#fb8c00'][index % 4]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-auto p-4 rounded-xl bg-primary/5 border border-primary/10 text-center">
+                <p className="text-[10px] text-primary font-bold uppercase tracking-wider italic">Most calls conclude within the 1-3 minute window.</p>
+              </div>
             </div>
-            <p className="text-center text-xs text-outline mt-4 italic">Most calls conclude within the 1-3 minute window.</p>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Charts Row 3 - NEW */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/personas')}>
-            <div className="flex items-center gap-3 mb-6">
-              <TrendingUp className="size-5 text-primary" />
-              <h4 className="font-headline text-lg font-bold">Bot Success Rate</h4>
-            </div>
-            <div className="h-[250px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA}>
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
-                  <YAxis domain={[0, 100]} hide />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                    contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                    itemStyle={{ color: '#fff' }}
-                  />
-                  <Bar dataKey="rate" fill="#fb8c00" radius={[4, 4, 0, 0]}>
-                    {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#fb8c00' : index === 1 ? '#ffb68e' : '#8f4e00'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map(item => (
-                <div key={item.name} className="text-center p-3 rounded-xl bg-surface-high/50">
-                  <p className="text-[10px] uppercase font-bold text-outline">{item.name}</p>
-                  <p className="text-lg font-extrabold text-primary">{item.rate}%</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/sessions')}>
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-3">
-                <BarChart3 className="size-5 text-cyan-500" />
-                <h4 className="font-headline text-lg font-bold">Peak Activity Hours</h4>
+        <motion.div 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1, delayChildren: 0.4 }
+            }
+          }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            onClick={() => navigate('/personas')}
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
+                <TrendingUp className="size-5" />
               </div>
-              <div className="text-xs font-bold px-2 py-1 rounded-full bg-surface-highest text-cyan-500">
+              <div>
+                <h4 className="font-headline text-lg font-bold text-on-surface">Bot Success Rate</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Performance by agent</p>
+              </div>
+            </div>
+            
+            <div className="flex-1 flex flex-col">
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA}>
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#827568', fontWeight: 700 }} />
+                    <YAxis domain={[0, 100]} hide />
+                    <Tooltip
+                      cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                      contentStyle={{ backgroundColor: '#121316', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                      itemStyle={{ color: '#fff', fontSize: '11px' }}
+                    />
+                    <Bar dataKey="rate" fill="#fb8c00" radius={[6, 6, 0, 0]} barSize={40}>
+                      {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={index === 0 ? '#fb8c00' : index === 1 ? '#ffb68e' : '#8f4e00'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-auto pt-8 grid grid-cols-3 gap-4">
+                {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map(item => (
+                  <div key={item.name} className="text-center p-4 rounded-2xl bg-surface-low border border-outline-variant/10 group-hover:border-primary/20 transition-all">
+                    <p className="text-[8px] uppercase font-black text-outline tracking-wider">{item.name}</p>
+                    <p className="text-xl font-headline font-extrabold text-primary">{Math.round(item.rate)}%</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            onClick={() => navigate('/sessions')}
+          >
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex items-center gap-4">
+                <div className="size-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-500 border border-cyan-500/20 shadow-inner group-hover:bg-cyan-500 group-hover:text-white transition-colors">
+                  <BarChart3 className="size-5" />
+                </div>
+                <div>
+                  <h4 className="font-headline text-lg font-bold text-on-surface">Peak Activity Hours</h4>
+                  <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Peak traffic times today</p>
+                </div>
+              </div>
+              <div className="text-[9px] font-black px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 uppercase tracking-widest">
                 {stats?.peakHours.reduce((acc, curr) => acc + curr.sessions, 0) || 0} Sessions
               </div>
             </div>
-            <div className="h-[250px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={stats?.peakHours && stats.peakHours.length > 0 ? stats.peakHours : PEAK_HOURS_DATA}>
-                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#827568' }} />
-                  <YAxis hide />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#121316', border: '1px solid #343538', borderRadius: '12px' }}
-                    labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}
-                    itemStyle={{ color: '#06b6d4' }}
-                  />
-                  <Line type="monotone" dataKey="sessions" stroke="#06b6d4" strokeWidth={3} dot={{ fill: '#06b6d4', r: 4 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+            
+            <div className="flex-1 flex flex-col">
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={stats?.peakHours && stats.peakHours.length > 0 ? stats.peakHours : PEAK_HOURS_DATA}>
+                    <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#827568', fontWeight: 700 }} />
+                    <YAxis hide />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#121316', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px' }}
+                      labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+                      itemStyle={{ color: '#06b6d4', fontSize: '11px' }}
+                    />
+                    <Line type="monotone" dataKey="sessions" stroke="#06b6d4" strokeWidth={4} dot={{ fill: '#06b6d4', r: 5, strokeWidth: 0 }} activeDot={{ r: 7, strokeWidth: 0, fill: '#fff' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-auto">
+                {stats?.peakHours && stats.peakHours.length > 0 ? (
+                  <div className="mt-8 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-center">
+                    <p className="text-[10px] text-cyan-600 font-bold uppercase tracking-wider italic">
+                      Peak usage detected at <strong>{
+                        stats.peakHours.reduce((max, cur) => cur.sessions > max.sessions ? cur : max, stats.peakHours[0])?.hour
+                      }</strong> today.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-8 p-3 rounded-xl bg-surface-low border border-outline-variant/10 text-center">
+                    <p className="text-[10px] text-outline font-bold uppercase tracking-wider italic">Awaiting initial traffic capture for today.</p>
+                  </div>
+                )}
+              </div>
             </div>
-            {stats?.peakHours && stats.peakHours.length > 0 ? (
-              <p className="text-center text-xs text-outline mt-4">
-                Peak usage detected at <strong>{
-                  stats.peakHours.reduce((max, cur) => cur.sessions > max.sessions ? cur : max, stats.peakHours[0])?.hour
-                }</strong> today.
-              </p>
-            ) : (
-              <p className="text-center text-xs text-outline mt-4">No traffic recorded yet today.</p>
-            )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col cursor-pointer hover:border-primary/30 transition-all" onClick={() => navigate('/workflows')}>
-            <div className="flex justify-between items-center mb-6">
-              <h4 className="font-headline text-lg font-bold">Tool Call Breakdown</h4>
-              <div className="text-xs font-bold px-2 py-1 rounded-full bg-surface-highest text-primary">
+        <motion.div 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.1, delayChildren: 0.5 }
+            }
+          }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col group"
+          >
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h4 className="font-headline text-xl font-bold text-on-surface">Tool Call Breakdown</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Distribution of bot actions</p>
+              </div>
+              <div className="text-[9px] font-black px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary uppercase tracking-widest">
                 {stats?.toolUsage.reduce((acc, curr) => acc + curr.count, 0) || 0} Total
               </div>
             </div>
-            <div className="flex flex-col gap-6 overflow-y-auto pr-2" style={{ maxHeight: '256px' }}>
+            <div className="flex flex-col gap-8 overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '320px' }}>
               {stats?.toolUsage && stats.toolUsage.length > 0 ? (
                 (() => {
                   const maxCount = Math.max(...stats.toolUsage.map(t => t.count), 1);
                   return stats.toolUsage.map((tool, idx) => (
-                    <>
-                      <ProgressBar
-                        key={tool.name}
-                        label={tool.name}
-                        value={(tool.count / maxCount) * 100}
-                        count={`${tool.count} calls`}
-                        color={['bg-secondary', 'bg-primary', 'bg-tertiary', 'bg-outline'][idx % 4]}
-                      />
-                    </>
+                    <ProgressBar
+                      key={tool.name}
+                      label={tool.name}
+                      value={(tool.count / maxCount) * 100}
+                      count={`${tool.count} calls`}
+                      color={['bg-primary', 'bg-amber-500', 'bg-blue-500', 'bg-emerald-500'][idx % 4]}
+                    />
                   ));
                 })()
               ) : (
                 <>
-                  <ProgressBar label="search_knowledge" value={85} count="842 calls" color="bg-secondary" />
-                  <ProgressBar label="book_appointment" value={45} count="412 calls" color="bg-primary" />
-                  <ProgressBar label="get_appointments" value={25} count="210 calls" color="bg-tertiary" />
-                  <ProgressBar label="remember_user_fact" value={15} count="188 calls" color="bg-outline" />
+                  <ProgressBar label="search_knowledge" value={85} count="842 calls" color="bg-primary shadow-[0_0_8px_rgba(251,140,0,0.4)]" />
+                  <ProgressBar label="book_appointment" value={45} count="412 calls" color="bg-amber-500" />
+                  <ProgressBar label="get_appointments" value={25} count="210 calls" color="bg-blue-500" />
+                  <ProgressBar label="remember_user_fact" value={15} count="188 calls" color="bg-emerald-500" />
                 </>
               )}
             </div>
-          </div>
+          </motion.div>
 
-          <div className="bg-surface-low p-8 rounded-2xl ghost-border flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-              <h4 className="font-headline text-lg font-bold">Recent Sessions</h4>
-              <button onClick={() => navigate('/sessions')} className="text-xs font-bold text-primary hover:underline">View All</button>
+          <motion.div 
+            variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col"
+          >
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h4 className="font-headline text-xl font-bold text-on-surface">Recent Sessions</h4>
+                <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Latest user interactions</p>
+              </div>
+              <button 
+                onClick={() => navigate('/sessions')} 
+                className="text-[10px] font-black text-primary uppercase tracking-widest px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary hover:text-on-primary-fixed transition-all shadow-sm"
+              >
+                View All
+              </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left border-separate border-spacing-y-3">
                 <thead>
-                  <tr className="text-[11px] uppercase tracking-widest text-outline border-b border-outline-variant/10">
-                    <th className="pb-4 font-extrabold">Session ID</th>
-                    <th className="pb-4 font-extrabold">Bot</th>
-                    <th className="pb-4 font-extrabold">Status</th>
-                    <th className="pb-4 font-extrabold">Time</th>
+                  <tr className="text-[9px] uppercase tracking-[0.2em] text-outline font-black">
+                    <th className="pb-2 px-4">Session ID</th>
+                    <th className="pb-2 px-4">Bot</th>
+                    <th className="pb-2 px-4">Status</th>
+                    <th className="pb-2 px-4 text-right">Time</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-outline-variant/5">
+                <tbody className="divide-y divide-outline-variant/10">
                   {recentSessions.map((session) => (
                     <tr
                       key={session.id}
-                      className="group hover:bg-surface-high transition-all cursor-pointer"
+                      className="group bg-surface-low/30 hover:bg-primary/5 transition-all cursor-pointer"
                       onClick={() => navigate(`/sessions/${session.id}`)}
                     >
-                      <td className="py-4 font-mono text-xs text-primary">{session.id.slice(0, 8)}</td>
-                      <td className="py-4">{session.bot_name || 'System'}</td>
-                      <td className="py-4">
+                      <td className="py-4 px-4 rounded-l-2xl border-l border-y border-outline-variant/5">
+                        <span className="font-mono text-[10px] text-primary font-bold">{session.id.slice(0, 8)}</span>
+                      </td>
+                      <td className="py-4 px-4 border-y border-outline-variant/5">
+                        <span className="text-xs font-bold text-on-surface/80 group-hover:text-on-surface transition-colors">{session.bot_name || 'System Operator'}</span>
+                      </td>
+                      <td className="py-4 px-4 border-y border-outline-variant/5">
                         <span className={cn(
-                          "flex items-center gap-1.5 font-bold text-[10px] uppercase",
+                          "flex items-center gap-2 font-black text-[9px] uppercase tracking-widest",
                           !session.ended_at ? "text-emerald-500" : "text-outline"
                         )}>
-                          <span className={cn("w-1.5 h-1.5 rounded-full", !session.ended_at ? "bg-emerald-500" : "bg-outline")}></span>
+                          <span className={cn("size-1.5 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]", !session.ended_at ? "bg-emerald-500 animate-pulse" : "bg-outline")}></span>
                           {!session.ended_at ? 'Active' : 'Ended'}
                         </span>
                       </td>
-                      <td className="py-4 text-on-surface-variant text-xs">{new Date(session.started_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="py-4 px-4 rounded-r-2xl border-r border-y border-outline-variant/5 text-right font-medium text-on-surface-variant text-[10px]">
+                        {new Date(session.started_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </div>
   );
 }
 
 function StatCard({ icon: Icon, label, value, trend, trendColor, onClick }: any) {
+  const x = useMotionValue(0.5);
+  const y = useMotionValue(0.5);
+  const mouseXSpring = useSpring(x);
+  const mouseYSpring = useSpring(y);
+  const rotateX = useTransform(mouseYSpring, [0, 1], [10, -10]);
+  const rotateY = useTransform(mouseXSpring, [0, 1], [-10, 10]);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    x.set(mouseX / width);
+    y.set(mouseY / height);
+  };
+
+  const handleMouseLeave = () => {
+    x.set(0.5);
+    y.set(0.5);
+  };
+
   return (
-    <div
-      onClick={onClick}
-      className="bg-surface-low p-6 rounded-2xl ghost-border flex flex-col gap-4 cursor-pointer hover:border-primary/40 hover:bg-surface-high transition-all group"
+    <motion.div
+      variants={{
+        hidden: { opacity: 0, y: 20 },
+        visible: { opacity: 1, y: 0 }
+      }}
+      style={{ perspective: 1000 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="group relative"
     >
-      <div className="flex justify-between items-start">
-        <div className="p-2 rounded-lg bg-surface-highest text-primary group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
-          <Icon className="size-5" />
+      <motion.div
+        style={{ rotateX, rotateY }}
+        onClick={onClick}
+        className={cn(
+          "bg-surface-lowest p-6 rounded-3xl premium-forge-border flex flex-col gap-6 cursor-pointer relative overflow-hidden transition-all duration-300",
+          "hover:border-primary/40 hover:shadow-2xl dark:hover:shadow-primary/10",
+          onClick && "active:scale-95"
+        )}
+      >
+        {/* Background Glow */}
+        <div className="absolute -top-12 -right-12 size-32 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
+        
+        <div className="flex justify-between items-start">
+          <motion.div 
+            animate={{ y: [0, -2, 0] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            className="p-3 rounded-2xl bg-surface-low text-primary border border-outline-variant/10 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors"
+          >
+            <Icon className="size-5" />
+          </motion.div>
+          <span className={cn(
+            "text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-surface-low border border-outline-variant/5 shadow-sm",
+            trendColor
+          )}>
+            {trend}
+          </span>
         </div>
-        <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full bg-surface-highest", trendColor)}>
-          {trend}
-        </span>
-      </div>
-      <div>
-        <p className="text-outline text-xs font-semibold uppercase tracking-wider">{label}</p>
-        <h3 className="text-3xl font-headline font-extrabold mt-1">{value}</h3>
-      </div>
-    </div>
+
+        <div>
+          <p className="text-outline text-[10px] font-bold uppercase tracking-[0.2em] mb-1">{label}</p>
+          <h3 className="text-3xl font-headline font-extrabold text-on-surface tracking-tight leading-none">{value}</h3>
+        </div>
+
+        {/* Shine Overlay */}
+        <div className="absolute inset-0 bg-linear-to-tr from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      </motion.div>
+    </motion.div>
   );
 }
 
 function ProgressBar({ label, value, count, color }: any) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex justify-between text-xs font-bold text-outline">
-        <span>{label}</span>
-        <span>{count}</span>
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-between items-end">
+        <div>
+          <span className="text-[10px] font-black text-on-surface uppercase tracking-widest">{label}</span>
+          <p className="text-[8px] font-bold text-outline uppercase tracking-tighter">Bot Action Breakdown</p>
+        </div>
+        <span className="text-[10px] font-mono text-primary font-black bg-primary/5 px-2 py-0.5 rounded border border-primary/10">{count}</span>
       </div>
-      <div className="w-full h-2 bg-surface-highest rounded-full overflow-hidden">
-        <div className={cn("h-full", color)} style={{ width: `${value}%` }}></div>
+      <div className="w-full h-2.5 bg-surface-low rounded-full overflow-hidden border border-outline-variant/5 p-0.5">
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 1.5, ease: "easeOut" }}
+          className={cn("h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(251,140,0,0.2)]", color)} 
+        />
       </div>
     </div>
   );
