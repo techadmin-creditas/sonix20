@@ -445,7 +445,7 @@ export default function DiyWithAI() {
     let cumulativeDelay = 1000;
     staticScript.forEach((entry, index) => {
       // Calculate delay based on text length to make it feel natural
-      const typingDuration = entry.role === 'bot' ? entry.content.length * 35 : 500;
+      const typingDuration = entry.content.length * 30;
 
       const timeoutId = window.setTimeout(() => {
         setLiveTranscript(prev => [...prev, entry]);
@@ -851,7 +851,10 @@ export default function DiyWithAI() {
             {(isLive || isConnecting) ? (
               <div ref={liveSectionRef} className="bg-surface-low rounded-3xl ghost-border p-6 lg:p-8">
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs font-bold uppercase tracking-widest text-outline">Live transcript</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs font-bold uppercase tracking-widest text-outline">Live transcript</p>
+                    {isLive && <AudioWaves />}
+                  </div>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-outline">{isLive ? 'Live' : 'Standby'}</span>
                 </div>
                 <div
@@ -881,7 +884,7 @@ export default function DiyWithAI() {
                               : 'bg-primary text-on-primary-fixed',
                           )}
                         >
-                          {t.role === 'bot' ? <TypewriterText text={t.content} speed={25} /> : t.content}
+                          <TypewriterText text={t.content} speed={25} />
                         </div>
                       </div>
                     ))
@@ -1307,6 +1310,24 @@ export default function DiyWithAI() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AudioWaves() {
+  return (
+    <div className="flex items-center gap-1 h-4 px-2">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div
+          key={i}
+          className="w-1 bg-primary rounded-full animate-bounce"
+          style={{
+            height: `${Math.random() * 60 + 40}%`,
+            animationDelay: `${i * 0.1}s`,
+            animationDuration: '0.8s'
+          }}
+        />
+      ))}
     </div>
   );
 }
