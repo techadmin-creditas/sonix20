@@ -23,6 +23,13 @@ import {
    Loader2,
    RefreshCw,
    AlertTriangle,
+   Languages,
+   Ghost,
+   Globe2,
+   Brain,
+   Coffee,
+   Heart,
+   Shield,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { VOICE_RELAYS } from '../data/voiceData';
@@ -30,7 +37,7 @@ import { StudioSlider } from '../components/StudioSlider';
 import { api, type AiPersona } from '../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QuickForgeView — multi-step persona builder form
+// QuickForgeView — streamlined persona builder form
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INITIAL_FORM = {
@@ -61,31 +68,15 @@ const QuickForgeView = ({
    initialPersona?: Partial<AiPersona> | null;
    isSaving: boolean;
 }) => {
-   const [step, setStep] = React.useState(1);
    const [isScanning, setIsScanning] = React.useState(false);
-   const [showAdvanced, setShowAdvanced] = React.useState(false);
+   const [showAdvanced, setShowAdvanced] = React.useState(true);
    const [formData, setFormData] = React.useState<Partial<AiPersona>>(
       initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM }
    );
 
    React.useEffect(() => {
-      setStep(1);
       setFormData(initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM });
    }, [initialPersona]);
-
-   const handleNext = () => {
-      if (step === 1 || step === 2) {
-         setIsScanning(true);
-         setTimeout(() => {
-            setStep(prev => prev + 1);
-            setIsScanning(false);
-         }, 1200);
-      } else {
-         setStep(prev => prev + 1);
-      }
-   };
-
-   const handleBack = () => setStep(prev => Math.max(1, prev - 1));
 
    const patch = (val: Partial<AiPersona>) => setFormData(prev => ({ ...prev, ...val }));
 
@@ -100,60 +91,41 @@ const QuickForgeView = ({
                   <X className="size-4 group-hover:text-primary transition-colors" />
                </button>
                <div className="h-8 w-px bg-outline-variant/10" />
-               <div>
-                  <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Persona Builder</p>
-                  <div className="flex items-center gap-3">
+               <div className="space-y-1">
+                  <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Persona Forge</p>
+                  <div className="flex items-center gap-4">
                      <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight line-clamp-1">
                         {initialPersona?.id ? 'Edit AI Persona' : 'Create AI Persona'}
                      </h2>
                      <div className="flex items-center gap-2">
-                        <button
+                        {/* <button
                            onClick={() => setShowAdvanced(!showAdvanced)}
                            className={cn(
-                              "px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border transition-all",
+                              "px-4 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest border transition-all flex items-center gap-2",
                               showAdvanced
-                                 ? "bg-primary text-on-primary-fixed border-primary shadow-[0_0_10px_rgba(255,193,7,0.3)]"
-                                 : "bg-surface-low border-outline-variant/10 text-outline hover:text-on-surface"
+                                 ? "bg-primary text-on-primary-fixed border-primary shadow-[0_0_15px_rgba(255,193,7,0.4)]"
+                                 : "bg-surface-low border-outline-variant/10 text-outline hover:text-on-surface hover:border-outline-variant/30"
                            )}
                         >
-                           {showAdvanced ? 'Advanced Tuning: ON' : 'Show Advanced'}
-                        </button>
-                        <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                           <Settings2 className={cn("size-3.5", showAdvanced ? "animate-spin-slow" : "")} />
+                           {showAdvanced ? 'Advanced Tuning: ON' : 'Show Advanced Tuning'}
+                        </button> */}
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
                            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                            <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">
-                              {formData.baseModel || 'Sonix-Flash-1'} Active
+                              {formData.baseModel || 'Sonix-Flash-1'} Node Active
                            </span>
                         </div>
                      </div>
                   </div>
                </div>
             </div>
-
-            <div className="flex items-center gap-3 bg-surface-low/50 p-1 rounded-xl border border-outline-variant/5">
-               {[1, 2, 3, 4].map((s) => (
-                  <div
-                     key={s}
-                     className={cn(
-                        "px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
-                        step === s ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline/40"
-                     )}
-                  >
-                     Step 0{s}
-                  </div>
-               ))}
-            </div>
          </div>
 
-         <div className="bg-surface-lowest rounded-[2.5rem] overflow-hidden flex flex-col premium-forge-border shadow-2xl relative">
-            <div className="h-1.5 w-full bg-surface-low flex">
-               <motion.div
-                  className="h-full bg-primary shadow-[0_0_10px_var(--primary)]"
-                  animate={{ width: `${(step / 4) * 100}%` }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-               />
-            </div>
+         <div className="bg-surface-lowest/95 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden flex flex-col border border-outline-variant/10 shadow-2xl relative group/forge">
+            <div className="h-1 w-full bg-gradient-to-r from-primary/5 via-primary to-primary/5" />
 
-            <div className="p-8 space-y-6 relative min-h-[520px] flex flex-col justify-center">
+            <div className="px-8 py-7 space-y-8 relative flex flex-col">
                <AnimatePresence>
                   {isScanning && (
                      <motion.div
@@ -161,374 +133,294 @@ const QuickForgeView = ({
                         animate={{ top: '110%', opacity: 1 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.8, ease: "linear" }}
-                        className="absolute inset-x-0 h-20 bg-primary/20 blur-2xl z-20 pointer-events-none"
+                        className="absolute inset-x-0 h-32 bg-primary/20 blur-[100px] z-20 pointer-events-none"
                      >
-                        <div className="h-px w-full bg-primary/50 shadow-[0_0_20px_rgba(255,193,7,0.5)]" />
+                        <div className="h-px w-full bg-primary/50 shadow-[0_0_30px_rgba(255,193,7,0.8)]" />
                      </motion.div>
                   )}
                </AnimatePresence>
 
                <AnimatePresence mode="wait">
-                  {/* ── Step 1: Identity & Role ── */}
-                  {step === 1 && (
-                     <motion.div
-                        key="step1"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                        className="space-y-8"
-                     >
-                        <div className="mb-6">
-                           <h2 className="text-xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Identity & Role</h2>
-                           <p className="text-[9px] font-bold text-outline uppercase tracking-widest mt-0.5">Primary identifier and neural baseline</p>
+                  <motion.div
+                     key="main-forge"
+                     initial={{ opacity: 0, y: 15 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     exit={{ opacity: 0, y: -15 }}
+                     className="space-y-8"
+                  >
+                     {/* Core Identity & Resonance Node */}
+                     <section className="space-y-6 relative">
+                        <div className="flex justify-between items-end border-b border-outline-variant/10 pb-5">
+                           <div className="flex items-center gap-4">
+                              <div className="size-11 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 shadow-[0_0_15px_rgba(255,193,7,0.1)]">
+                                 <BrainCircuit className="size-5 text-primary" />
+                              </div>
+                              <div>
+                                 <h2 className="text-xl font-headline font-black text-on-surface uppercase tracking-tight">Neural Identity</h2>
+                                 <p className="text-[9px] font-bold text-outline uppercase tracking-[0.25em] mt-0.5 opacity-60">Resonance parameters</p>
+                              </div>
+                           </div>
+                           {formData.name && (
+                              <motion.div
+                                 initial={{ opacity: 0, x: 20 }}
+                                 animate={{ opacity: 1, x: 0 }}
+                                 className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-emerald-500/5 border border-emerald-500/10"
+                              >
+                                 <div className="size-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                 <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Identity Synchronized</span>
+                              </motion.div>
+                           )}
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           <div className="space-y-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                           {/* Left: Identification Stacks */}
+                           <div className="lg:col-span-4 space-y-5">
                               <div className="space-y-2">
-                                 <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Persona Name</label>
+                                 <div className="flex justify-between px-0">
+                                    <label className="text-[9px] font-black text-primary uppercase tracking-widest">Name</label>
+                                    <UserRound className="size-3 text-outline/40" />
+                                 </div>
                                  <input
                                     type="text"
                                     autoFocus
-                                    placeholder="Maya / Arjun / Priya..."
-                                    className="w-full bg-surface-low border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
+                                    placeholder="Enter Persona Name"
+                                    className="w-full bg-surface-low/50 backdrop-blur-md border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
                                     value={formData.name || ''}
                                     onChange={e => patch({ name: e.target.value })}
                                  />
                               </div>
+
                               <div className="space-y-2">
-                                 <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Primary Objective</label>
-                                 <input
-                                    type="text"
-                                    placeholder="Debt Collection / Sales / Support..."
-                                    className="w-full bg-surface-low border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
-                                    value={formData.useCase || ''}
-                                    onChange={e => patch({ useCase: e.target.value })}
-                                 />
-                              </div>
-                           </div>
-                           <div className="space-y-4">
-                              <div className="space-y-2">
-                                 <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Linguistic Objective</label>
-                                 <div className="flex flex-wrap gap-2">
-                                    {['English', 'Hindi', 'Hinglish', 'Tamil', 'Telugu'].map(lang => (
-                                       <button
-                                          key={lang}
-                                          onClick={() => patch({ language: lang })}
-                                          className={cn(
-                                             "px-4 py-2 rounded-lg text-[9px] font-bold border transition-all",
-                                             formData.language === lang
-                                                ? "bg-primary/10 border-primary/20 text-primary shadow-sm"
-                                                : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
-                                          )}
-                                       >
-                                          {lang}
-                                       </button>
-                                    ))}
+                                 <div className="flex justify-between px-0">
+                                    <label className="text-[9px] font-black text-primary uppercase tracking-widest">Primary Logic</label>
+                                    <Settings2 className="size-3 text-outline/40" />
                                  </div>
-                              </div>
-                              <div className="space-y-2">
-                                 <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Talking Style</label>
-                                 <div className="grid grid-cols-2 gap-2">
-                                    {['Analytical', 'Casual', 'Empathetic', 'Firm'].map(st => (
-                                       <button
-                                          key={st}
-                                          onClick={() => patch({ emotion: st })}
-                                          className={cn(
-                                             "p-3.5 rounded-lg text-[10px] font-bold border transition-all truncate",
-                                             formData.emotion === st
-                                                ? "bg-primary/10 border-primary/20 text-primary"
-                                                : "bg-surface-low border-outline-variant/5 text-outline hover:border-outline-variant/20"
-                                          )}
-                                       >
-                                          {st}
-                                       </button>
-                                    ))}
+                                 <div className="relative">
+                                    <input
+                                       type="text"
+                                       placeholder="Behavioral objective..."
+                                       className="w-full bg-surface-low/50 border border-outline-variant/10 rounded-xl p-4 text-[13px] font-bold outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+                                       value={formData.useCase || ''}
+                                       onChange={e => patch({ useCase: e.target.value })}
+                                    />
+                                    <Zap className="absolute right-4 top-1/2 -translate-y-1/2 size-3.5 text-primary/40" />
                                  </div>
                               </div>
                            </div>
-                        </div>
-                     </motion.div>
-                  )}
 
-                  {/* ── Step 2: Soul Alignment ── */}
-                  {step === 2 && (
-                     <motion.div
-                        key="step2"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 1.05 }}
-                        className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center"
-                     >
-                        <div className="flex flex-col items-center text-center space-y-4">
-                           <div className="size-44 rounded-full border-2 border-primary/10 flex items-center justify-center relative shadow-2xl">
-                              <motion.div
-                                 animate={{ scale: [1, 1.1, 1], rotate: 360 }}
-                                 transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-                                 className="absolute inset-0 rounded-full border-t-2 border-primary shadow-[0_0_30px_rgba(255,193,7,0.3)]"
-                              />
-                              <BrainCircuit className="size-14 text-primary animate-pulse" />
-                           </div>
-                           <div>
-                              <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Soul Alignment</h2>
-                              <p className="text-[9px] font-bold text-outline uppercase tracking-[0.3em]">Fine-tuning behavioral neural intent</p>
-                           </div>
-                        </div>
-                        <div className="space-y-6 bg-surface-low/30 p-6 rounded-3xl border border-outline-variant/5">
-                           <StudioSlider label="Urgency Profile" value={formData.urgency ?? 45} onChange={v => patch({ urgency: v })} leftLabel="Patient" rightLabel="Aggressive" />
-                           <StudioSlider label="Empathy Depth" value={formData.empathy ?? 75} onChange={v => patch({ empathy: v })} leftLabel="Rational" rightLabel="Warm" />
-                        </div>
-                     </motion.div>
-                  )}
-
-                  {/* ── Step 3: Sonic DNA ── */}
-                  {step === 3 && (
-                     <motion.div
-                        key="step3"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        className="space-y-10"
-                     >
-                        <div className="flex justify-between items-end border-b border-outline-variant/10 pb-6">
-                           <div className="space-y-1">
-                              <p className="text-[10px] font-bold text-primary uppercase tracking-[0.4em]">Neural Texture</p>
-                              <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Sonic DNA Layering</h2>
-                           </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                           <div className="space-y-8 bg-surface-low/20 p-6 rounded-3xl border border-outline-variant/5">
-                              <StudioSlider label="Stability" value={formData.stability ?? 80} onChange={v => patch({ stability: v })} leftLabel="Variable" rightLabel="Monotone" />
-                              <StudioSlider label="Clarity" value={formData.clarity ?? 60} onChange={v => patch({ clarity: v })} leftLabel="Natural" rightLabel="Crystalline" />
-                           </div>
-                           <div className="space-y-8 bg-surface-low/20 p-6 rounded-3xl border border-outline-variant/5">
-                              <StudioSlider label="Style Exaggeration" value={formData.styleExaggeration ?? 35} onChange={v => patch({ styleExaggeration: v })} leftLabel="Subtle" rightLabel="Extreme" />
-                              <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10">
-                                 <div className="flex gap-3 items-start">
-                                    <Zap className="size-4 text-primary shrink-0 mt-1" />
-                                    <p className="text-[10px] leading-relaxed text-outline">Neural textures are being synthesized in real-time. Changes here affect the persona's base resonance at the molecular audio level.</p>
-                                 </div>
-                              </div>
-                           </div>
-                        </div>
-                     </motion.div>
-                  )}
-
-                  {/* ── Step 4: Final Synthesis ── */}
-                  {step === 4 && (
-                     <motion.div
-                        key="step4"
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -10 }}
-                        className="grid grid-cols-1 md:grid-cols-2 gap-10"
-                     >
-                        <div className="space-y-6">
-                           <div>
-                              <h2 className="text-xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Final Synthesis</h2>
-                              <p className="text-[9px] font-bold text-outline uppercase tracking-widest mt-0.5">Review vocal profile & deployment nodes</p>
-                           </div>
-                           <div className="space-y-2">
-                              <label className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">Selected Voice Relay</label>
-                              <div className="grid grid-cols-2 gap-2">
-                                 {VOICE_RELAYS.slice(0, 4).map(v => (
+                           {/* Center: Vocal DNA (Step 4) */}
+                           <div className="lg:col-span-4 space-y-3">
+                              <label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Vocal DNA Profile</label>
+                              <div className="space-y-2">
+                                 {VOICE_RELAYS.slice(0, 3).map(v => (
                                     <button
                                        key={v.id}
                                        onClick={() => patch({ selectedVoice: v.id })}
                                        className={cn(
-                                          "p-3 rounded-xl border flex flex-col gap-1.5 transition-all text-left",
+                                          "w-full px-4 py-3.5 rounded-xl border flex items-center gap-4 transition-all text-left relative overflow-hidden group/voice shadow-sm",
                                           formData.selectedVoice === v.id
-                                             ? "bg-primary/5 border-primary/30 shadow-lg ring-1 ring-primary/20"
-                                             : "bg-surface-low border-outline-variant/5 text-outline hover:bg-surface-high"
+                                             ? "bg-primary/10 border-primary/30 ring-1 ring-primary/20"
+                                             : "bg-surface-low/40 border-outline-variant/5 text-outline hover:bg-surface-high/60"
                                        )}
                                     >
-                                       <Mic2 className={cn("size-3.5", formData.selectedVoice === v.id ? 'text-primary' : 'text-outline')} />
-                                       <div>
-                                          <p className={cn("text-[11px] font-bold", formData.selectedVoice === v.id ? 'text-on-surface' : 'text-outline')}>{v.name}</p>
-                                          <p className="text-[7px] uppercase tracking-widest font-bold opacity-60">{v.provider}</p>
+                                       <div className={cn(
+                                          "size-9 rounded-lg flex items-center justify-center transition-all",
+                                          formData.selectedVoice === v.id ? "bg-primary text-on-primary-fixed" : "bg-outline/5"
+                                       )}>
+                                          <Mic2 className="size-4" />
                                        </div>
+                                       <div className="flex-1">
+                                          <p className={cn("text-[11px] font-black", formData.selectedVoice === v.id ? 'text-on-surface' : 'text-outline')}>
+                                             {v.name}
+                                          </p>
+                                          <p className="text-[7.5px] uppercase tracking-widest font-black opacity-50">{v.provider} Node</p>
+                                       </div>
+                                       {formData.selectedVoice === v.id && (
+                                          <motion.div layoutId="active-voice-dot" className="size-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(255,193,7,0.5)]" />
+                                       )}
                                     </button>
                                  ))}
                               </div>
                            </div>
-                        </div>
 
-                        {/* Neural Certificate */}
-                        <div className="space-y-6">
-                           <div className="bg-surface-low/80 backdrop-blur-sm rounded-3xl p-6 border border-outline-variant/10 shadow-sm relative overflow-hidden h-full flex flex-col">
-                              <div className="absolute top-0 right-0 p-4">
-                                 <ShieldCheck className="size-4 text-emerald-500" />
-                              </div>
-                              <p className="text-[8px] font-bold text-primary uppercase tracking-[0.4em] mb-4">Neural Certificate</p>
-                              <div className="flex-1 space-y-6">
-                                 <div className="space-y-2">
-                                    <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Linguistic Objective</p>
-                                    <div className="flex items-center justify-between">
-                                       <div>
-                                          <h4 className="text-base font-headline font-extrabold text-on-surface">{formData.name}</h4>
-                                          <p className="text-[8px] font-bold text-primary uppercase tracking-widest">{formData.language}</p>
-                                       </div>
-                                       <span className="px-1.5 py-0.5 rounded bg-surface-lowest border border-outline-variant/5 text-[7px] font-bold text-outline uppercase">
-                                          {formData.useCase || 'General Agent'}
-                                       </span>
-                                    </div>
-                                 </div>
-                                 <div className="space-y-2">
-                                    <p className="text-[7px] font-bold text-outline uppercase tracking-widest">Behavioral DNA</p>
-                                    <div className="grid grid-cols-2 gap-3">
-                                       <div className="p-2.5 rounded-xl bg-surface-lowest border border-outline-variant/5">
-                                          <p className="text-[7px] font-bold text-outline uppercase mb-1">Urgency</p>
-                                          <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
-                                             <div className="h-full bg-primary" style={{ width: `${formData.urgency}%` }} />
-                                          </div>
-                                       </div>
-                                       <div className="p-2.5 rounded-xl bg-surface-lowest border border-outline-variant/5">
-                                          <p className="text-[7px] font-bold text-outline uppercase mb-1">Empathy</p>
-                                          <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
-                                             <div className="h-full bg-emerald-500" style={{ width: `${formData.empathy}%` }} />
-                                          </div>
-                                       </div>
-                                    </div>
-                                 </div>
-                                 <div className="space-y-2 pt-3 border-t border-outline-variant/10">
-                                    <p className="text-[7px] font-bold text-primary uppercase tracking-widest">Neural Infrastructure</p>
-                                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-primary/5 border border-primary/10">
-                                       <div className="flex items-center gap-2.5">
-                                          <Cpu className="size-3.5 text-primary" />
-                                          <div>
-                                             <p className="text-[8px] font-bold text-on-surface uppercase leading-none">{formData.baseModel || 'Sonix-Flash-1'}</p>
-                                             <p className="text-[6px] font-bold text-primary uppercase mt-1">Cloud Relay Active</p>
-                                          </div>
-                                       </div>
-                                       <div className="text-right">
-                                          <p className="text-[8px] font-headline font-bold text-on-surface">350ms</p>
-                                          <p className="text-[6px] font-bold text-outline uppercase mt-1">P99 Target</p>
-                                       </div>
-                                    </div>
-                                 </div>
-                              </div>
-                              <div className="mt-4 pt-4 border-t border-outline-variant/5">
-                                 <p className="text-[9px] leading-relaxed italic text-outline/80">&ldquo;Synthesizing {formData.emotion?.toLowerCase() || 'neutral'} intent...&rdquo;</p>
-                              </div>
-                           </div>
-                        </div>
-                     </motion.div>
-                  )}
-               </AnimatePresence>
-
-               {/* Advanced Technical Tuning Overlay */}
-               <AnimatePresence>
-                  {showAdvanced && (
-                     <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute inset-0 z-30 bg-surface-lowest/95 backdrop-blur-md p-10 flex flex-col"
-                     >
-                        <div className="flex justify-between items-center mb-10 border-b border-outline-variant/10 pb-6">
-                           <div>
-                              <h3 className="text-xl font-headline font-extrabold text-on-surface uppercase tracking-tight">Advanced Technical Tuning</h3>
-                              <p className="text-[9px] font-bold text-primary uppercase tracking-widest mt-1">Configure models & external relays</p>
-                           </div>
-                           <button onClick={() => setShowAdvanced(false)} className="p-2 rounded-lg hover:bg-surface-low text-outline"><X className="size-4" /></button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-10 flex-1 overflow-y-auto pr-4 scrollbar-hide">
-                           <div className="space-y-6">
-                              <div className="space-y-3">
-                                 <label className="text-[9px] font-bold text-outline uppercase tracking-widest">Base Neural Model</label>
-                                 <div className="grid grid-cols-1 gap-2">
-                                    {['Sonix-Flash-1', 'Sonix-Pro-3', 'Eleven-Turbo-v2.5'].map(m => (
+                           {/* Right: Cultural Stacks */}
+                           <div className="lg:col-span-4 space-y-8">
+                              <div className="space-y-4">
+                                 <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Linguistic Objective</label>
+                                 <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                       { id: 'English', icon: Languages },
+                                       { id: 'Hindi', icon: Ghost },
+                                       { id: 'Hinglish', icon: Sparkles },
+                                       { id: 'Telugu', icon: Globe2 }
+                                    ].map(lang => (
                                        <button
-                                          key={m}
-                                          onClick={() => patch({ baseModel: m })}
+                                          key={lang.id}
+                                          onClick={() => patch({ language: lang.id })}
                                           className={cn(
-                                             "p-4 rounded-xl border flex justify-between items-center transition-all",
-                                             formData.baseModel === m
-                                                ? "bg-primary/10 border-primary/30 text-primary"
-                                                : "bg-surface-low border-outline-variant/5 text-outline"
+                                             "py-5 px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 group/lang relative overflow-hidden",
+                                             formData.language === lang.id
+                                                ? "bg-primary text-on-primary-fixed border-primary shadow-[0_10px_25px_rgba(255,193,7,0.3)] scale-[1.02]"
+                                                : "bg-surface-low/40 border-outline-variant/10 text-outline hover:border-primary/40 hover:bg-surface-high"
                                           )}
                                        >
-                                          <span className="text-[11px] font-bold">{m}</span>
-                                          {formData.baseModel === m && <ShieldCheck className="size-3.5" />}
+                                          <lang.icon className={cn("size-4 transition-transform group-hover/lang:scale-110", formData.language === lang.id ? "text-on-primary-fixed" : "text-primary/40")} />
+                                          <span className="text-[10px] font-black uppercase tracking-tight">{lang.id}</span>
+                                          {formData.language === lang.id && (
+                                             <motion.div layoutId="lang-active-dot" className="absolute top-2 right-2 size-1.5 rounded-full bg-on-primary-fixed" />
+                                          )}
+                                       </button>
+                                    ))}
+                                 </div>
+                              </div>
+                              <div className="space-y-4">
+                                 <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Behavioral Tone</label>
+                                 <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                       { id: 'Analytical', icon: Brain },
+                                       { id: 'Casual', icon: Coffee },
+                                       { id: 'Empathetic', icon: Heart },
+                                       { id: 'Firm', icon: Shield }
+                                    ].map(st => (
+                                       <button
+                                          key={st.id}
+                                          onClick={() => patch({ emotion: st.id })}
+                                          className={cn(
+                                             "py-5 px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 group/tone relative overflow-hidden",
+                                             formData.emotion === st.id
+                                                ? "bg-primary text-on-primary-fixed border-primary shadow-[0_10px_25px_rgba(255,193,7,0.3)] scale-[1.02]"
+                                                : "bg-surface-low/40 border-outline-variant/10 text-outline hover:border-primary/40 hover:bg-surface-high"
+                                          )}
+                                       >
+                                          <st.icon className={cn("size-4 transition-transform group-hover/tone:scale-110", formData.emotion === st.id ? "text-on-primary-fixed" : "text-primary/40")} />
+                                          <span className="text-[10px] font-black uppercase tracking-tight">{st.id}</span>
+                                          {formData.emotion === st.id && (
+                                             <motion.div layoutId="tone-active-dot" className="absolute top-2 right-2 size-1.5 rounded-full bg-on-primary-fixed" />
+                                          )}
                                        </button>
                                     ))}
                                  </div>
                               </div>
                            </div>
-                           <div className="space-y-6">
-                              <div className="p-6 rounded-2xl bg-surface-low border border-outline-variant/10 space-y-4">
-                                 <div className="flex items-center gap-3">
-                                    <Settings2 className="size-4 text-primary" />
-                                    <h4 className="text-[10px] font-bold text-on-surface uppercase tracking-widest">API Configuration</h4>
-                                 </div>
-                                 <div className="space-y-3">
-                                    <input placeholder="External API Endpoint (Optional)" className="w-full bg-surface-lowest p-3 rounded-lg text-[10px] border border-outline-variant/5 outline-none focus:border-primary/30 transition-all font-mono" />
-                                    <input type="password" placeholder="System Auth Token" className="w-full bg-surface-lowest p-3 rounded-lg text-[10px] border border-outline-variant/5 outline-none focus:border-primary/30 transition-all font-mono" />
-                                 </div>
-                              </div>
-                              <div className="p-6 rounded-2xl bg-primary/5 border border-primary/10 space-y-2">
-                                 <p className="text-[10px] font-bold text-primary uppercase">Expert Control</p>
-                                 <p className="text-[9px] leading-relaxed text-outline">These settings bypass the standard Soul Alignment logic and interact directly with the hardware acceleration layer.</p>
-                              </div>
-                           </div>
                         </div>
-                     </motion.div>
-                  )}
+                     </section>
+
+                     {/* Advanced Tuning Merger */}
+                     <div className="space-y-6">
+                        <div className="flex items-center gap-5">
+                           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-outline-variant/15 to-transparent" />
+                           <button
+                              onClick={() => setShowAdvanced(!showAdvanced)}
+                              className={cn(
+                                 "group flex items-center gap-3 px-6 py-2.5 rounded-xl border transition-all hover:scale-105 active:scale-95",
+                                 showAdvanced
+                                    ? "bg-primary/10 border-primary/30 text-primary shadow-sm"
+                                    : "bg-surface-low border-outline-variant/10 text-outline"
+                              )}
+                           >
+                              <Settings2 className={cn("size-3.5 transition-transform duration-500", showAdvanced ? "rotate-180" : "")} />
+                              <span className="text-[9px] font-black uppercase tracking-[0.2em]">
+                                 {showAdvanced ? 'Neural Matrix Online' : 'Expert Tuning'}
+                              </span>
+                              <ChevronRight className={cn("size-3 transition-transform", showAdvanced ? "rotate-90" : "")} />
+                           </button>
+                           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-outline-variant/15 to-transparent" />
+                        </div>
+
+                        <AnimatePresence>
+                           {showAdvanced && (
+                              <motion.div
+                                 initial={false}
+                                 animate={{ height: 'auto', opacity: 1, y: 0 }}
+                                 exit={{ height: 0, opacity: 0, y: 10 }}
+                                 transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+                                 className="overflow-hidden"
+                              >
+                                 <div className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Advanced Column 1: Sliders */}
+                                    <div className="bg-gradient-to-br from-surface-low/30 to-surface-low/5 p-7 rounded-[1.5rem] border border-outline-variant/5 shadow-inner space-y-7">
+                                       <p className="text-[9px] font-black text-primary/80 uppercase tracking-widest pl-1">Acoustic Signal</p>
+                                       <div className="space-y-7">
+                                          <StudioSlider label="Stability" value={formData.stability ?? 80} onChange={v => patch({ stability: v })} leftLabel="Variable" rightLabel="Phase Locked" />
+                                          <StudioSlider label="Clarity" value={formData.clarity ?? 60} onChange={v => patch({ clarity: v })} leftLabel="Organic" rightLabel="Digital" />
+                                          <StudioSlider label="Style Exaggeration" value={formData.styleExaggeration ?? 35} onChange={v => patch({ styleExaggeration: v })} leftLabel="Nuance" rightLabel="Hyper" />
+                                       </div>
+                                    </div>
+
+                                    {/* Advanced Column 2: Tech Specs */}
+                                    <div className="flex flex-col gap-4">
+                                       <div className="bg-surface-low/30 p-7 rounded-[1.5rem] border border-outline-variant/5 flex-1 space-y-6">
+                                          <p className="text-[9px] font-black text-primary/80 uppercase tracking-widest pl-1">Neural Core</p>
+                                          <div className="grid grid-cols-1 gap-2">
+                                             {['Sonix-Flash-1', 'Sonix-Pro-3', 'Eleven-Turbo-v2.5'].map(m => (
+                                                <button
+                                                   key={m}
+                                                   onClick={() => patch({ baseModel: m })}
+                                                   className={cn(
+                                                      "px-5 py-3.5 rounded-xl border flex justify-between items-center transition-all group/model",
+                                                      formData.baseModel === m
+                                                         ? "bg-primary text-on-primary-fixed border-primary shadow-lg"
+                                                         : "bg-surface-low/60 border-outline-variant/10 text-outline hover:bg-surface-high"
+                                                   )}
+                                                >
+                                                   <span className="text-[11px] font-black tracking-tight">{m}</span>
+                                                   {formData.baseModel === m ? (
+                                                      <ShieldCheck className="size-4" />
+                                                   ) : (
+                                                      <Cpu className="size-3.5 opacity-20 group-hover/model:opacity-50 transition-opacity" />
+                                                   )}
+                                                </button>
+                                             ))}
+                                          </div>
+                                       </div>
+
+                                       {/* <div className="px-6 py-3.5 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-between">
+                                          <div className="flex items-center gap-3">
+                                             <div className="size-1.5 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(255,193,7,0.5)]" />
+                                             <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em]">Engine: Optimal</p>
+                                          </div>
+                                          <Activity className="size-3.5 text-primary opacity-40" />
+                                       </div> */}
+                                    </div>
+                                 </div>
+                              </motion.div>
+                           )}
+                        </AnimatePresence>
+                     </div>
+                  </motion.div>
                </AnimatePresence>
             </div>
 
             {/* Action Hub */}
-            <div className="p-8 bg-surface-low/80 border-t border-outline-variant/20 flex gap-4">
-               {step > 1 && (
-                  <button
-                     onClick={handleBack}
-                     className="flex-1 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] bg-surface-low border border-outline-variant/10 text-outline hover:text-on-surface transition-all"
-                  >
-                     Back
-                  </button>
-               )}
-               {step < 4 ? (
-                  <button
-                     onClick={handleNext}
-                     disabled={step === 1 && !formData.name?.trim()}
-                     className={cn(
-                        "flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-xl relative overflow-hidden",
-                        (step === 1 && !formData.name?.trim())
-                           ? "bg-outline/20 text-outline cursor-not-allowed opacity-50"
-                           : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-105"
-                     )}
-                  >
-                     <span className="relative z-10 flex items-center gap-3">
-                        {step === 1 ? 'Analyze DNA' : step === 2 ? 'Calibrate Soul' : 'Finalize Synthesis'}
-                        <ArrowRight className="size-4" />
-                     </span>
-                  </button>
-               ) : (
-                  <button
-                     disabled={isSaving}
-                     onClick={() => {
-                        const urgLabel = (formData.urgency ?? 45) > 70 ? 'assertive' : (formData.urgency ?? 45) > 30 ? 'balanced' : 'deliberate';
-                        const empLabel = (formData.empathy ?? 75) > 70 ? 'high-resonance' : (formData.empathy ?? 75) > 30 ? 'measured' : 'analytical';
-                        const finalPersona: Partial<AiPersona> = {
-                           ...formData,
-                           useCase: formData.useCase || `${formData.emotion} Agent`,
-                           psychology: `Synthesizing ${formData.emotion?.toLowerCase() || 'neutral'} intent with ${urgLabel} urgency and ${empLabel} empathy profiles.`,
-                           tone: `${formData.emotion || 'Neural'} · ${formData.baseModel?.split('-')[1] || 'Neural'}`,
-                        };
-                        onSave(finalPersona);
-                     }}
-                     className={cn(
-                        "flex-2 py-4 rounded-xl font-bold text-[11px] uppercase tracking-[0.2em] bg-primary text-on-primary-fixed studio-glow-amber shadow-xl transition-all flex items-center justify-center gap-3",
-                        isSaving ? "opacity-60 cursor-not-allowed" : "hover:scale-105 active:scale-95"
-                     )}
-                  >
+            <div className="p-8 bg-surface-low/80 border-t border-outline-variant/20 flex gap-4 mt-auto">
+               <button
+                  disabled={isSaving || !formData.name?.trim()}
+                  onClick={() => {
+                     const urgLabel = (formData.urgency ?? 45) > 70 ? 'assertive' : (formData.urgency ?? 45) > 30 ? 'balanced' : 'deliberate';
+                     const empLabel = (formData.empathy ?? 75) > 70 ? 'high-resonance' : (formData.empathy ?? 75) > 30 ? 'measured' : 'analytical';
+                     const finalPersona: Partial<AiPersona> = {
+                        ...formData,
+                        useCase: formData.useCase || `${formData.emotion} Agent`,
+                        psychology: `Synthesizing ${formData.emotion?.toLowerCase() || 'neutral'} intent with ${urgLabel} urgency and ${empLabel} empathy profiles.`,
+                        tone: `${formData.emotion || 'Neural'} · ${formData.baseModel?.split('-')[1] || 'Neural'}`,
+                     };
+                     onSave(finalPersona);
+                  }}
+                  className={cn(
+                     "flex-1 py-5 rounded-2xl font-black text-[12px] uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 shadow-2xl relative overflow-hidden",
+                     (isSaving || !formData.name?.trim())
+                        ? "bg-outline/10 text-outline cursor-not-allowed opacity-50"
+                        : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-[1.02] active:scale-[0.98]"
+                  )}
+               >
+                  <span className="relative z-10 flex items-center gap-4">
                      {isSaving ? (
-                        <><Loader2 className="size-4 animate-spin" /> Deploying...</>
+                        <><Loader2 className="size-5 animate-spin" /> Neural Sync Active...</>
                      ) : (
-                        <><Save className="size-4" /> Finalize & Deploy Agent</>
+                        <><Save className="size-5" /> Deploy Neural Persona</>
                      )}
-                  </button>
-               )}
+                  </span>
+               </button>
             </div>
          </div>
       </div>
@@ -539,16 +431,7 @@ const QuickForgeView = ({
 // PersonaCard — individual card with edit / activate / delete
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PersonaCard = ({
-   persona,
-   index,
-   onEdit,
-   onDelete,
-   onToggleDeploy,
-   isDeleting,
-   isToggling,
-}: {
-   key?: React.Key;
+interface PersonaCardProps {
    persona: AiPersona;
    index: number;
    onEdit: (p: AiPersona) => void;
@@ -556,6 +439,16 @@ const PersonaCard = ({
    onToggleDeploy: (p: AiPersona) => void | Promise<void>;
    isDeleting: boolean;
    isToggling: boolean;
+}
+
+const PersonaCard: React.FC<PersonaCardProps> = ({
+   persona,
+   index,
+   onEdit,
+   onDelete,
+   onToggleDeploy,
+   isDeleting,
+   isToggling,
 }) => (
    <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -586,7 +479,6 @@ const PersonaCard = ({
             </div>
          </div>
 
-         {/* Action buttons */}
          <div className="flex gap-1.5">
             <button
                onClick={() => onEdit(persona)}
@@ -606,7 +498,6 @@ const PersonaCard = ({
          </div>
       </div>
 
-      {/* Body */}
       <div className="space-y-4 relative z-10">
          <p className="text-[11px] font-medium leading-relaxed line-clamp-2 text-outline/80">{persona.tone} · {persona.useCase}</p>
 
@@ -616,7 +507,6 @@ const PersonaCard = ({
             </p>
          </div>
 
-         {/* Behavioral stats */}
          <div className="grid grid-cols-2 gap-2">
             <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
                <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1"><Activity className="size-2.5" /> Urgency</p>
@@ -632,7 +522,6 @@ const PersonaCard = ({
             </div>
          </div>
 
-         {/* Deploy / Decommission */}
          <button
             onClick={() => onToggleDeploy(persona)}
             disabled={isToggling}
@@ -678,7 +567,6 @@ export default function StudioPersonas() {
    const [deletingId, setDeletingId] = React.useState<string | null>(null);
    const [togglingId, setTogglingId] = React.useState<string | null>(null);
 
-   // ── Load personas from API ──
    const loadPersonas = React.useCallback(async () => {
       setIsLoading(true);
       setLoadError(null);
@@ -694,7 +582,6 @@ export default function StudioPersonas() {
 
    React.useEffect(() => { loadPersonas(); }, [loadPersonas]);
 
-   // ── Save (create / update) ──
    const handleSave = async (formData: Partial<AiPersona>) => {
       setIsSaving(true);
       try {
@@ -714,7 +601,6 @@ export default function StudioPersonas() {
       }
    };
 
-   // ── Delete ──
    const handleDelete = async (persona: AiPersona) => {
       if (!confirm(`Delete "${persona.name}"? This cannot be undone.`)) return;
       setDeletingId(persona.id);
@@ -728,7 +614,6 @@ export default function StudioPersonas() {
       }
    };
 
-   // ── Toggle deploy ──
    const handleToggleDeploy = async (persona: AiPersona) => {
       setTogglingId(persona.id);
       try {
@@ -741,7 +626,6 @@ export default function StudioPersonas() {
       }
    };
 
-   // ── Suggest & adopt ──
    const handleSuggest = (rec: typeof RECOMMENDATIONS[0]) => {
       setEditingPersona({
          name: rec.name,
@@ -752,7 +636,6 @@ export default function StudioPersonas() {
       setIsForgeMode(true);
    };
 
-   // ── Forge mode ──
    if (isForgeMode) {
       return (
          <QuickForgeView
@@ -769,7 +652,6 @@ export default function StudioPersonas() {
       (p.useCase || '').toLowerCase().includes(search.toLowerCase())
    );
 
-   // ── Loading state ──
    if (isLoading) {
       return (
          <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
@@ -786,7 +668,6 @@ export default function StudioPersonas() {
       );
    }
 
-   // ── Error state ──
    if (loadError) {
       return (
          <div className="flex flex-col items-center justify-center min-h-[400px] gap-6">
@@ -809,7 +690,6 @@ export default function StudioPersonas() {
 
    return (
       <div className="space-y-10">
-         {/* Top bar */}
          <div className="flex justify-between items-start border-b border-outline-variant/10 pb-8">
             <div className="space-y-1">
                <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p>
@@ -838,7 +718,6 @@ export default function StudioPersonas() {
             </div>
          </div>
 
-         {/* Search + Recommendations */}
          <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 flex gap-3 p-1.5 bg-surface-low rounded-2xl border border-outline-variant/10 shadow-sm">
                <div className="flex-1 flex items-center gap-2 px-3">
@@ -878,7 +757,6 @@ export default function StudioPersonas() {
             </div>
          </div>
 
-         {/* Stats bar */}
          {personas.length > 0 && (
             <div className="grid grid-cols-3 gap-4">
                {[
@@ -899,7 +777,6 @@ export default function StudioPersonas() {
             </div>
          )}
 
-         {/* Grid */}
          {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
                <div className="size-20 rounded-3xl bg-surface-low border border-outline-variant/10 flex items-center justify-center">

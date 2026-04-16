@@ -4,9 +4,9 @@
  */
 
 export const themeConfig = {
-  selectedBrand: 'amber' as 'amber' | 'nocturnal',
+  selectedBrand: 'nocturnal' as 'amber' | 'nocturnal',
   selectedMode: 'light' as 'light' | 'dark',
-  
+
   amber: {
     light: {
       primary: '#8f4e00',
@@ -47,7 +47,7 @@ export const themeConfig = {
       inputBg: '#262a31',
     }
   },
-  
+
   nocturnal: {
     light: {
       primary: '#7c87f3',
