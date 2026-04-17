@@ -89,7 +89,7 @@ function App() {
       <ThemeSynchronizer />
 
       <Router>
-        <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
+        <div className="flex min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary">
           <Sidebar
             currentUser={currentUser}
             onLogout={() => {
@@ -97,7 +97,7 @@ function App() {
               setCurrentUser(null);
             }}
           />
-          <main className="flex-1 flex flex-col ">
+          <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/home" element={<HomeNew />} />

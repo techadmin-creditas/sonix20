@@ -69,7 +69,7 @@ export function StudioLayout() {
 
   return (
     <StudioProvider>
-      <div className="min-h-screen studio-mesh-gradient text-on-surface selection:bg-primary/30 selection:text-primary flex flex-col">
+      <div className="min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary flex flex-col">
         <Header
           title={title}
           subtitle={subtitle}
