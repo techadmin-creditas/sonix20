@@ -208,7 +208,7 @@ export default function Personas() {
 
         {!botStatsLoading && !error && (
           <>
-            <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
               {/* {filteredPersonas.length === 0 && !loading && (
                 <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
                   <Search className="size-10 mb-3 opacity-30" />
@@ -216,7 +216,7 @@ export default function Personas() {
                 </div>
               )} */}
               {filteredPersonas.map((persona) => (
-                <div key={persona.id} className="glass-panel rounded-3xl p-8 flex flex-col gap-6 group hover:border-primary/30 transition-all">
+                <div key={persona.id} className="glass-panel rounded-2xl p-5 flex flex-col gap-4 group hover:border-primary/30 transition-all">
                   <div className="flex justify-between items-start">
                     <PersonaTileAvatar bot={persona} />
                     <div className="flex flex-col items-end">
@@ -234,9 +234,9 @@ export default function Personas() {
                   </div>
 
                   <div>
-                    <h3 className="text-2xl font-headline font-extrabold text-on-surface">{persona.name}</h3>
+                    <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
                     <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
-                    <p className="text-sm text-outline mt-4 leading-relaxed line-clamp-2">{persona.description}</p>
+                    <p className="text-xs text-outline mt-2 leading-relaxed line-clamp-2">{persona.description}</p>
                     <div className="flex items-center gap-1.5 mt-3 opacity-60">
                       <Calendar className="size-3 text-outline" />
                       <span className="text-[10px] font-bold text-outline uppercase tracking-tight">
@@ -249,34 +249,34 @@ export default function Personas() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 py-5 border-y border-outline-variant/10">
+                  <div className="grid grid-cols-2 gap-3 py-4 border-y border-outline-variant/10">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
-                      <span className="text-lg font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
+                      <span className="text-base font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
-                      <span className="text-lg font-bold text-emerald-500">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
+                      <span className="text-base font-bold text-emerald-500">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Drop-off Rate</span>
-                      <span className="text-lg font-bold text-red-400">{`${Math.round(botStats[persona.id]?.dropoff ?? 0)}%`}</span>
+                      <span className="text-base font-bold text-red-400">{`${Math.round(botStats[persona.id]?.dropoff ?? 0)}%`}</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Avg Duration</span>
-                      <span className="text-lg font-bold">{Math.round(botStats[persona.id]?.avgDuration ?? 0)}s</span>
+                      <span className="text-base font-bold">{Math.round(botStats[persona.id]?.avgDuration ?? 0)}s</span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  {/* <div className="flex flex-wrap gap-2">
                     {(persona.tools_enabled || []).map(tool => (
                       <span key={tool} className="px-2 py-1 rounded bg-surface-highest text-[10px] font-bold text-outline uppercase tracking-tighter">
                         {tool}
                       </span>
                     ))}
-                  </div>
+                  </div> */}
 
-                  <div className="mt-auto flex gap-3 pt-4">
+                  <div className="mt-auto flex gap-3">
                     {deletingId === persona.id ? (
                       <div className="flex-1 flex items-center justify-between gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
                         <span className="text-xs font-bold text-red-400">Delete {persona.name}?</span>
@@ -301,28 +301,28 @@ export default function Personas() {
                       <>
                         <Link
                           to={`/personas/${persona.id}/config`}
-                          className="flex-1 py-3 rounded-xl bg-surface-high text-on-surface font-bold text-sm hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
+                          className="flex-1 py-2.5 rounded-xl bg-surface-high text-on-surface font-bold text-xs hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
                         >
                           Configure
                         </Link>
                         <button
                           onClick={() => handleCopy(persona)}
                           disabled={copyLoadingId === persona.id}
-                          className="px-4 py-3 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10 disabled:opacity-50"
+                          className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10 disabled:opacity-50"
                           title="Duplicate bot"
                         >
                           {copyLoadingId === persona.id ? (
-                            <Loader2 className="size-5 animate-spin" />
+                            <Loader2 className="size-4 animate-spin" />
                           ) : (
-                            <Copy className="size-5" />
+                            <Copy className="size-4" />
                           )}
                         </button>
                         <button
                           onClick={() => setDeletingId(persona.id)}
-                          className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                          className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
                           title="Delete bot"
                         >
-                          <Trash2 className="size-5" />
+                          <Trash2 className="size-4" />
                         </button>
                       </>
                     )}
@@ -359,14 +359,14 @@ function PersonaTileAvatar({ bot }: { bot: Bot }) {
   return (
     <div className="relative">
       <div className={cn(
-        "size-16 rounded-2xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
+        "size-12 rounded-xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
         "bg-gradient-to-br",
         accent,
         bot.color === 'secondary' ? "text-secondary" : "text-primary"
       )}>
-        <UserRound className="size-8" />
+        <UserRound className="size-6" />
       </div>
-      <div className="absolute -bottom-2 -right-2 flex items-center gap-1 rounded-full border border-outline-variant/20 bg-surface-highest px-2 py-1 shadow-lg">
+      <div className="absolute -bottom-1 -right-1 flex items-center gap-1 rounded-full border border-outline-variant/20 bg-surface-highest px-1.5 py-0.5 shadow-lg">
         <span className="text-[10px] font-extrabold uppercase tracking-widest text-on-surface">{badge}</span>
         <AccentIcon className="size-3 text-primary" />
       </div>
