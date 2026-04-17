@@ -38,6 +38,15 @@
   }
 }
 
+@utility studio-mesh-gradient {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(at 0% 0%, color-mix(in srgb, var(--primary) 15%, transparent) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, color-mix(in srgb, var(--primary) 10%, transparent) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%);
+}
+
 :root {
   html {
     scroll-behavior: smooth;
@@ -203,15 +212,6 @@
 
   /* --- Voice Persona Studio Utilities --- */
 
-  .studio-mesh-gradient {
-    background-color: var(--background);
-    background-image:
-      radial-gradient(at 0% 0%, color-mix(in srgb, var(--primary) 15%, transparent) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, color-mix(in srgb, var(--primary) 10%, transparent) 0px, transparent 50%),
-      radial-gradient(at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%);
-  }
-
   .studio-glass {
     @apply bg-surface-lowest/40 backdrop-blur-2xl;
     /* No borders, just tonal layering */
@@ -223,7 +223,8 @@
   }
 
   .premium-forge-border {
-    @apply border-2 border-outline-variant/20 shadow-[0_0_0_1px_rgba(255, 255, 255, 0.05)];
+    @apply border-2 border-outline-variant/20;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
     background-clip: padding-box;
   }
 
