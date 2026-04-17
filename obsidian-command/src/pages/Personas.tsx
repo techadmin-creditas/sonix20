@@ -25,6 +25,7 @@ import {
   Angry,
   Focus,
   Copy,
+  Languages,
 } from 'lucide-react';
 
 export default function Personas() {
@@ -196,15 +197,13 @@ export default function Personas() {
                         {persona.name}
                       </h3>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">
-                          {persona.default_language || 'EN'}
-                        </span>
-                        {persona.is_active && (
+                        {/* Language moved to metrics grid */}
+                        {/* {persona.is_active && (
                           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                             <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
                             <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
                           </div>
-                        )}
+                        )} */}
                       </div>
                     </div>
                   </div>
@@ -233,22 +232,30 @@ export default function Personas() {
                     <p className="text-primary text-[10px] font-black uppercase tracking-[0.3em]">
                       {persona.role || 'Neural Assistant'}
                     </p>
-                    <p className="text-[11px] text-outline mt-2 leading-relaxed line-clamp-2 font-medium">
+                    {/* <p className="text-[11px] text-outline mt-2 leading-relaxed line-clamp-2 font-medium">
                       {persona.description || 'No system descriptor provided for this neural identity.'}
-                    </p>
+                    </p> */}
                   </div>
 
                   <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors italic">
                     <p className="text-[10px] leading-relaxed text-on-surface-variant line-clamp-2">
-                      “{persona.persona || 'Neural persona profile initializing...'}”
+                      “{persona.description || 'Neural persona profile initializing...'}”
                     </p>
                   </div>
 
                   {/* Neural Metrics */}
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="p-3 rounded-xl bg-surface-low/30 border border-outline-variant/5">
-                      <p className="text-[7px] font-bold text-outline uppercase mb-2 flex items-center gap-1.5">
-                        <Cpu className="size-3 text-primary/60" /> Logic Depth
+                  <div className="grid grid-cols-3 gap-2 pt-2">
+                    <div className="p-2.5 rounded-xl bg-surface-low/30 border border-outline-variant/5">
+                      <p className="text-[7px] font-bold text-outline uppercase mb-1 flex items-center gap-1">
+                        <Languages className="size-2.5 text-primary/60" /> Language
+                      </p>
+                      <p className="text-[10px] font-black text-on-surface uppercase tracking-tighter truncate">
+                        {(persona.default_language || (persona as any).language || 'en')}
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-surface-low/30 border border-outline-variant/5">
+                      <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1">
+                        <Cpu className="size-2.5 text-primary/60" /> Logic
                       </p>
                       <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
                         <div
@@ -257,9 +264,9 @@ export default function Personas() {
                         />
                       </div>
                     </div>
-                    <div className="p-3 rounded-xl bg-surface-low/30 border border-outline-variant/5">
-                      <p className="text-[7px] font-bold text-outline uppercase mb-2 flex items-center gap-1.5">
-                        <Smile className="size-3 text-emerald-500/60" /> Empathy
+                    <div className="p-2.5 rounded-xl bg-surface-low/30 border border-outline-variant/5">
+                      <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1">
+                        <Smile className="size-2.5 text-emerald-500/60" /> Empathy
                       </p>
                       <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
                         <div

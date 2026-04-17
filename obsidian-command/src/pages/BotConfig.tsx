@@ -244,6 +244,7 @@ export default function BotConfig() {
     topic_restriction: '',
     refuse_off_topic: false,
     guardrails: '',
+    default_language: 'en',
     variable_mappings: {},
     metadata_defaults: {},
   });
@@ -437,7 +438,7 @@ export default function BotConfig() {
           let tts_provider = botData.tts_provider;
           let tts_model = botData.tts_model || '';
           const voice = voicesData.find(v => v.id === botData.voice_id);
-          
+
           if (voice?.provider === 'gemini') {
             if (tts_provider !== 'gemini') tts_provider = 'gemini';
             if (!tts_model) tts_model = 'gemini-2.5-flash-preview-tts';
@@ -500,18 +501,18 @@ export default function BotConfig() {
       console.error("Failed to load DB schema:", err);
     }
   };
-console.log("dbColumns",dbColumns)
+  console.log("dbColumns", dbColumns)
   // --- Auto-detect variables from prompts & workflows ---
   const [detectedVars, setDetectedVars] = React.useState<string[]>([]);
   const [workflowVars, setWorkflowVars] = React.useState<string[]>([]);
-  
+
   // Fetch and scan workflow nodes for variables
   const scanWorkflowForVars = React.useCallback(async (wfId: string) => {
     if (!wfId) {
       setWorkflowVars([]);
       return;
     }
-    
+
     // Recursive helper to find labels and speech strings
     function findStrings(obj: any): string[] {
       if (typeof obj === 'string') return [obj];
@@ -523,7 +524,7 @@ console.log("dbColumns",dbColumns)
     try {
       const wf = await api.getWorkflow(wfId);
       const nodes = (wf as any).nodes || [];
-      
+
       // Extract all strings from node data to look for [Variables]
       const textToScan = nodes.map((n: any) => findStrings(n.data || {}).join(' ')).join(' ');
       const matches = textToScan.match(/\[(.*?)\]/g) || [];
@@ -542,7 +543,7 @@ console.log("dbColumns",dbColumns)
       setWorkflowVars([]);
     }
   }, [formData.workflow_id, scanWorkflowForVars]);
-console.log("workflowVars",workflowVars)
+  console.log("workflowVars", workflowVars)
   React.useEffect(() => {
     const textToScan = [
       formData.system_prompt || '',
@@ -561,7 +562,7 @@ console.log("workflowVars",workflowVars)
     setFormData(prev => {
       const currentMappings = { ...(prev.variable_mappings || {}) };
       let changed = false;
-      
+
       // 1. ADD newly detected variables (Keeping brackets)
       uniqueVars.forEach(v => {
         if (!currentMappings[v] && !prev.metadata_defaults?.[v]) {
@@ -569,18 +570,18 @@ console.log("workflowVars",workflowVars)
           changed = true;
         }
       });
-      
+
       // 2. REMOVE orphaned auto-detections 
       Object.keys(currentMappings).forEach(existingKey => {
         const isCurrentlyInText = uniqueVars.includes(existingKey);
         const isUntouched = currentMappings[existingKey] === '';
-        
+
         if (!isCurrentlyInText && isUntouched) {
           delete currentMappings[existingKey];
           changed = true;
         }
       });
-      
+
       return changed ? { ...prev, variable_mappings: currentMappings } : prev;
     });
   }, [formData.system_prompt, formData.greeting, formData.persona, formData.description, formData.proactive_prompts, workflowVars]);
@@ -924,13 +925,13 @@ console.log("workflowVars",workflowVars)
             {/* Discovered Variables Shelf */}
             <div className="p-5 rounded-3xl bg-surface-container/30 border border-outline-variant/10">
               <div className="flex items-center justify-between mb-4">
-                 <div className="flex items-center gap-2">
-                   <Target className="size-3.5 text-primary" />
-                   <h4 className="text-[10px] font-black uppercase tracking-widest text-outline">Detected Placeholders</h4>
-                 </div>
-                 <p className="text-[10px] text-outline italic">Click a badge to route it to a category</p>
+                <div className="flex items-center gap-2">
+                  <Target className="size-3.5 text-primary" />
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-outline">Detected Placeholders</h4>
+                </div>
+                <p className="text-[10px] text-outline italic">Click a badge to route it to a category</p>
               </div>
-              
+
               <div className="flex flex-wrap gap-2">
                 {detectedVars.length === 0 ? (
                   <div className="text-[10px] text-outline italic py-2">No [Variables] detected in your current prompts or workflow.</div>
@@ -938,28 +939,28 @@ console.log("workflowVars",workflowVars)
                   detectedVars.map((v, i) => {
                     const isMapped = !!formData.variable_mappings?.[v];
                     const isDefault = !!formData.metadata_defaults?.[v];
-                    
+
                     return (
                       <div key={i} className={cn(
                         "group relative flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all cursor-default",
                         isMapped ? "bg-primary/10 border-primary/20 text-primary" :
-                        isDefault ? "bg-secondary/10 border-secondary/20 text-secondary" :
-                        "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                          isDefault ? "bg-secondary/10 border-secondary/20 text-secondary" :
+                            "bg-amber-500/10 border-amber-500/20 text-amber-500"
                       )}>
                         <span className="text-[10px] font-bold">{v}</span>
                         {(isMapped || isDefault) ? (
                           <CheckCircle2 className="size-3" />
                         ) : (
                           <div className="flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-all">
-                             <button 
-                                onClick={() => setFormData(prev => ({ ...prev, variable_mappings: { ...prev.variable_mappings, [v]: "" } }))}
-                                className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
-                              >+ DB</button>
-                             <div className="w-px h-2 bg-current/20" />
-                             <button 
-                                onClick={() => setFormData(prev => ({ ...prev, metadata_defaults: { ...prev.metadata_defaults, [v]: "" } }))}
-                                className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
-                              >+ Default</button>
+                            <button
+                              onClick={() => setFormData(prev => ({ ...prev, variable_mappings: { ...prev.variable_mappings, [v]: "" } }))}
+                              className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
+                            >+ DB</button>
+                            <div className="w-px h-2 bg-current/20" />
+                            <button
+                              onClick={() => setFormData(prev => ({ ...prev, metadata_defaults: { ...prev.metadata_defaults, [v]: "" } }))}
+                              className="p-1 hover:bg-white/20 rounded-md text-[8px] font-black uppercase"
+                            >+ Default</button>
                           </div>
                         )}
                       </div>
@@ -976,19 +977,19 @@ console.log("workflowVars",workflowVars)
                   <h4 className="text-xs font-black uppercase tracking-widest text-on-surface mb-1">Database Links</h4>
                   <p className="text-[10px] text-outline leading-tight">Map your script placeholders like <b>[POS Amount]</b> to real database keys.</p>
                 </div>
-                
+
                 <div className="space-y-3">
                   {Object.entries(formData.variable_mappings || {}).map(([key, value], idx) => {
                     const isDetected = detectedVars.includes(key);
                     const isConfigured = (value as string).trim().length > 0;
-                    
+
                     return (
                       <div key={idx} className={cn(
                         "flex items-center gap-2 group p-2 rounded-2xl transition-all",
                         isDetected && !isConfigured ? "bg-amber-500/5 border border-amber-500/20" : "bg-transparent"
                       )}>
                         <div className="relative flex-1">
-                           <input 
+                          <input
                             className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs font-bold focus:ring-1 focus:ring-primary/30"
                             placeholder="Placeholder Name"
                             value={key}
@@ -1006,7 +1007,7 @@ console.log("workflowVars",workflowVars)
                         </div>
                         <ArrowLeft className="size-3 text-outline" />
                         <div className="relative flex-1">
-                          <input 
+                          <input
                             list="db-columns-list"
                             className={cn(
                               "w-full bg-surface-container-highest border rounded-xl p-3 text-xs font-mono transition-all",
@@ -1025,11 +1026,11 @@ console.log("workflowVars",workflowVars)
                           <datalist id="db-columns-list">
                             {dbColumns.map(col => <option key={col} value={col} />)}
                           </datalist>
-                           {!isConfigured && (
-                             <span className="absolute -top-2 right-2 text-[8px] font-bold text-amber-500 uppercase bg-background px-1">Mapping Required</span>
-                           )}
+                          {!isConfigured && (
+                            <span className="absolute -top-2 right-2 text-[8px] font-bold text-amber-500 uppercase bg-background px-1">Mapping Required</span>
+                          )}
                         </div>
-                        <button 
+                        <button
                           onClick={() => {
                             const newMappings = { ...formData.variable_mappings };
                             delete newMappings[key];
@@ -1042,7 +1043,7 @@ console.log("workflowVars",workflowVars)
                       </div>
                     );
                   })}
-                  <button 
+                  <button
                     onClick={() => {
                       setFormData(prev => ({
                         ...prev,
@@ -1064,9 +1065,9 @@ console.log("workflowVars",workflowVars)
                 </div>
 
                 <div className="space-y-3">
-                   {Object.entries(formData.metadata_defaults || {}).map(([key, value], idx) => (
+                  {Object.entries(formData.metadata_defaults || {}).map(([key, value], idx) => (
                     <div key={idx} className="flex items-center gap-2 group">
-                      <input 
+                      <input
                         className="flex-1 bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs font-bold"
                         value={key}
                         onChange={(e) => {
@@ -1078,7 +1079,7 @@ console.log("workflowVars",workflowVars)
                         }}
                       />
                       <div className="text-outline font-black">=</div>
-                      <input 
+                      <input
                         className="flex-1 bg-surface-container-highest border border-outline-variant/10 rounded-xl p-3 text-xs text-primary"
                         value={value as string}
                         onChange={(e) => {
@@ -1087,7 +1088,7 @@ console.log("workflowVars",workflowVars)
                           setFormData(prev => ({ ...prev, metadata_defaults: newDefaults }));
                         }}
                       />
-                      <button 
+                      <button
                         onClick={() => {
                           const newDefaults = { ...formData.metadata_defaults };
                           delete newDefaults[key];
@@ -1099,7 +1100,7 @@ console.log("workflowVars",workflowVars)
                       </button>
                     </div>
                   ))}
-                  <button 
+                  <button
                     onClick={() => {
                       setFormData(prev => ({
                         ...prev,
@@ -1113,7 +1114,7 @@ console.log("workflowVars",workflowVars)
                 </div>
               </div>
             </div>
-            
+
             <div className="mt-4 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex items-start gap-3">
               <Info className="size-4 text-primary mt-0.5 shrink-0" />
               <p className="text-[10px] text-primary/70 italic">
@@ -1163,7 +1164,7 @@ console.log("workflowVars",workflowVars)
                     onChange={e => {
                       const vid = e.target.value;
                       const voice = voices.find(v => v.id === vid);
-                      
+
                       setFormData(prev => {
                         let newProv = prev.tts_provider;
                         let newModel = prev.tts_model;
