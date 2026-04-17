@@ -218,7 +218,11 @@ export default function Personas() {
               {filteredPersonas.map((persona) => (
                 <div key={persona.id} className="glass-panel rounded-2xl p-5 flex flex-col gap-4 group hover:border-primary/30 transition-all">
                   <div className="flex justify-between items-start">
-                    <PersonaTileAvatar bot={persona} />
+                    <div className="flex items-center gap-3">
+                      <PersonaTileAvatar bot={persona} />
+                      <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
+                    </div>
+
                     <div className="flex flex-col items-end">
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
@@ -226,6 +230,7 @@ export default function Personas() {
                       )}>
                         {persona.is_active ? 'Active' : 'Inactive'}
                       </span>
+
                       {/* <div className="flex items-center gap-1 mt-2 text-primary">
                         <Star className="size-3 fill-current" />
                         <span className="text-xs font-bold">4.8</span>
@@ -234,7 +239,7 @@ export default function Personas() {
                   </div>
 
                   <div>
-                    <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
+                    {/* <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3> */}
                     <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
                     <p className="text-xs text-outline mt-2 leading-relaxed line-clamp-2">{persona.description}</p>
                     <div className="flex items-center gap-1.5 mt-3 opacity-60">
@@ -359,7 +364,7 @@ function PersonaTileAvatar({ bot }: { bot: Bot }) {
   return (
     <div className="relative">
       <div className={cn(
-        "size-12 rounded-xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
+        "size-12 shrink-0 rounded-xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
         "bg-gradient-to-br",
         accent,
         bot.color === 'secondary' ? "text-secondary" : "text-primary"

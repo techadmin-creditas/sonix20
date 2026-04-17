@@ -129,7 +129,7 @@ function App() {
 
               {/* --- Voice Persona Studio Routes --- */}
               <Route path="/studio" element={<StudioLayout />}>
-                <Route index element={<StudioDashboard />} />
+                <Route index element={<Navigate to="/studio/library" replace />} />
                 <Route path="overview" element={<StudioDashboard />} />
                 <Route path="agents" element={<StudioPersonas />} />
                 <Route path="library" element={<StudioLibrary />} />

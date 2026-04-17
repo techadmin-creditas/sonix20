@@ -22,7 +22,7 @@ import { ThemeToggle } from './ThemeToggle';
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
   { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
-  { icon: Mic2, label: 'Voice Studio', path: '/studio' },
+  { icon: Mic2, label: 'Voice Library', path: '/studio' },
   // { icon: Sparkles, label: 'DIY With AI', path: '/diy-with-ai' },
   { icon: Bot, label: 'Bot Factory', path: '/personas' },
   { icon: Sparkles, label: 'Persona Builder', path: '/persona' },

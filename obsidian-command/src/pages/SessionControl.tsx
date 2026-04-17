@@ -966,52 +966,142 @@ export default function SessionControl() {
               <button
                 onClick={() => setIsBotSelectorOpen(!isBotSelectorOpen)}
                 disabled={isConnecting || isLive}
-                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] w-90 sm:max-w-none "
+                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] w-90 sm:max-w-none"
               >
                 <BotIcon className="size-4 text-primary shrink-0" />
                 <span className="truncate hidden xs:inline sm:inline">{selectedBot?.name || 'Select Agent'}</span>
                 <ChevronDown className={cn("size-3.5 shrink-0 text-outline transition-transform", isBotSelectorOpen && "rotate-180")} />
               </button>
 
-              {isBotSelectorOpen && (
-                <div className="absolute top-full right-0 mt-2 glass-panel rounded-2xl p-2 z-100 shadow-2xl animate-in fade-in slide-in-from-top-2 border border-white/5 max-h-[300px] overflow-auto w-full bg-white ">
-                  <div className="text-[10px] font-bold text-outline uppercase tracking-widest px-2 py-1.5 mb-1">
-                    Select Bot
-                  </div>
-                  {availableBots.map((persona) => (
-                    <button
-                      key={persona.id}
-                      onClick={() => {
-                        setSelectedBot(persona);
-                        setIsBotSelectorOpen(false);
-                        if (ws?.readyState === WebSocket.OPEN) {
-                          ws.send(JSON.stringify({ type: 'switch_bot', bot_id: persona.id }));
-                        }
-                      }}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left",
-                        selectedBot?.id === persona.id
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-surface-highest text-on-surface-variant"
-                      )}
+              <AnimatePresence>
+                {isBotSelectorOpen && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-110 bg-black/2 backdrop-blur-[2px] pointer-events-none"
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                      className="absolute top-full right-0 mt-4 max-w-[60vw] bg-white rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
                     >
-                      <div className="size-7 rounded-lg flex items-center justify-center bg-primary/20 text-primary shrink-0">
-                        <BotIcon className="size-3.5" />
+                      {/* Ambient Background Glows */}
+                      <div className="absolute -top-24 -left-24 size-96 bg-primary/5 blur-[100px] pointer-events-none" />
+                      <div className="absolute -bottom-24 -left-24 size-96 bg-violet-500/5 blur-[100px] pointer-events-none" />
+
+                      <div className="relative flex items-center justify-between mb-8 px-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="size-4 text-primary animate-pulse" />
+                            <h4 className="text-2xl font-headline font-black text-on-surface tracking-tighter uppercase">Bot <span className="text-primary">Factory</span></h4>
+                          </div>
+                          <p className="text-[10px] text-outline uppercase tracking-[0.3em] font-black opacity-60">Deployed Neural Voice Agents</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 px-4 py-1.5 rounded-2xl">
+                            <div className="size-2 rounded-full bg-primary animate-ping" />
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest">{availableBots.filter(b => b.is_active).length} Active Nodes</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-bold truncate">{persona.name}</span>
-                        <span className="text-[10px] opacity-60 truncate">{persona.role}</span>
+
+                      <div className="relative group/slider">
+                        <div className="flex gap-6 overflow-x-auto pb-8 snap-x snap-mandatory custom-scrollbar-horizontal select-none">
+                          {availableBots.map((bot) => (
+                            <motion.div
+                              key={bot.id}
+                              whileHover={{ y: -6 }}
+                              className={cn(
+                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-white border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
+                                selectedBot?.id === bot.id && "ring-2 ring-primary/10"
+                              )}
+                            >
+                              {/* Card Header */}
+                              <div className="flex justify-between items-center mb-4 border-b border-outline-variant/4 pb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="size-12 shrink-0 rounded-[18px] bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary/40 shadow-inner group-hover:bg-primary/5 transition-colors">
+                                    <BotIcon className="size-6" />
+                                  </div>
+                                  <div>
+                                    <h3 className="text-lg font-headline font-black text-on-surface tracking-tight leading-tight">{bot.name}</h3>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <p className="text-[9px] font-black text-primary uppercase tracking-[0.12em]">{bot.default_language?.toUpperCase() || 'EN'}</p>
+                                      {bot.is_active && (
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                          <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                                          <span className="text-[7px] font-black text-emerald-600 uppercase tracking-widest leading-none">Active</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                {/* <p className="text-[11px] font-bold text-outline/60 tracking-tight">{bot.role}</p> */}
+
+                                <div className="p-4 rounded-[20px] bg-surface-low/50 border border-outline-variant/5 transition-colors h-20 overflow-hidden">
+                                  <p className="text-xs leading-relaxed italic text-on-surface-variant font-medium line-clamp-3">
+                                    &ldquo;{bot.description || bot.persona}&rdquo;
+                                  </p>
+                                </div>
+
+
+                                <button
+                                  onClick={() => {
+                                    setSelectedBot(bot);
+                                    setIsBotSelectorOpen(false);
+                                    if (ws?.readyState === WebSocket.OPEN) {
+                                      ws.send(JSON.stringify({ type: 'switch_bot', bot_id: bot.id }));
+                                    }
+                                  }}
+                                  className={cn(
+                                    "w-full flex items-center justify-between p-3 rounded-2xl transition-all group/btn border",
+                                    selectedBot?.id === bot.id
+                                      ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                                      : "bg-surface-low hover:bg-primary text-primary hover:text-white border-outline-variant/5"
+                                  )}
+                                >
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em]">Select Bot</span>
+                                  {selectedBot?.id === bot.id ? (
+                                    <Check className="size-3.5" />
+                                  ) : (
+                                    <ChevronRight className="size-3.5 transition-transform group-hover/btn:translate-x-1" />
+                                  )}
+                                </button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+
+                        {/* Slider Overlay Navigation Hints */}
+                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-white to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-white to-transparent pointer-events-none z-10" />
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+
+                      <div className="mt-2 flex items-center justify-between px-2">
+                        <div className="flex items-center gap-6">
+                          <div className="flex gap-1.5">
+                            {[0, 1, 2].map(i => (
+                              <div key={i} className={cn("size-1.5 rounded-full transition-all duration-300", i === 0 ? "w-4 bg-primary" : "bg-outline-variant/30")} />
+                            ))}
+                          </div>
+                          <p className="text-[9px] font-bold text-outline uppercase tracking-widest">Swipe to explore bot profiles</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* ── Persona Selector ────────────────────────────── */}
             <div className="relative" ref={personaRef}>
               <button
-                onClick={() => setIsPersonaSelectorOpen(true)}
+                onClick={() => setIsPersonaSelectorOpen(!isPersonaSelectorOpen)}
                 className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm"
               >
                 <Users className="size-4 text-primary shrink-0" />
@@ -1070,7 +1160,7 @@ export default function SessionControl() {
                               {/* Card Header */}
                               <div className="flex justify-between items-center mb-4 border-b border-outline-variant/4 pb-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="size-12 rounded-[18px] bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary/40 shadow-inner group-hover:bg-primary/5 transition-colors">
+                                  <div className="size-12 shrink-0 rounded-[18px] bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary/40 shadow-inner group-hover:bg-primary/5 transition-colors">
                                     <UserRound className="size-6" />
                                   </div>
                                   <div>

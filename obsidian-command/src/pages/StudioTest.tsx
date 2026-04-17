@@ -12,6 +12,7 @@ import {
    Waves,
    History,
    ChevronRight,
+   ChevronLeft,
    Check,
    ArrowRight,
    Search,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStudio, type PersonaProfile } from '../contexts/StudioContext';
+import { useNavigate } from 'react-router-dom';
 
 // --- Sub-components ---
 
@@ -175,6 +177,7 @@ const PersonaControl = ({
 
 export default function StudioTest() {
    const { personas, activePersonaId, setActivePersonaId, recordActivity, deployedIds } = useStudio();
+   const navigate = useNavigate();
 
    const [isABMode, setIsABMode] = React.useState(false);
    const [isMirrorMode, setIsMirrorMode] = React.useState(false);
@@ -220,9 +223,18 @@ export default function StudioTest() {
    return (
       <div className="flex flex-col gap-6 h-[calc(100vh-120px)] overflow-hidden">
          <div className="flex justify-between items-center shrink-0">
-            <div className="space-y-0.5">
-               <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Unit Testing</p>
-               <h1 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight leading-none">Testing Console</h1>
+            <div className="flex items-center gap-4">
+               <button
+                  onClick={() => navigate(-1)}
+                  className="p-2.5 rounded-xl bg-surface-low border border-outline-variant/10 text-outline hover:text-primary transition-all shadow-sm hover:bg-surface-high group"
+                  title="Return to Library"
+               >
+                  <ChevronLeft className="size-5 group-hover:-translate-x-0.5 transition-transform" />
+               </button>
+               <div className="space-y-0.5">
+                  <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Unit Testing</p>
+                  <h1 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight leading-none">Testing Console</h1>
+               </div>
             </div>
 
             <div className="flex gap-4 items-center">
