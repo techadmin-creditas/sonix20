@@ -507,9 +507,9 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
             <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary/5 transition-colors">
                <UserRound className="size-7" />
             </div>
-            <div>
-               <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
-               <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+               <h3 className="text-lg font-headline font-extrabold text-on-surface truncate">{persona.name}</h3>
+               <div className="flex flex-wrap items-center gap-2 mt-1">
                   <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{persona.language}</p>
                   {persona.isDeployed && (
                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
@@ -520,6 +520,12 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
                   {!persona.isActive && (
                      <span className="text-[8px] font-bold text-outline uppercase bg-outline/10 px-1.5 py-0.5 rounded">Inactive</span>
                   )}
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-low border border-outline-variant/10">
+                     <Clock className="size-2.5 text-outline" />
+                     <span className="text-[7px] font-bold text-outline uppercase tracking-tighter">
+                        {new Date(persona.createdAt * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · {new Date(persona.createdAt * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                     </span>
+                  </div>
                </div>
             </div>
          </div>

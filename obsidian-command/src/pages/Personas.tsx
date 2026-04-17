@@ -26,6 +26,7 @@ import {
   Focus,
   Copy,
   Languages,
+  Clock,
 } from 'lucide-react';
 
 export default function Personas() {
@@ -198,12 +199,18 @@ export default function Personas() {
                       </h3>
                       <div className="flex items-center gap-2 mt-0.5">
                         {/* Language moved to metrics grid */}
-                        {/* {persona.is_active && (
+                        {persona.is_active && (
                           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                             <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
                             <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
                           </div>
-                        )} */}
+                        )}
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-low border border-outline-variant/10">
+                          <Clock className="size-2.5 text-outline" />
+                          <span className="text-[7px] font-bold text-outline uppercase tracking-widest">
+                            {new Date(persona.created_at * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · {new Date(persona.created_at * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
