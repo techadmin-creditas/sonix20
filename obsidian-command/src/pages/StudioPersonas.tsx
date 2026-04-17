@@ -730,9 +730,9 @@ export default function StudioPersonas() {
 
    return (
       <div className="space-y-10">
-         <div className="flex justify-between items-start border-b border-outline-variant/10 pb-8">
+         <div className="flex justify-between items-start border-b border-outline-variant/10">
             <div className="space-y-1">
-               {/* <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p> */}
+               <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p>
                <h1 className="text-3xl font-headline font-extrabold text-on-surface uppercase tracking-tight">
                   {personas.length} Voice Agents Deployed
                </h1>

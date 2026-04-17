@@ -21,7 +21,7 @@ export function StudioLayout() {
   ];
 
   const getHeaderContent = (path: string) => {
-    if (path.includes('/persona')) return { title: 'Persona Workbench', subtitle: 'Neural Forge' };
+    if (path.includes('/persona')) return { title: 'Persona Builder', subtitle: 'Neural Forge' };
     if (path.includes('/library')) return { title: 'Voice Library', subtitle: 'Persona Fleet' };
     if (path.includes('/test')) return { title: 'Real-time Inference', subtitle: 'Test Console' };
     return { title: 'Neural Operations', subtitle: 'Command Dashboard' };
