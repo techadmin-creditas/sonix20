@@ -193,7 +193,7 @@ export default function Personas() {
                   <div className="flex items-center gap-4">
                     <PersonaTileAvatar bot={persona} />
                     <div className="min-w-0">
-                      <h3 className="text-lg font-headline font-extrabold text-on-surface break-words line-clamp-2 group-hover:text-primary transition-colors">
+                      <h3 className="text-lg font-headline font-extrabold text-on-surface wrap-break-word line-clamp-2 group-hover:text-primary transition-colors">
                         {persona.name}
                       </h3>
                       <div className="flex items-center gap-2 mt-0.5">
