@@ -34,7 +34,6 @@ export default function Personas() {
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
-  const [copyLoadingId, setCopyLoadingId] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
 
   const filteredPersonas = searchQuery.trim()
@@ -53,31 +52,6 @@ export default function Personas() {
       setDeletingId(null);
     }
   };
-
-  const handleCopy = async (persona: Bot) => {
-    setCopyLoadingId(persona.id);
-    try {
-      const copied = await api.createBot({
-        name: `${persona.name} (Copy)`,
-        description: persona.description,
-        persona: persona.persona,
-        role: persona.role,
-        default_language: persona.default_language,
-        is_active: false,
-        tools_enabled: persona.tools_enabled,
-        system_prompt: persona.system_prompt,
-        llm_model: persona.llm_model,
-        llm_provider: persona.llm_provider,
-        voice_id: persona.voice_id,
-      });
-      setPersonas(prev => [copied, ...prev]);
-    } catch {
-      // silently fail
-    } finally {
-      setCopyLoadingId(null);
-    }
-  };
-
 
   React.useEffect(() => {
     async function loadBots() {
@@ -310,18 +284,13 @@ export default function Personas() {
                         >
                           Configure
                         </Link>
-                        <button
-                          onClick={() => handleCopy(persona)}
-                          disabled={copyLoadingId === persona.id}
-                          className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10 disabled:opacity-50"
+                        <Link
+                          to={`/personas/create?clone=${persona.id}`}
+                          className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
                           title="Duplicate bot"
                         >
-                          {copyLoadingId === persona.id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <Copy className="size-4" />
-                          )}
-                        </button>
+                          <Copy className="size-4" />
+                        </Link>
                         <button
                           onClick={() => setDeletingId(persona.id)}
                           className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
