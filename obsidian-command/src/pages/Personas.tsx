@@ -181,130 +181,146 @@ export default function Personas() {
 
 
         {!botStatsLoading && !error && (
-          <>
-            <div className=" grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
-              {/* {filteredPersonas.length === 0 && !loading && (
-                <div className="col-span-full flex flex-col items-center justify-center py-16 text-outline">
-                  <Search className="size-10 mb-3 opacity-30" />
-                  <p className="font-bold text-sm">No agents match &ldquo;{searchQuery}&rdquo;</p>
-                </div>
-              )} */}
-              {filteredPersonas.map((persona) => (
-                <div key={persona.id} className="glass-panel rounded-2xl p-5 flex flex-col gap-4 group hover:border-primary/30 transition-all">
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3">
-                      <PersonaTileAvatar bot={persona} />
-                      <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3>
-                    </div>
-
-                    <div className="flex flex-col items-end">
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest",
-                        persona.is_active ? "bg-emerald-500/10 text-emerald-500" : "bg-surface-highest text-outline"
-                      )}>
-                        {persona.is_active ? 'Active' : 'Inactive'}
-                      </span>
-
-                      {/* <div className="flex items-center gap-1 mt-2 text-primary">
-                        <Star className="size-3 fill-current" />
-                        <span className="text-xs font-bold">4.8</span>
-                      </div> */}
-                    </div>
-                  </div>
-
-                  <div>
-                    {/* <h3 className="text-lg font-headline font-extrabold text-on-surface">{persona.name}</h3> */}
-                    <p className="text-primary text-xs font-bold uppercase tracking-widest mt-1">{persona.role}</p>
-                    <p className="text-xs text-outline mt-2 leading-relaxed line-clamp-2">{persona.description}</p>
-                    <div className="flex items-center gap-1.5 mt-3 opacity-60">
-                      <Calendar className="size-3 text-outline" />
-                      <span className="text-[10px] font-bold text-outline uppercase tracking-tight">
-                        {new Date(persona.created_at * 1000).toLocaleString('en-IN', {
-                          timeZone: 'Asia/Kolkata',
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 py-4 border-y border-outline-variant/10">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Sessions</span>
-                      <span className="text-base font-bold">{botStats[persona.id]?.sessions ?? 0}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Completion</span>
-                      <span className="text-base font-bold text-emerald-500">{`${Math.round(botStats[persona.id]?.completion ?? 0)}%`}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Drop-off Rate</span>
-                      <span className="text-base font-bold text-red-400">{`${Math.round(botStats[persona.id]?.dropoff ?? 0)}%`}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-outline uppercase tracking-widest">Avg Duration</span>
-                      <span className="text-base font-bold">{Math.round(botStats[persona.id]?.avgDuration ?? 0)}s</span>
-                    </div>
-                  </div>
-
-                  {/* <div className="flex flex-wrap gap-2">
-                    {(persona.tools_enabled || []).map(tool => (
-                      <span key={tool} className="px-2 py-1 rounded bg-surface-highest text-[10px] font-bold text-outline uppercase tracking-tighter">
-                        {tool}
-                      </span>
-                    ))}
-                  </div> */}
-
-                  <div className="mt-auto flex gap-3">
-                    {deletingId === persona.id ? (
-                      <div className="flex-1 flex items-center justify-between gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-                        <span className="text-xs font-bold text-red-400">Delete {persona.name}?</span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setDeletingId(null)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-highest transition-all"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleDelete(persona.id)}
-                            disabled={deleteLoadingId === persona.id}
-                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all flex items-center gap-1 disabled:opacity-50"
-                          >
-                            {deleteLoadingId === persona.id ? <Loader2 className="size-3 animate-spin" /> : null}
-                            Delete
-                          </button>
-                        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredPersonas.map((persona, i) => (
+              <div
+                key={persona.id}
+                className="bg-surface-lowest rounded-4xl p-6 group relative overflow-hidden transition-all border border-outline-variant/10 hover:border-primary/30 shadow-sm hover:shadow-2xl flex flex-col gap-6"
+              >
+                {/* Header Section */}
+                <div className="flex justify-between items-start border-b border-outline-variant/5 pb-5">
+                  <div className="flex items-center gap-4">
+                    <PersonaTileAvatar bot={persona} />
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-headline font-extrabold text-on-surface break-words line-clamp-2 group-hover:text-primary transition-colors">
+                        {persona.name}
+                      </h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">
+                          {persona.default_language || 'EN'}
+                        </span>
+                        {persona.is_active && (
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                            <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <>
-                        <Link
-                          to={`/personas/${persona.id}/config`}
-                          className="flex-1 py-2.5 rounded-xl bg-surface-high text-on-surface font-bold text-xs hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
-                        >
-                          Configure
-                        </Link>
-                        <Link
-                          to={`/personas/create?clone=${persona.id}`}
-                          className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
-                          title="Duplicate bot"
-                        >
-                          <Copy className="size-4" />
-                        </Link>
-                        <button
-                          onClick={() => setDeletingId(persona.id)}
-                          className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                          title="Delete bot"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </>
-                    )}
+                    </div>
+                  </div>
+
+                  {/* <div className="flex gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                    <Link
+                      to={`/personas/create?clone=${persona.id}`}
+                      className="p-2 rounded-lg bg-surface-low hover:bg-primary/10 text-outline hover:text-primary transition-all border border-outline-variant/10"
+                      title="Duplicate Bot"
+                    >
+                      <Copy className="size-3.5" />
+                    </Link>
+                    <button
+                      onClick={() => setDeletingId(persona.id)}
+                      className="p-2 rounded-lg bg-surface-low hover:bg-rose-500/10 text-outline hover:text-rose-500 transition-all border border-outline-variant/10"
+                      title="Purge Bot"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div> */}
+                </div>
+
+                {/* Body Content */}
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-primary text-[10px] font-black uppercase tracking-[0.3em]">
+                      {persona.role || 'Neural Assistant'}
+                    </p>
+                    <p className="text-[11px] text-outline mt-2 leading-relaxed line-clamp-2 font-medium">
+                      {persona.description || 'No system descriptor provided for this neural identity.'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors italic">
+                    <p className="text-[10px] leading-relaxed text-on-surface-variant line-clamp-2">
+                      “{persona.persona || 'Neural persona profile initializing...'}”
+                    </p>
+                  </div>
+
+                  {/* Neural Metrics */}
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="p-3 rounded-xl bg-surface-low/30 border border-outline-variant/5">
+                      <p className="text-[7px] font-bold text-outline uppercase mb-2 flex items-center gap-1.5">
+                        <Cpu className="size-3 text-primary/60" /> Logic Depth
+                      </p>
+                      <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-1000"
+                          style={{ width: `${60 + (i * 7) % 35}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-surface-low/30 border border-outline-variant/5">
+                      <p className="text-[7px] font-bold text-outline uppercase mb-2 flex items-center gap-1.5">
+                        <Smile className="size-3 text-emerald-500/60" /> Empathy
+                      </p>
+                      <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 transition-all duration-1000"
+                          style={{ width: `${40 + (i * 13) % 55}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </>
+
+                {/* Footer Actions */}
+                <div className="mt-auto pt-4 flex items-center gap-3">
+                  {deletingId === persona.id ? (
+                    <div className="flex-1 flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 animate-in fade-in zoom-in-95 duration-200">
+                      <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">Confirm Purge?</span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          className="px-3 py-1.5 rounded-lg text-[9px] font-bold text-on-surface hover:bg-surface-highest transition-all uppercase"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleDelete(persona.id)}
+                          disabled={deleteLoadingId === persona.id}
+                          className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-[9px] font-bold uppercase flex items-center gap-2 shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                        >
+                          {deleteLoadingId === persona.id ? <Loader2 className="size-3 animate-spin" /> : null}
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Link
+                        to={`/personas/${persona.id}/config`}
+                        className="flex-1 py-2.5 rounded-xl bg-surface-high text-on-surface font-bold text-xs hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
+                      >
+                        Configure
+                      </Link>
+                      <Link
+                        to={`/personas/create?clone=${persona.id}`}
+                        className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
+                        title="Duplicate Bot"
+                      >
+                        <Copy className="size-4" />
+                      </Link>
+                      <button
+                        onClick={() => setDeletingId(persona.id)}
+                        className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                        title="Delete Bot"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div >
