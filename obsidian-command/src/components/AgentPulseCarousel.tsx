@@ -140,19 +140,19 @@ export function AgentPulseCarousel({
     <div className={`w-full transition-all duration-700 ${isMini ? 'scale-90 -translate-y-4' : 'space-y-4'}`}>
       {!isMini && (
         <div className="reveal-item mx-auto flex w-full max-w-7xl items-center justify-between px-4">
-          <div className="flex items-center gap-2 rounded-full border border-white/5 bg-white/5 p-1 backdrop-blur-3xl">
+          <div className="flex items-center gap-2 rounded-full border border-outline/10 bg-surface-low/5 p-1 backdrop-blur-3xl">
             {CATEGORIES.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
                 className={`relative rounded-full px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all ${
-                  activeCategory === cat.id ? 'text-white' : 'text-zinc-500 hover:text-white'
+                  activeCategory === cat.id ? 'text-on-primary-fixed' : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
                 {activeCategory === cat.id && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute inset-0 z-0 rounded-full bg-orange-600"
+                    className="absolute inset-0 z-0 rounded-full bg-primary"
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   />
                 )}
@@ -161,7 +161,7 @@ export function AgentPulseCarousel({
             ))}
           </div>
 
-          <button className="group flex items-center gap-2 rounded-full border border-zinc-800 bg-white/5 px-4 py-2 transition-all hover:bg-white hover:text-black">
+          <button className="group flex items-center gap-2 rounded-full border border-outline bg-surface/5 px-4 py-2 transition-all hover:bg-on-surface hover:text-background">
             <span className="text-[9px] font-black uppercase tracking-widest">Fintech Studio</span>
             <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
           </button>
@@ -174,8 +174,8 @@ export function AgentPulseCarousel({
         onMouseEnter={() => driftRef.current?.pause()}
         onMouseLeave={() => !isDemoMode && driftRef.current?.play()}
       >
-        <div className={`pointer-events-none absolute inset-y-0 left-0 z-20 bg-linear-to-r from-[#050608] to-transparent ${isMini ? 'w-20' : 'w-32'}`} />
-        <div className={`pointer-events-none absolute inset-y-0 right-0 z-20 bg-linear-to-l from-[#050608] to-transparent ${isMini ? 'w-20' : 'w-32'}`} />
+        <div className={`pointer-events-none absolute inset-y-0 left-0 z-20 bg-linear-to-r from-background to-transparent ${isMini ? 'w-20' : 'w-32'}`} />
+        <div className={`pointer-events-none absolute inset-y-0 right-0 z-20 bg-linear-to-l from-background to-transparent ${isMini ? 'w-20' : 'w-32'}`} />
 
         <div 
           ref={trackRef} 
@@ -199,8 +199,8 @@ export function AgentPulseCarousel({
 
       {!isMini && (
         <div className="reveal-item flex justify-center pt-2">
-          <div className="flex items-center gap-2 text-zinc-600">
-            <Sparkles className="h-3 w-3 text-orange-500" />
+          <div className="flex items-center gap-2 text-on-surface-variant">
+            <Sparkles className="h-3 w-3 text-primary" />
             <span className="text-[9px] font-bold uppercase tracking-[0.2em]">Full manual wheel & drag control // auto-drifts on mouse out</span>
           </div>
         </div>

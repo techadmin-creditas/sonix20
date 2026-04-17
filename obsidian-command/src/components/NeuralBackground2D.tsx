@@ -13,12 +13,7 @@ export function NeuralBackground2D() {
     NODE_COUNT: 140,
     HUB_DIST: 350,
     NODE_DIST: 120,
-    VISIBILITY: isDark ? 0.9 : 0.4, // Lower intensity in light mode
-    COLORS: {
-      PRIMARY: isDark ? '#ffb77b' : '#fb8c00', 
-      SECONDARY: isDark ? '#6366f1' : '#4f46e5', 
-      PULSE: isDark ? '#ffffff' : '#fb8c00',
-    }
+    VISIBILITY: isDark ? 0.9 : 0.4,
   };
 
   useEffect(() => {
@@ -26,6 +21,13 @@ export function NeuralBackground2D() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    const styles = getComputedStyle(document.documentElement);
+    const COLORS = {
+      PRIMARY: styles.getPropertyValue('--primary').trim() || (isDark ? '#ffb77b' : '#fb8c00'),
+      SECONDARY: styles.getPropertyValue('--secondary').trim() || (isDark ? '#6366f1' : '#4f46e5'),
+      PULSE: styles.getPropertyValue('--primary').trim() || (isDark ? '#ffffff' : '#fb8c00'),
+    };
 
     let animationFrameId: number;
     let w: number, h: number;
@@ -79,7 +81,7 @@ export function NeuralBackground2D() {
           
           if (dist < CONFIG.HUB_DIST) {
             const alpha = (1 - dist / CONFIG.HUB_DIST) * 0.2 * CONFIG.VISIBILITY;
-            ctx.strokeStyle = CONFIG.COLORS.SECONDARY;
+            ctx.strokeStyle = COLORS.SECONDARY;
             ctx.globalAlpha = alpha;
             ctx.beginPath();
             ctx.moveTo(hubs[i].x, hubs[i].y);
@@ -109,7 +111,7 @@ export function NeuralBackground2D() {
           
           if (dist < CONFIG.NODE_DIST) {
             const alpha = (1 - dist / CONFIG.NODE_DIST) * 0.15 * CONFIG.VISIBILITY;
-            ctx.strokeStyle = CONFIG.COLORS.PRIMARY;
+            ctx.strokeStyle = COLORS.PRIMARY;
             ctx.globalAlpha = alpha;
             ctx.beginPath();
             ctx.moveTo(allNodes[i].x, allNodes[i].y);
@@ -120,7 +122,7 @@ export function NeuralBackground2D() {
       }
 
       // C. Draw Kinetic Pulses (Data Flow)
-      ctx.fillStyle = CONFIG.COLORS.PULSE;
+      ctx.fillStyle = COLORS.PULSE;
       for (let i = pulses.length - 1; i >= 0; i--) {
         const p = pulses[i];
         p.progress += p.speed;
@@ -139,14 +141,14 @@ export function NeuralBackground2D() {
         ctx.fill();
         // Glow effect for pulse
         ctx.shadowBlur = 10;
-        ctx.shadowColor = CONFIG.COLORS.PULSE;
+        ctx.shadowColor = COLORS.PULSE;
         ctx.fill();
         ctx.shadowBlur = 0;
       }
 
       // D. Draw Particles
       for (let n of allNodes) {
-        ctx.fillStyle = n.type === 'HUB' ? CONFIG.COLORS.SECONDARY : CONFIG.COLORS.PRIMARY;
+        ctx.fillStyle = n.type === 'HUB' ? COLORS.SECONDARY : COLORS.PRIMARY;
         ctx.globalAlpha = n.type === 'HUB' ? 0.6 : 0.3;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.size, 0, Math.PI * 2);
@@ -154,7 +156,7 @@ export function NeuralBackground2D() {
         
         if (n.type === 'HUB') {
           ctx.shadowBlur = 15;
-          ctx.shadowColor = CONFIG.COLORS.SECONDARY;
+          ctx.shadowColor = COLORS.SECONDARY;
           ctx.fill();
           ctx.shadowBlur = 0;
         }
@@ -178,7 +180,8 @@ export function NeuralBackground2D() {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [theme, isDark, CONFIG]);
+  }, [theme, isDark]);
+
 
   return (
     <div className="fixed inset-0 z-0 h-screen w-full bg-neural-bg overflow-hidden transition-colors duration-500">
@@ -209,7 +212,7 @@ export function NeuralBackground2D() {
           />
           <defs>
             <linearGradient id="graphGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity="0.4" />
+              <stop offset="0%" stopColor="var(--secondary)" stopOpacity="0.4" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
           </defs>

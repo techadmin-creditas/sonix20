@@ -35,8 +35,8 @@ const CommandRail = React.memo(({ agents, selectedId, onSelect }: { agents: any[
             onClick={() => onSelect(agent)}
             className={`group relative size-12 md:size-14 rounded-2xl transition-all duration-500 flex items-center justify-center border overflow-hidden ${
               selectedId === agent.id 
-              ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.3)] bg-orange-500/10 scale-110' 
-              : 'border-white/5 bg-zinc-900/50 opacity-40 hover:opacity-100 hover:border-zinc-700'
+              ? 'border-primary shadow-[0_0_20px_var(--primary)] bg-primary/10 scale-110' 
+              : 'border-outline-variant opacity-40 hover:opacity-100 hover:border-outline'
             }`}
           >
             <AgentAvatar 
@@ -48,16 +48,16 @@ const CommandRail = React.memo(({ agents, selectedId, onSelect }: { agents: any[
             />
 
             {selectedId === agent.id && (
-              <motion.div layoutId="activeRailIndicator" className="absolute -left-1 top-1/4 bottom-1/4 w-1 bg-orange-500 rounded-r-full" />
+              <motion.div layoutId="activeRailIndicator" className="absolute -left-1 top-1/4 bottom-1/4 w-1 bg-primary rounded-r-full" />
             )}
             
             {/* TOOLTIP: TACTICAL SUMMARY */}
-            <div className="absolute left-[calc(100%+12px)] top-1/2 -translate-y-1/2 w-48 p-3 rounded-2xl bg-zinc-950 border border-zinc-800 opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-[100] shadow-2xl">
+            <div className="absolute left-[calc(100%+12px)] top-1/2 -translate-y-1/2 w-48 p-3 rounded-2xl bg-surface-lowest border border-outline opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-300 z-[100] shadow-2xl">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-black text-white uppercase">{agent.name}</span>
-                <span className="text-[8px] font-bold text-orange-500 uppercase tracking-widest">{agent.specialty}</span>
+                <span className="text-[10px] font-black text-on-surface uppercase">{agent.name}</span>
+                <span className="text-[8px] font-bold text-primary uppercase tracking-widest">{agent.specialty}</span>
               </div>
-              <p className="text-[9px] text-zinc-500 leading-relaxed font-medium">{agent.benefit}</p>
+              <p className="text-[9px] text-on-surface-variant leading-relaxed font-medium">{agent.benefit}</p>
             </div>
           </button>
         </motion.div>
@@ -153,21 +153,21 @@ export default function HomeNew() {
   }, [isDemoMode]); 
 
   return (
-    <div id="smooth-wrapper" ref={wrapperRef} className="fixed inset-0 overflow-hidden bg-[#050608] text-zinc-100 selection:bg-orange-500/30 touch-none">
+    <div id="smooth-wrapper" ref={wrapperRef} className="fixed inset-0 overflow-hidden bg-background text-on-surface selection:bg-primary/30 touch-none">
       
       <div className="bg-3d-wrapper pointer-events-none fixed inset-0 z-0 opacity-40">
         <MemoBackground />
       </div>
 
-      <header className={`fixed top-0 z-50 w-full border-b border-zinc-700/30 bg-[#050608]/40 backdrop-blur-xl transition-transform duration-500 ${isDemoMode ? '-translate-y-full' : 'translate-y-0'}`}>
+      <header className={`fixed top-0 z-50 w-full border-b border-outline/30 bg-background/40 backdrop-blur-xl transition-transform duration-500 ${isDemoMode ? '-translate-y-full' : 'translate-y-0'}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link to="/" className="font-headline text-xl font-extrabold tracking-tight text-white">
-            SONIX <span className="text-orange-500">2.0</span>
+          <Link to="/" className="font-headline text-xl font-extrabold tracking-tight text-on-surface">
+            SONIX <span className="text-primary">2.0</span>
           </Link>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <Link to="/login" className="studio-glow-amber rounded-full bg-orange-500 px-5 py-2 text-xs font-bold uppercase tracking-wider text-black transition-transform hover:scale-105 active:scale-95">
+              <Link to="/login" className="studio-glow rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase tracking-wider text-on-primary-fixed transition-transform hover:scale-105 active:scale-95">
                 Login
               </Link>
             </div>
@@ -198,18 +198,18 @@ export default function HomeNew() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-[#050608]/95 backdrop-blur-3xl overflow-hidden pt-6"
+            className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-3xl overflow-hidden pt-6"
           >
             <div className="absolute top-6 left-6 right-6 flex items-center justify-between z-10 px-6">
                <div className="flex items-center gap-3">
-                  <div className="size-8 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-black text-orange-500 tracking-tighter">S2</span>
+                  <div className="size-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <span className="text-[10px] font-black text-primary tracking-tighter">S2</span>
                   </div>
-                  <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.3em]">Neural_Console</h3>
+                  <h3 className="text-[10px] font-black uppercase text-on-surface-variant tracking-[0.3em]">Neural_Console</h3>
                </div>
                <button 
                   onClick={() => setIsDemoMode(false)}
-                  className="flex items-center gap-2 rounded-full border border-zinc-800 bg-white/5 py-2.5 px-5 text-[10px] font-black uppercase tracking-widest text-zinc-400 transition-all hover:bg-white hover:text-black"
+                  className="flex items-center gap-2 rounded-full border border-outline bg-surface/5 py-2.5 px-5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant transition-all hover:bg-on-surface hover:text-background"
                 >
                   Exit Lab
                   <X className="size-3.5" />
@@ -218,8 +218,8 @@ export default function HomeNew() {
 
             <div className="flex h-full w-full pt-20">
               {/* VERTICAL SELECTOR RAIL */}
-              <aside className="w-20 md:w-24 border-r border-zinc-900/50 flex flex-col items-center shrink-0 bg-black/20">
-                 <div className="text-[9px] font-bold text-zinc-700 uppercase [writing-mode:vertical-lr] rotate-180 tracking-[0.4em] mb-4">Command Rail</div>
+              <aside className="w-20 md:w-24 border-r border-outline/50 flex flex-col items-center shrink-0 bg-background/20">
+                 <div className="text-[9px] font-bold text-on-surface-variant uppercase [writing-mode:vertical-lr] rotate-180 tracking-[0.4em] mb-4">Command Rail</div>
                  <CommandRail 
                    agents={AGENTS} 
                    selectedId={selectedAgent?.id} 
@@ -238,19 +238,19 @@ export default function HomeNew() {
                        className="flex flex-col md:flex-row md:items-end justify-between gap-6"
                     >
                        <div className="space-y-1">
-                          <motion.div layoutId="tag" className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20">
-                            <Activity className="size-3 text-orange-500" />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-orange-400">Simulation_Active</span>
+                          <motion.div layoutId="tag" className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
+                            <Activity className="size-3 text-primary" />
+                            <span className="text-[9px] font-black uppercase tracking-widest text-primary">Simulation_Active</span>
                           </motion.div>
-                          <motion.h1 layoutId="title" className="text-4xl md:text-6xl font-black text-white uppercase tracking-tighter">
-                            Astra <span className="text-zinc-800">Console</span>
+                          <motion.h1 layoutId="title" className="text-4xl md:text-6xl font-black text-on-surface uppercase tracking-tighter">
+                            Astra <span className="text-on-surface-variant">Console</span>
                           </motion.h1>
                        </div>
 
-                       <div className="flex items-center gap-6 divide-x divide-zinc-800/50 p-6 rounded-3xl bg-white/[0.02] border border-white/5">
+                       <div className="flex items-center gap-6 divide-x divide-outline/50 p-6 rounded-3xl bg-surface/2 bg-opacity-10 border border-outline/50">
                           <div className="flex flex-col">
-                            <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Bot Persona</span>
-                            <span className="text-xs font-black text-white uppercase">{selectedAgent.role}</span>
+                            <span className="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Bot Persona</span>
+                            <span className="text-xs font-black text-on-surface uppercase">{selectedAgent.role}</span>
                           </div>
                           <div className="flex flex-col pl-6">
                             <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Network latency</span>

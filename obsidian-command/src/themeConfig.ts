@@ -4,8 +4,8 @@
  */
 
 export const themeConfig = {
-  selectedBrand: 'nocturnal' as 'amber' | 'nocturnal',
-  selectedMode: 'light' as 'light' | 'dark',
+  selectedBrand: 'neuralSlate' as 'amber' | 'nocturnal' | 'neuralSlate',
+  selectedMode: 'dark' as 'light' | 'dark',
 
   amber: {
     light: {
@@ -87,7 +87,49 @@ export const themeConfig = {
       outlineVariant: '#464554',
       inputBg: '#151b2d',
     }
+  },
+
+  neuralSlate: {
+    light: {
+      primary: '#0ea5e9',
+      primaryContainer: '#e0f2fe',
+      onPrimaryFixed: '#ffffff',
+      secondary: '#64748b',
+      secondaryContainer: '#f1f5f9',
+      tertiary: '#38bdf8',
+      background: '#f8fafc',
+      surface: '#ffffff',
+      surfaceLow: '#f1f5f9',
+      surfaceHigh: '#e2e8f0',
+      surfaceHighest: '#cbd5e1',
+      surfaceLowest: '#ffffff',
+      onSurface: '#0f172a',
+      onSurfaceVariant: '#475569',
+      outline: '#cbd5e1',
+      outlineVariant: '#e2e8f0',
+      inputBg: '#f1f5f9',
+    },
+    dark: {
+      primary: '#38bdf8',
+      primaryContainer: '#0c4a6e',
+      onPrimaryFixed: '#ffffff',
+      secondary: '#94a3b8',
+      secondaryContainer: '#1e293b',
+      tertiary: '#0ea5e9',
+      background: '#020617',
+      surface: '#0f172a',
+      surfaceLow: '#1e293b',
+      surfaceHigh: '#334155',
+      surfaceHighest: '#475569',
+      surfaceLowest: '#020617',
+      onSurface: '#f1f5f9',
+      onSurfaceVariant: '#94a3b8',
+      outline: '#334155',
+      outlineVariant: '#1e293b',
+      inputBg: '#1e293b',
+    }
   }
 };
 
 export type ThemeColors = typeof themeConfig.amber.light;
+

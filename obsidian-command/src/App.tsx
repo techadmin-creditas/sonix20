@@ -62,23 +62,26 @@ function App() {
 
   if (!currentUser) {
     return (
-      <Router>
-        <Routes>
-          <Route path="/" element={<HomeNew />} />
-          <Route path="/home" element={<HomeNew />} />
-          <Route
-            path="/login"
-            element={
-              <Login
-                onLoggedIn={(user) => {
-                  setCurrentUser(user);
-                }}
-              />
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
+      <>
+        <ThemeSynchronizer />
+        <Router>
+          <Routes>
+            <Route path="/" element={<HomeNew />} />
+            <Route path="/home" element={<HomeNew />} />
+            <Route
+              path="/login"
+              element={
+                <Login
+                  onLoggedIn={(user) => {
+                    setCurrentUser(user);
+                  }}
+                />
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </>
     );
   }
 

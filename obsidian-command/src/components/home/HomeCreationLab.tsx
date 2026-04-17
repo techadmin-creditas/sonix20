@@ -16,7 +16,7 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
       <div className="grid lg:grid-cols-2 gap-20 items-center">
         <div className="space-y-8">
           <p className="studio-metadata reveal-item">Build Protocol</p>
-          <h2 className="reveal-item text-5xl font-black leading-tight">Your Voice Empire, <br/><span className="text-orange-400">Built in Seconds.</span></h2>
+          <h2 className="reveal-item text-5xl font-black leading-tight text-on-surface">Your Voice Empire, <br/><span className="text-primary">Built in Seconds.</span></h2>
           <div className="space-y-4">
             {[
               { 
@@ -40,18 +40,18 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                 onClick={() => setActiveStep(i)}
                 className={`cursor-pointer overflow-hidden rounded-3xl border transition-all duration-500 hover:scale-[1.02] active:scale-95 ${
                   activeStep === i 
-                    ? 'border-orange-500/50 bg-orange-500/5 p-6 shadow-2xl shadow-orange-500/10' 
-                    : 'border-zinc-800 bg-zinc-900/10 p-5 opacity-40 hover:opacity-100'
+                    ? 'border-primary/50 bg-primary/5 p-6 shadow-2xl shadow-primary/10' 
+                    : 'border-outline bg-surface-low/10 p-5 opacity-40 hover:opacity-100'
                 }`}
               >
                 <div className="flex items-center gap-6">
                   <div className={`size-10 shrink-0 rounded-2xl flex items-center justify-center transition-all ${
-                    activeStep === i ? 'bg-orange-500 text-black' : 'bg-zinc-800 text-zinc-500'
+                    activeStep === i ? 'bg-primary text-on-primary-fixed' : 'bg-surface-high text-on-surface-variant'
                   }`}>
                     <s.icon className="size-5" />
                   </div>
                   <h4 className={`font-black text-xl tracking-tight transition-all ${
-                    activeStep === i ? 'text-white' : 'text-zinc-500'
+                    activeStep === i ? 'text-on-surface' : 'text-on-surface-variant'
                   }`}>{s.title}</h4>
                 </div>
                 
@@ -63,11 +63,11 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.4, ease: "circOut" }}
                     >
-                      <p className="pt-4 text-zinc-400 leading-relaxed text-sm">
+                      <p className="pt-4 text-on-surface-variant leading-relaxed text-sm">
                         {s.body}
                       </p>
-                      <div className="mt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-orange-500/60">
-                        Build Process Alpha <div className="size-1 rounded-full bg-orange-500/40" /> Step 0{i+1}
+                      <div className="mt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary/60">
+                        Build Process Alpha <div className="size-1 rounded-full bg-primary/40" /> Step 0{i+1}
                       </div>
                     </motion.div>
                   )}
@@ -77,8 +77,8 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
           </div>
         </div>
         
-        <div className="reveal-item relative hidden lg:block aspect-square rounded-[60px] border border-orange-500/20 bg-linear-to-br from-orange-500/5 to-transparent p-12 overflow-hidden">
-           <div className="absolute inset-0 bg-radial-at-tr from-orange-500/20 to-transparent blur-3xl opacity-50" />
+        <div className="reveal-item relative hidden lg:block aspect-square rounded-[60px] border border-primary/20 bg-linear-to-br from-primary/5 to-transparent p-12 overflow-hidden">
+           <div className="absolute inset-0 bg-radial-at-tr from-primary/20 to-transparent blur-3xl opacity-50" />
            <div className="relative h-full flex flex-col justify-center items-center">
               {/* DYNAMIC REALITY VIEWER */}
               <svg viewBox="0 0 400 300" className="w-full h-full">
@@ -93,11 +93,11 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                     >
                       <motion.circle 
                         cx="200" cy="150" r="40" 
-                        fill="rgba(249,115,22,0.05)" stroke="orange" strokeWidth="1" strokeDasharray="4 4"
+                        fill="var(--primary-container)" fillOpacity="0.05" stroke="var(--primary)" strokeWidth="1" strokeDasharray="4 4"
                         animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                       />
-                      <motion.circle cx="200" cy="150" r="20" fill="#050608" stroke="orange" strokeWidth="2" />
-                      <Settings className="size-8 text-orange-500" x="184" y="134" />
+                      <motion.circle cx="200" cy="150" r="20" fill="var(--background)" stroke="var(--primary)" strokeWidth="2" />
+                      <Settings className="size-8 text-primary" x="184" y="134" />
                       {[...Array(6)].map((_, i) => (
                         <motion.path
                           key={i}
@@ -108,7 +108,7 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                           strokeDasharray="4 4"
                         />
                       ))}
-                      <text x="200" y="220" textAnchor="middle" className="text-[10px] fill-orange-500 font-black uppercase tracking-widest">Awaiting Prompt</text>
+                      <text x="200" y="220" textAnchor="middle" className="text-[10px] fill-primary font-black uppercase tracking-widest">Awaiting Prompt</text>
                     </motion.g>
                   )}
 
@@ -122,7 +122,7 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                     >
                       <motion.path
                         d="M50,150 Q100,50 150,150 T250,150 T350,150"
-                        fill="none" stroke="orange" strokeWidth="3"
+                        fill="none" stroke="var(--primary)" strokeWidth="3"
                         animate={{ d: [
                           "M50,150 Q100,50 150,150 T250,150 T350,150",
                           "M50,150 Q100,250 150,150 T250,150 T350,150",
@@ -130,8 +130,8 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                         ]}}
                         transition={{ duration: 2, repeat: Infinity }}
                       />
-                      <Mic className="size-10 text-white" x="180" y="130" />
-                      <text x="200" y="220" textAnchor="middle" className="text-[10px] fill-white font-black uppercase tracking-widest">DNA Synthesis</text>
+                      <Mic className="size-10 text-on-surface" x="180" y="130" />
+                      <text x="200" y="220" textAnchor="middle" className="text-[10px] fill-on-surface font-black uppercase tracking-widest">DNA Synthesis</text>
                     </motion.g>
                   )}
 
@@ -145,16 +145,16 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                     >
                       <motion.path
                         d="M100,150 L200,100 L300,150 L200,200 Z"
-                        fill="rgba(249,115,22,0.05)" stroke="orange" strokeWidth="0.5"
+                        fill="var(--primary)" fillOpacity="0.05" stroke="var(--primary)" strokeWidth="0.5"
                       />
                       <motion.path
                         d="M100,150 L200,100 L300,150 L200,200 Z"
-                        fill="none" stroke="white" strokeWidth="2" strokeDasharray="10 10"
+                        fill="none" stroke="var(--on-surface)" strokeWidth="2" strokeDasharray="10 10"
                         animate={{ strokeDashoffset: [0, -100] }}
                         transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
                       />
-                      <Zap className="size-12 text-orange-500" x="174" y="124" />
-                      <text x="200" y="240" textAnchor="middle" className="text-[10px] fill-orange-500 font-black uppercase tracking-widest">Network Live</text>
+                      <Zap className="size-12 text-primary" x="174" y="124" />
+                      <text x="200" y="240" textAnchor="middle" className="text-[10px] fill-primary font-black uppercase tracking-widest">Network Live</text>
                     </motion.g>
                   )}
                 </AnimatePresence>
