@@ -1,8 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useTheme } from '../lib/theme';
 
 export function NeuralBackground2D() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   // --- LOGIC GRAPH CONFIG ---
   const CONFIG = {
@@ -10,11 +13,11 @@ export function NeuralBackground2D() {
     NODE_COUNT: 140,
     HUB_DIST: 350,
     NODE_DIST: 120,
-    VISIBILITY: 0.9, // Multiplier for overall brightness
+    VISIBILITY: isDark ? 0.9 : 0.4, // Lower intensity in light mode
     COLORS: {
-      PRIMARY: '#ffb77b', // Orange Logic
-      SECONDARY: '#6366f1', // Indigo Structure
-      PULSE: '#ffffff',
+      PRIMARY: isDark ? '#ffb77b' : '#fb8c00', 
+      SECONDARY: isDark ? '#6366f1' : '#4f46e5', 
+      PULSE: isDark ? '#ffffff' : '#fb8c00',
     }
   };
 
@@ -175,10 +178,10 @@ export function NeuralBackground2D() {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [theme, isDark, CONFIG]);
 
   return (
-    <div className="fixed inset-0 z-0 h-screen w-full bg-[#050608] overflow-hidden">
+    <div className="fixed inset-0 z-0 h-screen w-full bg-neural-bg overflow-hidden transition-colors duration-500">
       {/* High-Visibility Logic Graph Layer */}
       <canvas 
         ref={canvasRef} 
