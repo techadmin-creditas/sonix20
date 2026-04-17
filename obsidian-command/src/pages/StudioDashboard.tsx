@@ -192,7 +192,7 @@ export default function StudioDashboard() {
                                     initial={{ width: 0 }}
                                     animate={{ width: `${personas.length > 0 ? (count / personas.length) * 100 : 0}%` }}
                                     className="h-full bg-primary shadow-[0_0_8px_rgba(255,193,7,0.4)]"
-                                  />
+                                 />
                               </div>
                            </div>
                            {selectedProvider === provider && (
@@ -298,7 +298,7 @@ export default function StudioDashboard() {
                         </div>
                         <div className="space-y-1">
                            <p className="text-sm font-bold text-on-surface">No Active Nodes</p>
-                           <p className="text-[10px] text-outline uppercase tracking-widest leading-relaxed">Select a neural provider to analyze<br/>localized distribution</p>
+                           <p className="text-[10px] text-outline uppercase tracking-widest leading-relaxed">Select a neural provider to analyze<br />localized distribution</p>
                         </div>
                      </div>
                   )}

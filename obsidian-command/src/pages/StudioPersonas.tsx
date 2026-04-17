@@ -11,6 +11,7 @@ import {
    ChevronRight,
    UserRound,
    Edit2,
+   Edit3,
    Trash2,
    Cpu,
    Zap,
@@ -30,34 +31,86 @@ import {
    Coffee,
    Heart,
    Shield,
+   Bot,
+   Fingerprint,
+   Play,
+   Pause,
+   MessageSquare,
+   Volume2,
+   CloudLightning,
+   Clock,
+   DollarSign,
+   CheckCircle2,
+   ChevronDown,
+   Lock,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { VOICE_RELAYS } from '../data/voiceData';
-import { StudioSlider } from '../components/StudioSlider';
 import { api, type AiPersona } from '../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QuickForgeView — streamlined persona builder form
+// Shared Premium Components
 // ─────────────────────────────────────────────────────────────────────────────
 
-const INITIAL_FORM = {
-   name: '',
-   gender: 'Female' as AiPersona['gender'],
-   tone: 'Warm · Empathetic',
-   stability: 80,
-   clarity: 60,
-   emotion: 'Empathetic',
-   selectedVoice: 'v1',
-   urgency: 45,
-   empathy: 75,
-   styleExaggeration: 35,
-   baseModel: 'Sonix-Flash-1',
-   useCase: '',
-   language: 'English',
-   psychology: '',
-};
+const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { label?: string, placeholder: string, value: string, onChange: (v: string) => void, icon?: any }) => (
+   <div className="space-y-2 group/input">
+      {label && (
+         <div className="flex items-center gap-2 mb-1">
+            <div className="size-1.5 rounded-full bg-primary animate-pulse" />
+            <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">{label}</label>
+         </div>
+      )}
+      <div className="relative">
+         <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none text-outline/30 group-focus-within/input:text-primary transition-colors">
+            {Icon ? <Icon className="size-4" /> : <Fingerprint className="size-4" />}
+         </div>
+         <input
+            type="text"
+            placeholder={placeholder}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-white focus:border-indigo-500 outline-none transition-all placeholder:text-outline/20 shadow-inner"
+         />
+      </div>
+   </div>
+);
 
-const QuickForgeView = ({
+const PremiumSlider = ({ label, value, onChange, description }: { label: string, value: number, onChange: (v: number) => void, description?: string }) => (
+   <div className="space-y-2">
+      <div className="flex justify-between items-end mb-1">
+         <div className="flex flex-col">
+            <span className="text-[11px] font-black text-on-surface uppercase tracking-tight">{label}</span>
+            {description && <span className="text-[9px] text-outline/60 font-medium italic">{description}</span>}
+         </div>
+         <span className="text-xs font-bold text-indigo-500">{value}%</span>
+      </div>
+      <div className="relative h-6 flex items-center group">
+         <div className="absolute inset-0 h-1.5 top-1/2 -translate-y-1/2 bg-slate-100 rounded-full" />
+         <motion.div
+            className="absolute inset-y-0 left-0 h-1.5 top-1/2 -translate-y-1/2 bg-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+            style={{ width: `${value}%` }}
+         />
+         <input
+            type="range"
+            min="0"
+            max="100"
+            value={value}
+            onChange={e => onChange(parseInt(e.target.value))}
+            className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
+         />
+         <motion.div
+            className="absolute size-4 bg-white rounded-full shadow-lg border-2 border-indigo-500 pointer-events-none"
+            animate={{ left: `calc(${value}% - 8px)` }}
+            transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
+         />
+      </div>
+   </div>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Next-Gen Neural Identity Forge Panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NeuralIdentityForge = ({
    onClose,
    onSave,
    initialPersona,
@@ -68,361 +121,353 @@ const QuickForgeView = ({
    initialPersona?: Partial<AiPersona> | null;
    isSaving: boolean;
 }) => {
-   const [isScanning, setIsScanning] = React.useState(false);
-   const [showAdvanced, setShowAdvanced] = React.useState(true);
-   const [formData, setFormData] = React.useState<Partial<AiPersona>>(
-      initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM }
-   );
+   const [formData, setFormData] = React.useState<Partial<AiPersona>>(() => ({
+      name: initialPersona?.name || '',
+      emotion: initialPersona?.emotion || '',
+      language: initialPersona?.language || '',
+      stability: initialPersona?.stability || 80,
+      clarity: initialPersona?.clarity || 60,
+      expressiveness: initialPersona?.expressiveness || 35,
+      gender: initialPersona?.gender || 'Female',
+      psychology: initialPersona?.psychology || '',
+      selectedVoice: initialPersona?.selectedVoice || '',
+      isDeployed: initialPersona?.isDeployed || false,
+      useCase: initialPersona?.useCase || '',
+      tone: initialPersona?.tone || '',
+      urgency: initialPersona?.urgency || 45,
+      empathy: initialPersona?.empathy || 75,
+   }));
 
-   React.useEffect(() => {
-      setFormData(initialPersona ? { ...INITIAL_FORM, ...initialPersona } : { ...INITIAL_FORM });
-   }, [initialPersona]);
+   const [activeTab, setActiveTab] = React.useState<'Voice' | 'Language' | 'Tone'>('Voice');
+   const [isPlaying, setIsPlaying] = React.useState(false);
 
    const patch = (val: Partial<AiPersona>) => setFormData(prev => ({ ...prev, ...val }));
 
-   return (
-      <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto py-4">
-         <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+   const handlePlayPreview = () => {
+      if (!formData.selectedVoice || !formData.language || !formData.emotion) return;
+      if (isPlaying) {
+         setIsPlaying(false);
+         return;
+      }
+      setIsPlaying(true);
+   };
+
+   React.useEffect(() => {
+      let timer: any;
+      if (isPlaying) {
+         timer = setTimeout(() => setIsPlaying(false), 5000);
+      }
+      return () => clearTimeout(timer);
+   }, [isPlaying]);
+
+   React.useEffect(() => {
+      if (isPlaying) {
+         setIsPlaying(false);
+         setTimeout(() => {
+            if (formData.selectedVoice && formData.language && formData.emotion) {
+               setIsPlaying(true);
+            }
+         }, 300);
+      }
+   }, [formData.selectedVoice, formData.language, formData.emotion, formData.stability, formData.clarity, formData.expressiveness]);
+
+   const isComplete = !!(formData.selectedVoice && formData.language && formData.emotion);
+
+   const avatars = [
+      { id: 'v1', name: 'Rachel', image: '/avatars/rachel.png', label: 'Female • 24y', info: 'Best for: Collections' },
+      { id: 'v2', name: 'Marcus', image: '/avatars/marcus.png', label: 'Male • 30y', info: 'Control Room' },
+      { id: 'v3', name: 'Saira', image: '/avatars/saira.png', label: 'Female • 28y', info: 'Tech Expert' },
+   ];
+
+   const languages = [
+      { id: 'en', name: 'English', label: 'United States', sub: 'Primary' },
+      { id: 'hi', name: 'Hindi', label: 'India', sub: 'Regional' },
+      { id: 'hinglish', name: 'Hinglish', label: 'In-Hi Mix', sub: 'Native Mix' },
+      { id: 'es', name: 'Spanish', label: 'Spain', sub: 'Europe' },
+   ];
+
+   const tones = [
+      { id: 'empathetic', name: 'Empathetic', label: 'Warm & Caring', icon: Heart },
+      { id: 'analytical', name: 'Analytical', label: 'Precise & Calm', icon: Cpu },
+      { id: 'firm', name: 'Firm', label: 'Direct & Strong', icon: ShieldCheck },
+      { id: 'casual', name: 'Casual', label: 'Friendly & Chill', icon: MessageSquare },
+   ];
+
+   const renderTabContent = () => {
+      switch (activeTab) {
+         case 'Voice':
+            return avatars.map((av, i) => (
                <button
-                  onClick={onClose}
-                  className="p-3 rounded-xl bg-surface-low hover:bg-surface-high border border-outline-variant/10 transition-all text-outline group"
+                  key={i}
+                  onClick={() => patch({ gender: av.name.includes('Marcus') ? 'Male' : 'Female', selectedVoice: av.name })}
+                  className={cn(
+                     "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
+                     formData.selectedVoice === av.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                  )}
                >
-                  <X className="size-4 group-hover:text-primary transition-colors" />
+                  <div className="size-10 rounded-full bg-slate-50 overflow-hidden border border-slate-200">
+                     {av.image ? <img src={av.image} alt={av.name} className="w-full h-full object-cover" /> : <Bot className="size-full p-2 text-outline" />}
+                  </div>
+                  <div className="text-left">
+                     <div className="text-[11px] font-bold text-slate-900">{av.name}</div>
+                     <div className="text-[8px] font-medium text-slate-400">{av.info}</div>
+                  </div>
                </button>
-               <div className="h-8 w-px bg-outline-variant/10" />
-               <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Persona Forge</p>
-                  <div className="flex items-center gap-4">
-                     <h2 className="text-2xl font-headline font-extrabold text-on-surface uppercase tracking-tight line-clamp-1">
-                        {initialPersona?.id ? 'Edit AI Persona' : 'Create AI Persona'}
-                     </h2>
-                     <div className="flex items-center gap-2">
-                        {/* <button
-                           onClick={() => setShowAdvanced(!showAdvanced)}
-                           className={cn(
-                              "px-4 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest border transition-all flex items-center gap-2",
-                              showAdvanced
-                                 ? "bg-primary text-on-primary-fixed border-primary shadow-[0_0_15px_rgba(255,193,7,0.4)]"
-                                 : "bg-surface-low border-outline-variant/10 text-outline hover:text-on-surface hover:border-outline-variant/30"
-                           )}
-                        >
-                           <Settings2 className={cn("size-3.5", showAdvanced ? "animate-spin-slow" : "")} />
-                           {showAdvanced ? 'Advanced Tuning: ON' : 'Show Advanced Tuning'}
-                        </button> */}
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                           <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                           <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">
-                              {formData.baseModel || 'Sonix-Flash-1'} Node Active
-                           </span>
+            ));
+         case 'Language':
+            return languages.map((lang, i) => (
+               <button
+                  key={i}
+                  onClick={() => patch({ language: lang.name })}
+                  className={cn(
+                     "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
+                     formData.language === lang.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                  )}
+               >
+                  <div className="text-left">
+                     <div className="text-[11px] font-bold text-slate-900">{lang.name}</div>
+                     <div className="text-[8px] font-medium text-slate-400">{lang.sub}</div>
+                  </div>
+               </button>
+            ));
+         case 'Tone':
+            return tones.map((tone, i) => (
+               <button
+                  key={i}
+                  onClick={() => patch({ emotion: tone.name })}
+                  className={cn(
+                     "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
+                     formData.emotion === tone.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                  )}
+               >
+                  <tone.icon className={cn("size-4", formData.emotion === tone.name ? "text-indigo-500" : "text-slate-400")} />
+                  <div className="text-left">
+                     <div className="text-[11px] font-bold text-slate-900">{tone.name}</div>
+                     <div className="text-[8px] font-medium text-slate-400">{tone.label}</div>
+                  </div>
+               </button>
+            ));
+      }
+   };
+
+   return (
+      <div className="fixed inset-0 z-100 flex justify-end pointer-events-none" >
+         <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-slate-900/5 backdrop-blur-[2px] pointer-events-auto"
+            onClick={onClose}
+         />
+
+         <motion.div
+            initial={{ x: '100%', opacity: 0.5 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0.5 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 200 }}
+            className="relative w-full max-w-[1100px] h-full bg-slate-50 border-l border-slate-200 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
+         >
+            {/* Header */}
+            <div className="px-10 py-6 flex items-center justify-between border-b border-slate-200 shrink-0 z-10 bg-white/80 backdrop-blur-md">
+               <div className="flex items-center gap-4">
+                  <div className="size-10 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
+                     <Brain className="size-6 text-indigo-500" />
+                  </div>
+                  <div>
+                     <h2 className="text-xl font-bold text-slate-900 tracking-tight">NEURALIDENTITY</h2>
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Persona Forge</p>
+                  </div>
+               </div>
+               <div className="flex items-center gap-4">
+                  <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 transition-all">
+                     <X className="size-5" />
+                  </button>
+               </div>
+            </div>
+
+            <div className="flex-1 flex overflow-hidden">
+               {/* Left Column */}
+               <div className="flex-1 overflow-y-auto p-10 scrollbar-none space-y-8">
+                  <div className="space-y-8">
+                     <div className="p-8 bg-white border border-slate-100 rounded-[2.5rem] space-y-8 shadow-sm relative overflow-hidden group/forge">
+                        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover/forge:opacity-10 transition-opacity">
+                           <Fingerprint className="size-24 text-indigo-500" />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                           <PremiumInput
+                              label="Name"
+                              placeholder="e.g. Athena-7"
+                              value={formData.name || ''}
+                              onChange={v => patch({ name: v })}
+                              icon={Bot}
+                           />
+                           <div className="space-y-2 group/input">
+                              <div className="flex items-center gap-2 mb-1">
+                                 <div className="size-1.5 rounded-full bg-indigo-500/50" />
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Primary Logic</label>
+                              </div>
+                              <div className="relative">
+                                 <div className="absolute top-1/2 -translate-y-1/2 left-6 text-slate-300 group-focus-within/input:text-indigo-500 transition-colors">
+                                    <BrainCircuit className="size-4" />
+                                 </div>
+                                 <input
+                                    placeholder="Primary Logic..."
+                                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-white focus:border-indigo-500 outline-none transition-all placeholder:text-outline/20 shadow-inner"
+                                    value={formData.psychology || ''}
+                                    onChange={e => patch({ psychology: e.target.value })}
+                                 />
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                           <div className="inline-flex p-1 bg-white border border-slate-200 rounded-2xl">
+                              {['Voice', 'Language', 'Tone'].map(tab => (
+                                 <button
+                                    key={tab}
+                                    onClick={() => setActiveTab(tab as any)}
+                                    className={cn(
+                                       "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                       activeTab === tab ? "bg-indigo-500 text-white shadow-md" : "text-slate-400 hover:text-slate-900"
+                                    )}
+                                 >
+                                    {tab}
+                                 </button>
+                              ))}
+                           </div>
+                        </div>
+                        <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+                           {renderTabContent()}
+                        </div>
+                     </div>
+
+                     <div className="bg-white border border-slate-100 rounded-[2.5rem] p-8 space-y-6 shadow-sm">
+                        <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Acoustic Tuning</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                           <div className="space-y-6">
+                              <PremiumSlider label="Urgency" value={formData.urgency || 45} onChange={v => patch({ urgency: v })} />
+                              <PremiumSlider label="Empathy" value={formData.empathy || 75} onChange={v => patch({ empathy: v })} />
+                           </div>
+                           <div className="space-y-6">
+                              <PremiumSlider label="Stability" value={formData.stability || 80} onChange={v => patch({ stability: v })} />
+                              <PremiumSlider label="Clarity" value={formData.clarity || 60} onChange={v => patch({ clarity: v })} />
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Right Column (Fixed Preview) */}
+               <div className="w-[440px] p-10 bg-slate-100 border-l border-slate-200 flex flex-col shrink-0">
+                  <div className="flex flex-col gap-8 sticky top-0">
+                     <h3 className="text-xl font-bold text-slate-900 flex items-center gap-3">
+                        <Activity className="size-5 text-indigo-500" /> Entity Preview
+                     </h3>
+
+                     <div className={cn(
+                        "relative group rounded-[3rem] overflow-hidden bg-white border border-slate-200 shadow-2xl transition-all",
+                        !isComplete && "opacity-50 grayscale blur-[2px] pointer-events-none"
+                     )}>
+                        {!isComplete && (
+                           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-md p-10 text-center">
+                              <div className="size-16 rounded-full bg-indigo-500/20 flex items-center justify-center mb-6 animate-pulse">
+                                 <Lock className="size-8 text-white" />
+                              </div>
+                              <h5 className="text-white font-bold text-lg mb-2 uppercase tracking-tighter">Acoustic Link Offline</h5>
+                              <p className="text-white/60 text-[10px] font-medium leading-relaxed uppercase tracking-widest">
+                                 Select Voice, Language, and Tone <br /> to initialize identity
+                              </p>
+                           </div>
+                        )}
+                        <div className="aspect-4/5 relative">
+                           <img
+                              src={avatars.find(a => a.name === formData.selectedVoice)?.image || avatars[0].image}
+                              alt="Current Persona"
+                              className="absolute inset-0 w-full h-full object-cover"
+                           />
+                           <div className="absolute inset-0 bg-slate-900/40" />
+                           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-slate-900 to-transparent flex flex-col justify-end p-8 space-y-6 pb-2">
+                              <div className="flex flex-col">
+                                 <div className="flex items-center gap-2 mb-2">
+                                    <div className={cn("size-2 rounded-full bg-indigo-400", isPlaying && "animate-ping")} />
+                                    <span className={cn("text-[10px] font-black uppercase tracking-[0.3em]", isPlaying ? "text-indigo-400" : "text-white/20")}>
+                                       {isPlaying ? 'Audio Link Active' : 'System Standby'}
+                                    </span>
+                                 </div>
+                                 <h4 className="text-3xl font-bold text-white tracking-tighter">{formData.selectedVoice || 'Rachel'}</h4>
+                              </div>
+
+                              <div className="flex gap-4">
+                                 <div className="flex items-center gap-1.5 text-[9px] text-white/80 font-black uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20">
+                                    <Languages className="size-3" /> {formData.language || 'English'}
+                                 </div>
+                                 <div className="flex items-center gap-1.5 text-[9px] text-white/80 font-black uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20">
+                                    <ShieldCheck className="size-3" /> {formData.emotion || 'Empathetic'}
+                                 </div>
+                              </div>
+
+                              <div className="relative pt-4 border-t border-white/20">
+                                 <div className="flex items-center gap-0.5 h-16">
+                                    {[0.4, 0.7, 0.3, 0.9, 0.5, 0.8, 0.2, 0.6, 1, 0.4, 0.7, 0.3, 0.9, 0.5, 0.8, 0.2, 0.6, 1, 0.4, 0.7].map((h, i) => (
+                                       <motion.div
+                                          key={i}
+                                          animate={isPlaying ? { height: ['10%', `${h * 100}%`, '10%'] } : { height: '10%' }}
+                                          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.05 }}
+                                          className={cn(
+                                             "flex-1 rounded-full transition-colors duration-500",
+                                             isPlaying ? "bg-indigo-400 opacity-60" : "bg-white/20 opacity-20"
+                                          )}
+                                       />
+                                    ))}
+                                 </div>
+                                 <button
+                                    onClick={handlePlayPreview}
+                                    disabled={!isComplete}
+                                    className="absolute right-0 bottom-6 size-16 rounded-full bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 transition-all z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                 >
+                                    {isPlaying ? <Pause className="size-8" /> : <Play className="size-7 fill-current" />}
+                                 </button>
+                              </div>
+                           </div>
                         </div>
                      </div>
                   </div>
                </div>
             </div>
-         </div>
 
-         <div className="bg-surface-lowest/95 backdrop-blur-3xl rounded-[2.5rem] overflow-hidden flex flex-col border border-outline-variant/10 shadow-2xl relative group/forge">
-            <div className="h-1 w-full bg-gradient-to-r from-primary/5 via-primary to-primary/5" />
-
-            <div className="px-8 py-7 space-y-8 relative flex flex-col">
-               <AnimatePresence>
-                  {isScanning && (
-                     <motion.div
-                        initial={{ top: '-10%', opacity: 0 }}
-                        animate={{ top: '110%', opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.8, ease: "linear" }}
-                        className="absolute inset-x-0 h-32 bg-primary/20 blur-[100px] z-20 pointer-events-none"
-                     >
-                        <div className="h-px w-full bg-primary/50 shadow-[0_0_30px_rgba(255,193,7,0.8)]" />
-                     </motion.div>
+            {/* Bottom Action Bar */}
+            <div className="px-10 py-8 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+               <div className="flex items-center gap-2 px-6 py-2 rounded-full bg-slate-50 border border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                  {isComplete ? (
+                     <span className="text-emerald-500 flex items-center gap-2"><CheckCircle2 className="size-4" /> Persona Ready ✓</span>
+                  ) : (
+                     <><Loader2 className="size-4 animate-spin" /> Neural Profile Incomplete</>
                   )}
-               </AnimatePresence>
-
-               <AnimatePresence mode="wait">
-                  <motion.div
-                     key="main-forge"
-                     initial={{ opacity: 0, y: 15 }}
-                     animate={{ opacity: 1, y: 0 }}
-                     exit={{ opacity: 0, y: -15 }}
-                     className="space-y-8"
-                  >
-                     {/* Core Identity & Resonance Node */}
-                     <section className="space-y-6 relative">
-                        <div className="flex justify-between items-end border-b border-outline-variant/10 pb-5">
-                           <div className="flex items-center gap-4">
-                              <div className="size-11 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 shadow-[0_0_15px_rgba(255,193,7,0.1)]">
-                                 <BrainCircuit className="size-5 text-primary" />
-                              </div>
-                              <div>
-                                 <h2 className="text-xl font-headline font-black text-on-surface uppercase tracking-tight">Neural Identity</h2>
-                                 <p className="text-[9px] font-bold text-outline uppercase tracking-[0.25em] mt-0.5 opacity-60">Resonance parameters</p>
-                              </div>
-                           </div>
-                           {formData.name && (
-                              <motion.div
-                                 initial={{ opacity: 0, x: 20 }}
-                                 animate={{ opacity: 1, x: 0 }}
-                                 className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-emerald-500/5 border border-emerald-500/10"
-                              >
-                                 <div className="size-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                                 <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Identity Synchronized</span>
-                              </motion.div>
-                           )}
-                        </div>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                           {/* Left: Identification Stacks */}
-                           <div className="lg:col-span-4 space-y-5">
-                              <div className="space-y-2">
-                                 <div className="flex justify-between px-0">
-                                    <label className="text-[9px] font-black text-primary uppercase tracking-widest">Name</label>
-                                    <UserRound className="size-3 text-outline/40" />
-                                 </div>
-                                 <input
-                                    type="text"
-                                    autoFocus
-                                    placeholder="Enter Persona Name"
-                                    className="w-full bg-surface-low/50 backdrop-blur-md border border-outline-variant/10 rounded-xl p-4 text-sm font-bold outline-none focus:ring-4 focus:ring-primary/10 transition-all shadow-inner"
-                                    value={formData.name || ''}
-                                    onChange={e => patch({ name: e.target.value })}
-                                 />
-                              </div>
-
-                              <div className="space-y-2">
-                                 <div className="flex justify-between px-0">
-                                    <label className="text-[9px] font-black text-primary uppercase tracking-widest">Primary Logic</label>
-                                    <Settings2 className="size-3 text-outline/40" />
-                                 </div>
-                                 <div className="relative">
-                                    <input
-                                       type="text"
-                                       placeholder="Behavioral objective..."
-                                       className="w-full bg-surface-low/50 border border-outline-variant/10 rounded-xl p-4 text-[13px] font-bold outline-none focus:ring-4 focus:ring-primary/10 transition-all"
-                                       value={formData.useCase || ''}
-                                       onChange={e => patch({ useCase: e.target.value })}
-                                    />
-                                    <Zap className="absolute right-4 top-1/2 -translate-y-1/2 size-3.5 text-primary/40" />
-                                 </div>
-                              </div>
-                           </div>
-
-                           {/* Center: Vocal DNA (Step 4) */}
-                           <div className="lg:col-span-4 space-y-3">
-                              <label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Vocal DNA Profile</label>
-                              <div className="space-y-2">
-                                 {VOICE_RELAYS.slice(0, 3).map(v => (
-                                    <button
-                                       key={v.id}
-                                       onClick={() => patch({ selectedVoice: v.id })}
-                                       className={cn(
-                                          "w-full px-4 py-3.5 rounded-xl border flex items-center gap-4 transition-all text-left relative overflow-hidden group/voice shadow-sm",
-                                          formData.selectedVoice === v.id
-                                             ? "bg-primary/10 border-primary/30 ring-1 ring-primary/20"
-                                             : "bg-surface-low/40 border-outline-variant/5 text-outline hover:bg-surface-high/60"
-                                       )}
-                                    >
-                                       <div className={cn(
-                                          "size-9 rounded-lg flex items-center justify-center transition-all",
-                                          formData.selectedVoice === v.id ? "bg-primary text-on-primary-fixed" : "bg-outline/5"
-                                       )}>
-                                          <Mic2 className="size-4" />
-                                       </div>
-                                       <div className="flex-1">
-                                          <p className={cn("text-[11px] font-black", formData.selectedVoice === v.id ? 'text-on-surface' : 'text-outline')}>
-                                             {v.name}
-                                          </p>
-                                          <p className="text-[7.5px] uppercase tracking-widest font-black opacity-50">{v.provider} Node</p>
-                                       </div>
-                                       {formData.selectedVoice === v.id && (
-                                          <motion.div layoutId="active-voice-dot" className="size-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(255,193,7,0.5)]" />
-                                       )}
-                                    </button>
-                                 ))}
-                              </div>
-                           </div>
-
-                           {/* Right: Cultural Stacks */}
-                           <div className="lg:col-span-4 space-y-8">
-                              <div className="space-y-4">
-                                 <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Linguistic Objective</label>
-                                 <div className="grid grid-cols-2 gap-3">
-                                    {[
-                                       { id: 'English', icon: Languages },
-                                       { id: 'Hindi', icon: Ghost },
-                                       { id: 'Hinglish', icon: Sparkles },
-                                       { id: 'Telugu', icon: Globe2 }
-                                    ].map(lang => (
-                                       <button
-                                          key={lang.id}
-                                          onClick={() => patch({ language: lang.id })}
-                                          className={cn(
-                                             "py-5 px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 group/lang relative overflow-hidden",
-                                             formData.language === lang.id
-                                                ? "bg-primary text-on-primary-fixed border-primary shadow-[0_10px_25px_rgba(255,193,7,0.3)] scale-[1.02]"
-                                                : "bg-surface-low/40 border-outline-variant/10 text-outline hover:border-primary/40 hover:bg-surface-high"
-                                          )}
-                                       >
-                                          <lang.icon className={cn("size-4 transition-transform group-hover/lang:scale-110", formData.language === lang.id ? "text-on-primary-fixed" : "text-primary/40")} />
-                                          <span className="text-[10px] font-black uppercase tracking-tight">{lang.id}</span>
-                                          {formData.language === lang.id && (
-                                             <motion.div layoutId="lang-active-dot" className="absolute top-2 right-2 size-1.5 rounded-full bg-on-primary-fixed" />
-                                          )}
-                                       </button>
-                                    ))}
-                                 </div>
-                              </div>
-                              <div className="space-y-4">
-                                 <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Behavioral Tone</label>
-                                 <div className="grid grid-cols-2 gap-3">
-                                    {[
-                                       { id: 'Analytical', icon: Brain },
-                                       { id: 'Casual', icon: Coffee },
-                                       { id: 'Empathetic', icon: Heart },
-                                       { id: 'Firm', icon: Shield }
-                                    ].map(st => (
-                                       <button
-                                          key={st.id}
-                                          onClick={() => patch({ emotion: st.id })}
-                                          className={cn(
-                                             "py-5 px-4 rounded-2xl border transition-all flex flex-col items-center gap-2 group/tone relative overflow-hidden",
-                                             formData.emotion === st.id
-                                                ? "bg-primary text-on-primary-fixed border-primary shadow-[0_10px_25px_rgba(255,193,7,0.3)] scale-[1.02]"
-                                                : "bg-surface-low/40 border-outline-variant/10 text-outline hover:border-primary/40 hover:bg-surface-high"
-                                          )}
-                                       >
-                                          <st.icon className={cn("size-4 transition-transform group-hover/tone:scale-110", formData.emotion === st.id ? "text-on-primary-fixed" : "text-primary/40")} />
-                                          <span className="text-[10px] font-black uppercase tracking-tight">{st.id}</span>
-                                          {formData.emotion === st.id && (
-                                             <motion.div layoutId="tone-active-dot" className="absolute top-2 right-2 size-1.5 rounded-full bg-on-primary-fixed" />
-                                          )}
-                                       </button>
-                                    ))}
-                                 </div>
-                              </div>
-                           </div>
-                        </div>
-                     </section>
-
-                     {/* Advanced Tuning Merger */}
-                     <div className="space-y-6">
-                        <div className="flex items-center gap-5">
-                           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-outline-variant/15 to-transparent" />
-                           <button
-                              onClick={() => setShowAdvanced(!showAdvanced)}
-                              className={cn(
-                                 "group flex items-center gap-3 px-6 py-2.5 rounded-xl border transition-all hover:scale-105 active:scale-95",
-                                 showAdvanced
-                                    ? "bg-primary/10 border-primary/30 text-primary shadow-sm"
-                                    : "bg-surface-low border-outline-variant/10 text-outline"
-                              )}
-                           >
-                              <Settings2 className={cn("size-3.5 transition-transform duration-500", showAdvanced ? "rotate-180" : "")} />
-                              <span className="text-[9px] font-black uppercase tracking-[0.2em]">
-                                 {showAdvanced ? 'Neural Matrix Online' : 'Expert Tuning'}
-                              </span>
-                              <ChevronRight className={cn("size-3 transition-transform", showAdvanced ? "rotate-90" : "")} />
-                           </button>
-                           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-outline-variant/15 to-transparent" />
-                        </div>
-
-                        <AnimatePresence>
-                           {showAdvanced && (
-                              <motion.div
-                                 initial={false}
-                                 animate={{ height: 'auto', opacity: 1, y: 0 }}
-                                 exit={{ height: 0, opacity: 0, y: 10 }}
-                                 transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-                                 className="overflow-hidden"
-                              >
-                                 <div className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    {/* Advanced Column 1: Sliders */}
-                                    <div className="bg-gradient-to-br from-surface-low/30 to-surface-low/5 p-7 rounded-[1.5rem] border border-outline-variant/5 shadow-inner space-y-7">
-                                       <p className="text-[9px] font-black text-primary/80 uppercase tracking-widest pl-1">Acoustic Signal</p>
-                                       <div className="space-y-7">
-                                          <StudioSlider label="Stability" value={formData.stability ?? 80} onChange={v => patch({ stability: v })} leftLabel="Variable" rightLabel="Phase Locked" />
-                                          <StudioSlider label="Clarity" value={formData.clarity ?? 60} onChange={v => patch({ clarity: v })} leftLabel="Organic" rightLabel="Digital" />
-                                          <StudioSlider label="Style Exaggeration" value={formData.styleExaggeration ?? 35} onChange={v => patch({ styleExaggeration: v })} leftLabel="Nuance" rightLabel="Hyper" />
-                                       </div>
-                                    </div>
-
-                                    {/* Advanced Column 2: Tech Specs */}
-                                    <div className="flex flex-col gap-4">
-                                       <div className="bg-surface-low/30 p-7 rounded-[1.5rem] border border-outline-variant/5 flex-1 space-y-6">
-                                          <p className="text-[9px] font-black text-primary/80 uppercase tracking-widest pl-1">Neural Core</p>
-                                          <div className="grid grid-cols-1 gap-2">
-                                             {['Sonix-Flash-1', 'Sonix-Pro-3', 'Eleven-Turbo-v2.5'].map(m => (
-                                                <button
-                                                   key={m}
-                                                   onClick={() => patch({ baseModel: m })}
-                                                   className={cn(
-                                                      "px-5 py-3.5 rounded-xl border flex justify-between items-center transition-all group/model",
-                                                      formData.baseModel === m
-                                                         ? "bg-primary text-on-primary-fixed border-primary shadow-lg"
-                                                         : "bg-surface-low/60 border-outline-variant/10 text-outline hover:bg-surface-high"
-                                                   )}
-                                                >
-                                                   <span className="text-[11px] font-black tracking-tight">{m}</span>
-                                                   {formData.baseModel === m ? (
-                                                      <ShieldCheck className="size-4" />
-                                                   ) : (
-                                                      <Cpu className="size-3.5 opacity-20 group-hover/model:opacity-50 transition-opacity" />
-                                                   )}
-                                                </button>
-                                             ))}
-                                          </div>
-                                       </div>
-
-                                       {/* <div className="px-6 py-3.5 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-between">
-                                          <div className="flex items-center gap-3">
-                                             <div className="size-1.5 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(255,193,7,0.5)]" />
-                                             <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em]">Engine: Optimal</p>
-                                          </div>
-                                          <Activity className="size-3.5 text-primary opacity-40" />
-                                       </div> */}
-                                    </div>
-                                 </div>
-                              </motion.div>
-                           )}
-                        </AnimatePresence>
-                     </div>
-                  </motion.div>
-               </AnimatePresence>
-            </div>
-
-            {/* Action Hub */}
-            <div className="p-8 bg-surface-low/80 border-t border-outline-variant/20 flex gap-4 mt-auto">
-               <button
-                  disabled={isSaving || !formData.name?.trim()}
-                  onClick={() => {
-                     const urgLabel = (formData.urgency ?? 45) > 70 ? 'assertive' : (formData.urgency ?? 45) > 30 ? 'balanced' : 'deliberate';
-                     const empLabel = (formData.empathy ?? 75) > 70 ? 'high-resonance' : (formData.empathy ?? 75) > 30 ? 'measured' : 'analytical';
-                     const finalPersona: Partial<AiPersona> = {
-                        ...formData,
-                        useCase: formData.useCase || `${formData.emotion} Agent`,
-                        psychology: `Synthesizing ${formData.emotion?.toLowerCase() || 'neutral'} intent with ${urgLabel} urgency and ${empLabel} empathy profiles.`,
-                        tone: `${formData.emotion || 'Neural'} · ${formData.baseModel?.split('-')[1] || 'Neural'}`,
-                     };
-                     onSave(finalPersona);
-                  }}
-                  className={cn(
-                     "flex-1 py-5 rounded-2xl font-black text-[12px] uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 shadow-2xl relative overflow-hidden",
-                     (isSaving || !formData.name?.trim())
-                        ? "bg-outline/10 text-outline cursor-not-allowed opacity-50"
-                        : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-[1.02] active:scale-[0.98]"
-                  )}
-               >
-                  <span className="relative z-10 flex items-center gap-4">
-                     {isSaving ? (
-                        <><Loader2 className="size-5 animate-spin" /> Neural Sync Active...</>
-                     ) : (
-                        <><Save className="size-5" /> Deploy Neural Persona</>
+               </div>
+               <div className="flex items-center gap-4">
+                  <button
+                     onClick={() => {
+                        const finalPersona: Partial<AiPersona> = {
+                           ...formData,
+                           useCase: formData.useCase || `${formData.emotion} Agent`,
+                           tone: `${formData.emotion || 'Neural'} · Active`,
+                           psychology: formData.psychology || `Empathetic logic sync completed.`
+                        };
+                        onSave(finalPersona);
+                     }}
+                     disabled={isSaving || !formData.name}
+                     className={cn(
+                        "px-10 py-5 rounded-3xl bg-indigo-600 text-white font-black text-[12px] uppercase tracking-[0.3em] flex items-center gap-3 shadow-xl hover:bg-indigo-700 hover:scale-[1.02] transition-all",
+                        (!formData.name || isSaving) && "opacity-50 cursor-not-allowed"
                      )}
-                  </span>
-               </button>
+                  >
+                     <CloudLightning className="size-5" /> {isSaving ? 'Synchronizing...' : 'Deploy Persona ☄'}
+                  </button>
+               </div>
             </div>
-         </div>
+         </motion.div>
       </div>
    );
 };
@@ -551,16 +596,16 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RECOMMENDATIONS = [
-   { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'v1', emotion: 'Empathetic' },
-   { name: 'Early Bird', trigger: 'DPD -5', voice: 'v2', emotion: 'Firm' },
-   { name: 'Loyalty Guide', trigger: 'Churn Risk', voice: 'v3', emotion: 'Analytical' },
+   { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'Rachel', emotion: 'Empathetic', language: 'English', urgency: 20, empathy: 95, stability: 90, clarity: 85 },
+   { name: 'Early Bird', trigger: 'DPD -5', voice: 'Marcus', emotion: 'Firm', language: 'Hindi', urgency: 85, empathy: 30, stability: 70, clarity: 95 },
+   { name: 'Casual Reminder', trigger: 'Standard', voice: 'Saira', emotion: 'Casual', language: 'English', urgency: 45, empathy: 75, stability: 80, clarity: 60 },
 ];
 
 export default function StudioPersonas() {
    const [personas, setPersonas] = React.useState<AiPersona[]>([]);
    const [isLoading, setIsLoading] = React.useState(true);
    const [loadError, setLoadError] = React.useState<string | null>(null);
-   const [isForgeMode, setIsForgeMode] = React.useState(false);
+   const [isForgeOpen, setIsForgeOpen] = React.useState(false);
    const [editingPersona, setEditingPersona] = React.useState<AiPersona | null>(null);
    const [search, setSearch] = React.useState('');
    const [isSaving, setIsSaving] = React.useState(false);
@@ -592,7 +637,7 @@ export default function StudioPersonas() {
             const created = await api.createAiPersona(formData);
             setPersonas(prev => [created, ...prev]);
          }
-         setIsForgeMode(false);
+         setIsForgeOpen(false);
          setEditingPersona(null);
       } catch (e: any) {
          alert(e?.message || 'Failed to save persona');
@@ -632,20 +677,15 @@ export default function StudioPersonas() {
          useCase: rec.trigger,
          selectedVoice: rec.voice,
          emotion: rec.emotion,
+         language: rec.language,
+         stability: rec.stability,
+         clarity: rec.clarity,
+         urgency: rec.urgency,
+         empathy: rec.empathy,
       } as AiPersona);
-      setIsForgeMode(true);
+      setIsForgeOpen(true);
    };
 
-   if (isForgeMode) {
-      return (
-         <QuickForgeView
-            onClose={() => { setIsForgeMode(false); setEditingPersona(null); }}
-            initialPersona={editingPersona}
-            onSave={handleSave}
-            isSaving={isSaving}
-         />
-      );
-   }
 
    const filtered = personas.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -709,7 +749,7 @@ export default function StudioPersonas() {
                   <RefreshCw className="size-4" />
                </button>
                <button
-                  onClick={() => { setEditingPersona(null); setIsForgeMode(true); }}
+                  onClick={() => { setEditingPersona(null); setIsForgeOpen(true); }}
                   className="flex items-center gap-2.5 bg-primary text-on-primary-fixed px-8 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/10 hover:scale-105 active:scale-95 transition-all"
                >
                   <Plus className="size-4" />
@@ -745,12 +785,20 @@ export default function StudioPersonas() {
                   <button
                      key={i}
                      onClick={() => handleSuggest(rec)}
-                     className="flex items-center gap-3 px-4 py-2 rounded-xl bg-surface-low border border-outline-variant/5 whitespace-nowrap group hover:bg-primary/5 hover:border-primary/20 transition-all cursor-pointer shadow-sm"
+                     className="flex items-center gap-4 px-5 py-3 rounded-2xl bg-white border border-slate-100 whitespace-nowrap group hover:bg-white hover:border-indigo-400 hover:shadow-xl transition-all cursor-pointer"
                   >
-                     <Sparkles className="size-3 text-primary" />
+                     <div className="size-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500 shadow-sm border border-indigo-100 group-hover:bg-indigo-500 group-hover:text-white transition-all">
+                        <Sparkles className="size-4" />
+                     </div>
                      <div className="text-left">
-                        <p className="text-[8px] font-bold text-outline uppercase tracking-tighter">Suggest & Adopt</p>
-                        <p className="text-[10px] font-bold group-hover:text-primary transition-colors">{rec.name}</p>
+                        <p className="text-[10px] font-black group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{rec.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.voice}</span>
+                           <div className="size-1 rounded-full bg-slate-200" />
+                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.emotion}</span>
+                           <div className="size-1 rounded-full bg-slate-200" />
+                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.language}</span>
+                        </div>
                      </div>
                   </button>
                ))}
@@ -792,7 +840,7 @@ export default function StudioPersonas() {
                </div>
                {!search && (
                   <button
-                     onClick={() => setIsForgeMode(true)}
+                     onClick={() => setIsForgeOpen(true)}
                      className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
                   >
                      <Plus className="size-4" /> Create First Persona
@@ -806,7 +854,7 @@ export default function StudioPersonas() {
                      key={persona.id}
                      persona={persona}
                      index={i}
-                     onEdit={p => { setEditingPersona(p); setIsForgeMode(true); }}
+                     onEdit={p => { setEditingPersona(p); setIsForgeOpen(true); }}
                      onDelete={handleDelete}
                      onToggleDeploy={handleToggleDeploy}
                      isDeleting={deletingId === persona.id}
@@ -815,6 +863,17 @@ export default function StudioPersonas() {
                ))}
             </div>
          )}
+
+         <AnimatePresence>
+            {isForgeOpen && (
+               <NeuralIdentityForge
+                  onClose={() => { setIsForgeOpen(false); setEditingPersona(null); }}
+                  onSave={handleSave}
+                  initialPersona={editingPersona}
+                  isSaving={isSaving}
+               />
+            )}
+         </AnimatePresence>
       </div>
    );
 }

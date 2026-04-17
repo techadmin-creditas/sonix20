@@ -5,11 +5,14 @@ import {
   PhoneOff, CheckCircle, Trash2, Bot, GitBranch,
 } from 'lucide-react';
 import { useNotifications, AppNotification } from '../contexts/NotificationContext';
+import { cn } from '../lib/utils';
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  className?: string;
+  hideGlass?: boolean;
 }
 
 /* ─── Find-in-page helpers ───────────────────────────────────────── */
@@ -130,7 +133,7 @@ function NotifItem({
 }
 
 /* ─── Header Component ──────────────────────────────────────────── */
-export function Header({ title, subtitle, actions }: HeaderProps) {
+export function Header({ title, subtitle, actions, className, hideGlass }: HeaderProps) {
   const navigate = useNavigate();
   const { notifications, unreadCount, markAllRead, dismiss, clearAll } = useNotifications();
   const [bellOpen, setBellOpen] = React.useState(false);
@@ -212,7 +215,11 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   }
 
   return (
-    <header className="glass-panel border-b border-outline-variant/10 sticky top-0 z-50">
+    <header className={cn(
+      !hideGlass && "glass-panel",
+      "border-b border-outline-variant/10 sticky top-0 z-50",
+      className
+    )}>
       <div className="px-4 sm:px-6 lg:px-10 h-16 sm:h-[72px] flex items-center justify-between gap-4">
 
         {/* Title */}

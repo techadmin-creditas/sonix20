@@ -30,6 +30,7 @@ import StudioPersonas from './pages/StudioPersonas';
 import StudioLibrary from './pages/StudioLibrary';
 import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
+import StudioPersonasNew from './pages/StudioPersonasNew';
 import { ThemeSynchronizer } from './components/ThemeSynchronizer';
 
 function App() {
@@ -117,8 +118,13 @@ function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile currentUser={currentUser} />} />
-               <Route path="/persona" element={<StudioLayout />}>
+              <Route path="/persona" element={<StudioLayout />}>
                 <Route index element={<StudioPersonas />} />
+              </Route>
+
+
+              <Route path="/personaNew" element={<StudioLayout />}>
+                <Route index element={<StudioPersonasNew />} />
               </Route>
 
               {/* --- Voice Persona Studio Routes --- */}

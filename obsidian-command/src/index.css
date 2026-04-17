@@ -97,6 +97,10 @@
   .glass-panel {
     @apply bg-surface/60 backdrop-blur-[20px] border border-outline-variant/5;
   }
+
+  .glass-panel-dark {
+    @apply bg-[#0D0E11]/90 backdrop-blur-[30px] border border-white/10;
+  }
   
   .ember-gradient {
     background: var(--color-primary);
