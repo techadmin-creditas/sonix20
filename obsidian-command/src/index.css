@@ -81,7 +81,13 @@
 
 @layer base {
   body {
-    @apply studio-mesh-gradient text-on-surface font-body min-h-screen;
+    @apply text-on-surface font-body min-h-screen;
+    background-color: var(--background);
+    background-image:
+      radial-gradient(at 0% 0%, color-mix(in srgb, var(--primary) 15%, transparent) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, color-mix(in srgb, var(--primary) 10%, transparent) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%);
     background-attachment: fixed;
   }
 
@@ -185,7 +191,7 @@
   }
 
   .premium-forge-border {
-    @apply border-2 border-outline-variant/20 shadow-[0_0_0_1px_rgba(255, 255, 255, 0.05)];
+    @apply border-2 border-outline-variant/20 shadow-[0_0_0_1px_rgba(255,255,255,0.05)];
     background-clip: padding-box;
   }
 
