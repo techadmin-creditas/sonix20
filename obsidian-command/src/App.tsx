@@ -17,9 +17,7 @@ import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
-import Home from './pages/Home';
 import TestUserManagement from './pages/TestUserManagement';
-import HomeOld from './pages/HomeOld';
 import HomeNew from './pages/HomeNew';
 import VoicePersonas from './pages/VoicePersonas';
 import DiyWithAI from './pages/DiyWithAI';
@@ -65,7 +63,7 @@ function App() {
     return (
       <Router>
         <Routes>
-          <Route path="/" element={<HomeOld />} />
+          <Route path="/" element={<HomeNew />} />
           <Route path="/home" element={<HomeNew />} />
           <Route
             path="/login"
