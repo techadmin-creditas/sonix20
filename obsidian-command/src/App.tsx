@@ -28,6 +28,7 @@ import StudioPersonas from './pages/StudioPersonas';
 import StudioLibrary from './pages/StudioLibrary';
 import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
+import StudioPersonasNew from './pages/StudioPersonasNew';
 import { ThemeSynchronizer } from './components/ThemeSynchronizer';
 
 function App() {
@@ -86,7 +87,7 @@ function App() {
       <ThemeSynchronizer />
 
       <Router>
-        <div className="flex min-h-screen bg-background text-on-surface selection:bg-primary/30 selection:text-primary">
+        <div className="flex min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary">
           <Sidebar
             currentUser={currentUser}
             onLogout={() => {
@@ -94,7 +95,7 @@ function App() {
               setCurrentUser(null);
             }}
           />
-          <main className="flex-1 flex flex-col ">
+          <main className="flex-1 flex flex-col min-w-0">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/home" element={<HomeNew />} />
@@ -115,13 +116,18 @@ function App() {
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile currentUser={currentUser} />} />
-               <Route path="/persona" element={<StudioLayout />}>
+              <Route path="/persona" element={<StudioLayout />}>
                 <Route index element={<StudioPersonas />} />
+              </Route>
+
+
+              <Route path="/personaNew" element={<StudioLayout />}>
+                <Route index element={<StudioPersonasNew />} />
               </Route>
 
               {/* --- Voice Persona Studio Routes --- */}
               <Route path="/studio" element={<StudioLayout />}>
-                <Route index element={<StudioDashboard />} />
+                <Route index element={<Navigate to="/studio/library" replace />} />
                 <Route path="overview" element={<StudioDashboard />} />
                 <Route path="agents" element={<StudioPersonas />} />
                 <Route path="library" element={<StudioLibrary />} />

@@ -925,6 +925,7 @@ export interface AiPersona {
   stability: number;
   clarity: number;
   styleExaggeration: number;
+  expressiveness: number;
   baseModel: string;
   selectedVoice: string;
   themeColor: string;

@@ -117,7 +117,7 @@ export default function Dashboard() {
 
       <div className="relative z-10 p-10 flex flex-col gap-10">
         {/* KPI Row */}
-        <motion.div 
+        <motion.div
           initial="hidden"
           animate="visible"
           variants={{
@@ -169,10 +169,10 @@ export default function Dashboard() {
             hidden: { opacity: 0, scale: 0.95 },
             visible: { opacity: 1, scale: 1 }
           }}
-          className="bg-surface-lowest rounded-4xl premium-forge-border p-8 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden group cursor-pointer shadow-sm hover:shadow-2xl dark:hover:shadow-primary/5 transition-all duration-700" 
+          className="bg-surface-lowest rounded-4xl premium-forge-border p-8 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden group cursor-pointer shadow-sm hover:shadow-2xl dark:hover:shadow-primary/5 transition-all duration-700"
           onClick={() => navigate('/personas/create')}
         >
-          <div className="absolute inset-0 studio-mesh-gradient opacity-20 group-hover:opacity-30 transition-opacity duration-1000" />
+          <div className="absolute inset-0  opacity-20 group-hover:opacity-30 transition-opacity duration-1000" />
           <div className="relative z-10 flex flex-col gap-3">
             <div className="flex items-center gap-4">
               <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-all duration-500">
@@ -189,13 +189,13 @@ export default function Dashboard() {
             <PlusCircle className="size-6" />
             <span className="text-lg">Create New Bot</span>
           </div>
-          
+
           {/* Decorative Elements */}
           <div className="absolute -bottom-10 -right-10 size-48 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
         </motion.div>
 
         {/* Charts Row 1 */}
-        <motion.div 
+        <motion.div
           initial="hidden"
           animate="visible"
           variants={{
@@ -207,9 +207,9 @@ export default function Dashboard() {
           }}
           className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="lg:col-span-2 bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group" 
+            className="lg:col-span-2 bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group"
             onClick={() => navigate('/sessions')}
           >
             <div className="flex justify-between items-center mb-10">
@@ -242,9 +242,9 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5" 
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5"
             onClick={() => navigate('/personas')}
           >
             <div className="mb-8">
@@ -288,7 +288,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Charts Row 2 - New Charts */}
-        <motion.div 
+        <motion.div
           initial="hidden"
           animate="visible"
           variants={{
@@ -300,9 +300,9 @@ export default function Dashboard() {
           }}
           className="grid grid-cols-1 lg:grid-cols-2 gap-6"
         >
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]"
             onClick={() => navigate('/sessions')}
           >
             <div className="flex items-center gap-4 mb-8">
@@ -314,7 +314,7 @@ export default function Dashboard() {
                 <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Distribution of user emotions</p>
               </div>
             </div>
-            
+
             <div className="flex-1 flex flex-col">
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -335,7 +335,7 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              
+
               <div className="mt-auto pt-8 flex justify-around p-4 bg-surface-low rounded-2xl border border-outline-variant/10">
                 {sentimentData.map(item => (
                   <div key={item.name} className="text-center">
@@ -347,9 +347,9 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]"
             onClick={() => navigate('/sessions')}
           >
             <div className="flex items-center gap-4 mb-8">
@@ -361,7 +361,7 @@ export default function Dashboard() {
                 <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Time spent on active calls</p>
               </div>
             </div>
-            
+
             <div className="flex-1 flex flex-col">
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -382,7 +382,7 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              
+
               <div className="mt-auto p-4 rounded-xl bg-primary/5 border border-primary/10 text-center">
                 <p className="text-[10px] text-primary font-bold uppercase tracking-wider italic">Most calls conclude within the 1-3 minute window.</p>
               </div>
@@ -391,7 +391,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Charts Row 3 - NEW */}
-        <motion.div 
+        <motion.div
           initial="hidden"
           animate="visible"
           variants={{
@@ -403,9 +403,9 @@ export default function Dashboard() {
           }}
           className="grid grid-cols-1 lg:grid-cols-2 gap-6"
         >
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]"
             onClick={() => navigate('/personas')}
           >
             <div className="flex items-center gap-4 mb-8">
@@ -417,7 +417,7 @@ export default function Dashboard() {
                 <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-0.5">Performance by agent</p>
               </div>
             </div>
-            
+
             <div className="flex-1 flex flex-col">
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -438,7 +438,7 @@ export default function Dashboard() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              
+
               <div className="mt-auto pt-8 grid grid-cols-3 gap-4">
                 {(stats?.botPerformance && stats.botPerformance.length > 0 ? stats.botPerformance : SUCCESS_RATE_DATA).map(item => (
                   <div key={item.name} className="text-center p-4 rounded-2xl bg-surface-low border border-outline-variant/10 group-hover:border-primary/20 transition-all">
@@ -450,9 +450,9 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
-            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]" 
+            className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col cursor-pointer hover:border-primary/30 transition-all hover:shadow-2xl dark:hover:shadow-primary/5 group min-h-[480px]"
             onClick={() => navigate('/sessions')}
           >
             <div className="flex justify-between items-center mb-8">
@@ -469,7 +469,7 @@ export default function Dashboard() {
                 {stats?.peakHours.reduce((acc, curr) => acc + curr.sessions, 0) || 0} Sessions
               </div>
             </div>
-            
+
             <div className="flex-1 flex flex-col">
               <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -485,7 +485,7 @@ export default function Dashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              
+
               <div className="mt-auto">
                 {stats?.peakHours && stats.peakHours.length > 0 ? (
                   <div className="mt-8 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-center">
@@ -506,7 +506,7 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Bottom Section */}
-        <motion.div 
+        <motion.div
           initial="hidden"
           animate="visible"
           variants={{
@@ -518,7 +518,7 @@ export default function Dashboard() {
           }}
           className="grid grid-cols-1 lg:grid-cols-2 gap-6"
         >
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
             className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col group"
           >
@@ -556,7 +556,7 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
             className="bg-surface-lowest p-8 rounded-4xl premium-forge-border flex flex-col"
           >
@@ -565,8 +565,8 @@ export default function Dashboard() {
                 <h4 className="font-headline text-xl font-bold text-on-surface">Recent Sessions</h4>
                 <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Latest user interactions</p>
               </div>
-              <button 
-                onClick={() => navigate('/sessions')} 
+              <button
+                onClick={() => navigate('/sessions')}
                 className="text-[10px] font-black text-primary uppercase tracking-widest px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary hover:text-on-primary-fixed transition-all shadow-sm"
               >
                 View All
@@ -664,9 +664,9 @@ function StatCard({ icon: Icon, label, value, trend, trendColor, onClick }: any)
       >
         {/* Background Glow */}
         <div className="absolute -top-12 -right-12 size-32 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
-        
+
         <div className="flex justify-between items-start">
-          <motion.div 
+          <motion.div
             animate={{ y: [0, -2, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
             className="p-3 rounded-2xl bg-surface-low text-primary border border-outline-variant/10 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors"
@@ -704,11 +704,11 @@ function ProgressBar({ label, value, count, color }: any) {
         <span className="text-[10px] font-mono text-primary font-black bg-primary/5 px-2 py-0.5 rounded border border-primary/10">{count}</span>
       </div>
       <div className="w-full h-2.5 bg-surface-low rounded-full overflow-hidden border border-outline-variant/5 p-0.5">
-        <motion.div 
+        <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${value}%` }}
           transition={{ duration: 1.5, ease: "easeOut" }}
-          className={cn("h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(251,140,0,0.2)]", color)} 
+          className={cn("h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(251,140,0,0.2)]", color)}
         />
       </div>
     </div>

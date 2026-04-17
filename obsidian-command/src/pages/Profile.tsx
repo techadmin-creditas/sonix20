@@ -278,7 +278,7 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                             </section>
                         </div>
 
-                        <section className="glass-panel rounded-3xl p-8">
+                        {/* <section className="glass-panel rounded-3xl p-8">
                             <div className="flex items-center justify-between mb-8">
                                 <div className="flex items-center gap-3">
                                     <BotIcon className="size-5 text-primary" />
@@ -313,7 +313,7 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                                     ))
                                 )}
                             </div>
-                        </section>
+                        </section> */}
                     </div>
                 </div>
             </main>

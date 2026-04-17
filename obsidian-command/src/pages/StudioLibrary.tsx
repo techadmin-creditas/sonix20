@@ -24,7 +24,45 @@ import { VOICE_RELAYS } from '../data/voiceData';
 
 // --- Sub-components ---
 
-const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete }: any) => {
+const MiniWavePlayer = ({ isPlaying, onToggle }: { isPlaying: boolean; onToggle: () => void }) => {
+  return (
+    <div className={cn(
+      "flex items-center gap-3 bg-surface-low/30 border border-outline-variant/5 rounded-2xl  min-w-[130px] group/player transition-all",
+      isPlaying && "bg-primary/5 border-primary/20 shadow-sm"
+    )}>
+      <button
+        onClick={onToggle}
+        className={cn(
+          "size-8 rounded-xl flex items-center justify-center transition-all shadow-sm",
+          isPlaying ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20" : "bg-surface-high text-outline hover:text-primary hover:bg-surface-highest"
+        )}
+      >
+        {isPlaying ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current ml-0.5" />}
+      </button>
+
+      <div className="flex items-center gap-0.5 h-5 flex-1 select-none">
+        {[0.4, 0.7, 0.3, 0.9, 0.5, 0.8, 0.2, 0.6, 0.4, 0.7].map((h, i) => (
+          <motion.div
+            key={i}
+            animate={isPlaying ? { height: ['20%', `${h * 100}%`, '20%'] } : { height: '4px' }}
+            transition={isPlaying ? {
+              duration: 0.8,
+              repeat: Infinity,
+              delay: i * 0.08,
+              ease: "easeInOut"
+            } : { duration: 0.3 }}
+            className={cn(
+              "w-0.5 rounded-full transition-colors duration-500",
+              isPlaying ? "bg-primary" : "bg-outline/20"
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlaying, onPlayToggle }: any) => {
   const relay = VOICE_RELAYS.find(r => r.id === persona.selectedVoice);
 
   return (
@@ -66,9 +104,14 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete }: any) =
         </div>
       </td>
 
+      {/* Voice Sample Column */}
+      <td className="py-4 px-4 whitespace-nowrap">
+        <MiniWavePlayer isPlaying={isPlaying} onToggle={onPlayToggle} />
+      </td>
+
       {/* Role Column */}
       <td className="py-4 px-4">
-        <p className="text-[10px] font-medium text-outline truncate max-w-[180px]">{persona.useCase}</p>
+        <p className="text-[10px] font-medium text-outline truncate max-w-[150px]">{persona.useCase}</p>
       </td>
 
       {/* Behavioral DNA Column */}
@@ -207,6 +250,7 @@ export default function StudioLibrary() {
   const { personas, deployedIds, setActivePersonaId, recordActivity, toggleDeployment, deletePersona } = useStudio();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isCloneMode, setIsCloneMode] = React.useState(false);
+  const [playingId, setPlayingId] = React.useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleTestVoice = (id: string) => {
@@ -227,10 +271,10 @@ export default function StudioLibrary() {
   return (
     <div className="space-y-6 h-[calc(100vh-120px)] overflow-hidden flex flex-col">
       <div className="flex justify-between items-end shrink-0">
-        <div className="space-y-1">
+        {/* <div className="space-y-1">
           <p className="text-[10px] font-bold text-primary uppercase tracking-[0.4em]">Fleet Management</p>
           <h1 className="text-3xl font-headline font-extrabold text-on-surface uppercase tracking-tight leading-none">Persona Registry</h1>
-        </div>
+        </div> */}
         <div className="flex gap-3">
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline group-focus-within:text-primary transition-colors" />
@@ -242,13 +286,13 @@ export default function StudioLibrary() {
               className="bg-surface-low border border-outline-variant/10 rounded-xl pl-10 pr-4 py-2 text-xs font-bold outline-none focus:ring-1 focus:ring-primary/30 w-64 transition-all"
             />
           </div>
-          <button
+          {/* <button
             onClick={() => setIsCloneMode(true)}
             className="flex items-center gap-2 bg-primary text-on-primary-fixed px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
             <PlusCircle className="size-3.5" />
             Launch Replicator
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -259,6 +303,7 @@ export default function StudioLibrary() {
               <tr className="border-b border-outline-variant/10">
                 <th className="py-4 pl-4 text-[9px] font-bold text-outline uppercase tracking-widest">Neural Identity</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Engine</th>
+                <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Sample</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Operational Role</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Behavioral DNA</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Status</th>
@@ -271,6 +316,8 @@ export default function StudioLibrary() {
                   key={p.id}
                   persona={p}
                   isDeployed={deployedIds?.includes(p.id)}
+                  isPlaying={playingId === p.id}
+                  onPlayToggle={() => setPlayingId(playingId === p.id ? null : p.id)}
                   onToggle={() => toggleDeployment(p.id)}
                   onTest={() => handleTestVoice(p.id)}
                   onDelete={() => deletePersona(p.id)}

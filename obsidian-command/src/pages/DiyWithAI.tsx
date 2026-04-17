@@ -16,6 +16,10 @@ type PersonaPreset = {
   system_prompt: string;
   tts_provider?: string;
   voice_id?: string;
+  urgency?: number;
+  empathy?: number;
+  psychology?: string;
+  languageDetails: string;
 };
 
 const PERSONA_PRESETS: PersonaPreset[] = [
@@ -181,6 +185,7 @@ export default function DiyWithAI() {
         urgency: p.urgency || 45,
         empathy: p.empathy || 75,
         psychology: p.psychology || 'Neural persona profile loaded.',
+        languageDetails: p.language,
       };
     });
     return [...dynamicPresets, ...PERSONA_PRESETS];
@@ -437,7 +442,11 @@ export default function DiyWithAI() {
     ];
 
     // Simulate typing animation
+    let cumulativeDelay = 1000;
     staticScript.forEach((entry, index) => {
+      // Calculate delay based on text length to make it feel natural
+      const typingDuration = entry.content.length * 30;
+
       const timeoutId = window.setTimeout(() => {
         setLiveTranscript(prev => [...prev, entry]);
 
@@ -447,11 +456,13 @@ export default function DiyWithAI() {
             setIsLive(false);
             cleanupAudio();
             setStep(3);
-          }, 1500);
+          }, typingDuration + 1500);
           demoTimersRef.current.push(endTimeoutId);
         }
-      }, (index + 1) * 2000);
+      }, cumulativeDelay);
+
       demoTimersRef.current.push(timeoutId);
+      cumulativeDelay += typingDuration + 1000; // Wait for typing + pause
     });
 
     return;
@@ -840,7 +851,10 @@ export default function DiyWithAI() {
             {(isLive || isConnecting) ? (
               <div ref={liveSectionRef} className="bg-surface-low rounded-3xl ghost-border p-6 lg:p-8">
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-xs font-bold uppercase tracking-widest text-outline">Live transcript</p>
+                  <div className="flex items-center gap-3">
+                    <p className="text-xs font-bold uppercase tracking-widest text-outline">Live transcript</p>
+                    {isLive && <AudioWaves />}
+                  </div>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-outline">{isLive ? 'Live' : 'Standby'}</span>
                 </div>
                 <div
@@ -855,7 +869,13 @@ export default function DiyWithAI() {
                     </div>
                   ) : (
                     liveTranscript.slice(-80).map((t, idx) => (
-                      <div key={idx} className={cn('max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-500', t.role === 'bot' ? 'mr-auto' : 'ml-auto')}>
+                      <div key={idx} className={cn('flex items-end gap-2 max-w-[85%] animate-in fade-in slide-in-from-bottom-2 duration-500', t.role === 'bot' ? 'mr-auto' : 'ml-auto flex-row-reverse')}>
+                        <div className={cn(
+                          "size-8 rounded-full flex items-center justify-center shrink-0 border border-outline-variant/10",
+                          t.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-high text-outline"
+                        )}>
+                          {t.role === 'bot' ? <BotIcon className="size-4" /> : <UserRound className="size-4" />}
+                        </div>
                         <div
                           className={cn(
                             'rounded-2xl px-4 py-3 text-sm shadow-sm',
@@ -864,7 +884,7 @@ export default function DiyWithAI() {
                               : 'bg-primary text-on-primary-fixed',
                           )}
                         >
-                          {t.content}
+                          <TypewriterText text={t.content} speed={25} />
                         </div>
                       </div>
                     ))
@@ -940,10 +960,12 @@ export default function DiyWithAI() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <h3 className="text-lg font-headline font-extrabold text-on-surface truncate">{p.title}</h3>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{p.default_language === 'hi' ? 'Hindi' : 'English'}</p>
-                                    <span className="size-1 rounded-full bg-primary animate-pulse" />
-                                    <span className="text-[8px] font-bold text-primary uppercase">Active Agent</span>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{p.languageDetails}</p>
+                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                      <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                                      <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1135,10 +1157,16 @@ export default function DiyWithAI() {
                     </div>
                   ) : (
                     postTranscript.map((t, idx) => (
-                      <div key={idx} className={cn('max-w-[85%]', t.role === 'bot' ? 'mr-auto' : 'ml-auto')}>
+                      <div key={idx} className={cn('flex items-end gap-2 max-w-[85%]', t.role === 'bot' ? 'mr-auto' : 'ml-auto flex-row-reverse')}>
+                        <div className={cn(
+                          "size-8 rounded-full flex items-center justify-center shrink-0 border border-outline-variant/10",
+                          t.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-high text-outline"
+                        )}>
+                          {t.role === 'bot' ? <BotIcon className="size-4" /> : <UserRound className="size-4" />}
+                        </div>
                         <div
                           className={cn(
-                            'rounded-2xl px-4 py-3 text-sm',
+                            'rounded-2xl px-4 py-3 text-sm transition-all',
                             t.role === 'bot'
                               ? 'bg-surface-high border border-outline-variant/10'
                               : 'bg-primary text-on-primary-fixed',
@@ -1284,6 +1312,43 @@ export default function DiyWithAI() {
       </div>
     </div>
   );
+}
+
+function AudioWaves() {
+  return (
+    <div className="flex items-center gap-1 h-4 px-2">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div
+          key={i}
+          className="w-1 bg-primary rounded-full animate-bounce"
+          style={{
+            height: `${Math.random() * 60 + 40}%`,
+            animationDelay: `${i * 0.1}s`,
+            animationDuration: '0.8s'
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TypewriterText({ text, speed = 30 }: { text: string; speed?: number }) {
+  const [displayedText, setDisplayedText] = useState('');
+
+  useEffect(() => {
+    let index = 0;
+    const interval = setInterval(() => {
+      setDisplayedText((prev) => prev + text.charAt(index));
+      index++;
+      if (index >= text.length) {
+        clearInterval(interval);
+      }
+    }, speed);
+
+    return () => clearInterval(interval);
+  }, [text, speed]);
+
+  return <>{displayedText}</>;
 }
 
 function TileAvatar({

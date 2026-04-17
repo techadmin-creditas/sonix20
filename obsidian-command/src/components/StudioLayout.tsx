@@ -1,16 +1,12 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Mic2,
   Library,
-  Zap,
-  ChevronLeft,
   RefreshCw,
   LogOut
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { StudioProvider } from '../contexts/StudioContext';
 import { Header } from './Header';
 
@@ -21,15 +17,12 @@ export function StudioLayout() {
   const isStandalonePersona = location.pathname.startsWith('/persona');
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Overview', path: '/studio' },
-    { icon: Mic2, label: 'Voice Agents', path: '/studio/agents' },
     { icon: Library, label: 'Fleet Registry', path: '/studio/library' },
-    { icon: Zap, label: 'Test Console', path: '/studio/test' },
   ];
 
   const getHeaderContent = (path: string) => {
-    if (path.includes('/persona')) return { title: 'Persona Workbench', subtitle: 'Neural Forge' };
-    if (path.includes('/library')) return { title: 'Neural Registry', subtitle: 'Persona Fleet' };
+    if (path.includes('/persona')) return { title: 'Persona Builder', subtitle: 'Neural Forge' };
+    if (path.includes('/library')) return { title: 'Voice Library', subtitle: 'Persona Fleet' };
     if (path.includes('/test')) return { title: 'Real-time Inference', subtitle: 'Test Console' };
     return { title: 'Neural Operations', subtitle: 'Command Dashboard' };
   };
@@ -43,7 +36,6 @@ export function StudioLayout() {
           <NavLink
             key={item.path}
             to={item.path}
-            end={item.path === '/studio'}
             className={({ isActive }) => cn(
               "flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
               isActive
@@ -77,11 +69,11 @@ export function StudioLayout() {
 
   return (
     <StudioProvider>
-      <div className="min-h-screen studio-mesh-gradient text-on-surface selection:bg-primary/30 selection:text-primary flex flex-col">
+      <div className="min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary flex flex-col">
         <Header
           title={title}
           subtitle={subtitle}
-          actions={isStandalonePersona ? undefined : studioActions}
+        // actions={isStandalonePersona ? undefined : studioActions}
         />
 
         {/* --- Main Contents --- */}
@@ -92,7 +84,7 @@ export function StudioLayout() {
             <div className="absolute bottom-0 left-0 w-[30%] h-[30%] bg-primary/1 blur-[80px] rounded-full animate-pulse-subtle" style={{ animationDelay: '1s' }} />
           </div>
 
-          <div className="relative z-10 p-6 lg:p-8 max-w-7xl mx-auto w-full flex-1 flex flex-col">
+          <div className="relative p-6 lg:p-8 max-w-7xl mx-auto w-full flex-1 flex flex-col">
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
@@ -110,4 +102,4 @@ export function StudioLayout() {
       </div>
     </StudioProvider>
   );
-} 
+}

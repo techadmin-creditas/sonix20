@@ -20,33 +20,33 @@ export const NeuralBackground: React.FC = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden studio-mesh-gradient z-0">
+    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
       {/* Floating Ambient Glows */}
-      <motion.div 
+      <motion.div
         animate={{
           x: [0, 80, -40, 0],
           y: [0, 40, 80, 0],
           scale: [1, 1.2, 0.85, 1],
         }}
         transition={{ duration: 28, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] bg-primary/2 dark:bg-primary/5 blur-[130px] rounded-full" 
+        className="absolute top-[-10%] left-[-10%] w-[55%] h-[55%] bg-primary/2 dark:bg-primary/5 blur-[130px] rounded-full"
       />
-      <motion.div 
+      <motion.div
         animate={{
           x: [0, -80, 40, 0],
           y: [0, -40, -80, 0],
           scale: [1, 1.15, 1.3, 1],
         }}
         transition={{ duration: 32, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-        className="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-primary/1 dark:bg-primary/4 blur-[110px] rounded-full" 
+        className="absolute bottom-[-10%] right-[-10%] w-[45%] h-[45%] bg-primary/1 dark:bg-primary/4 blur-[110px] rounded-full"
       />
-      <motion.div 
+      <motion.div
         animate={{
           opacity: [0.15, 0.35, 0.15],
           scale: [0.85, 1.05, 0.85],
         }}
         transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[30%] right-[20%] w-[38%] h-[38%] bg-amber-500/2 dark:bg-amber-500/8 blur-[125px] rounded-full" 
+        className="absolute top-[30%] right-[20%] w-[38%] h-[38%] bg-amber-500/2 dark:bg-amber-500/8 blur-[125px] rounded-full"
       />
 
       {/* Neural Particles */}
