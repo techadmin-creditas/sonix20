@@ -13,7 +13,8 @@ export const AGENTS = [
       'Sets up flexible payment plans',
       'Sends automated SMS/Voice reminders',
       'Reduces DSO by over 35%'
-    ]
+    ],
+    systemPromptPreview: 'You are Astra, an empathetic and professional debt recovery agent for Sonix Finance. Your tone is warm but firm. Always offer payment plan options before escalating. Never pressure the customer — build trust first.',
   },
   {
     id: 'midas',
@@ -29,7 +30,8 @@ export const AGENTS = [
       'Instantly blocks suspicious cards',
       'Verifies identity via secure voice code',
       'Direct link to bank security nodes'
-    ]
+    ],
+    systemPromptPreview: 'You are Midas, a fraud detection and prevention agent. Be calm, authoritative, and reassuring. Your first priority is customer safety. Never reveal internal fraud scoring details. Always escalate high-risk cases.',
   },
   {
     id: 'luna',
@@ -45,7 +47,8 @@ export const AGENTS = [
       'Explains complex interest rates',
       'Helps customers upload documents',
       'Checks eligibility in real-time'
-    ]
+    ],
+    systemPromptPreview: 'You are Luna, a loan advisory specialist. Explain financial terms in plain language. Always check eligibility before quoting rates. Offer restructuring plans proactively when customers indicate payment difficulty.',
   },
   {
     id: 'nova',
@@ -61,7 +64,8 @@ export const AGENTS = [
       'Handles ID verification calls',
       'Answers compliance & tax questions',
       'Reduces account opening time by 50%'
-    ]
+    ],
+    systemPromptPreview: 'You are Nova, a KYC and compliance onboarding agent. Be precise and procedural but friendly. Guide customers step by step. Always generate secure document links instead of asking for sensitive data over voice.',
   },
   {
     id: 'apex',
@@ -72,11 +76,165 @@ export const AGENTS = [
     languages: 'English • Mandarin • Japanese',
     benefit: 'Personalized investment alerts and market updates.',
     icon: 'Activity',
-    color: 'from-emerald-500 to-teal-500',
+    color: 'from-emerald-500/20 to-teal-500/20',
     details: [
       'Briefs users on daily market trends',
       'Executes voice-authorized trades',
       'Smart alerts on portfolio dips'
-    ]
+    ],
+    systemPromptPreview: 'You are Apex, a wealth management agent. Provide data-driven market insights. Always add risk disclaimers when discussing investments.',
+  },
+  {
+    id: 'atlas',
+    name: 'Atlas',
+    role: 'SME Advisor',
+    category: 'banking',
+    specialty: 'BUSINESS_BANKING',
+    languages: 'English • German',
+    benefit: 'Tailored financial solutions for small businesses.',
+    icon: 'Briefcase',
+    color: 'from-slate-500/20 to-blue-500/20',
+    details: [
+      'Inventory financing advice',
+      'SME payroll automation',
+      'GST/Tax filing assistance'
+    ],
+    systemPromptPreview: 'You are Atlas, a specialist for small business banking. Focus on cash flow management and growth credit.',
+  },
+  {
+    id: 'vortex',
+    name: 'Vortex',
+    role: 'Risk Analyst',
+    category: 'fintech',
+    specialty: 'RISK_SCORING',
+    languages: 'English • Russian',
+    benefit: 'Real-time risk assessment and credit scoring.',
+    icon: 'BarChart3',
+    color: 'from-red-500/20 to-orange-500/20',
+    details: [
+      'Dynamic credit limit updates',
+      'Behavioral pattern analysis',
+      'Prevention of over-leveraging'
+    ],
+    systemPromptPreview: 'You are Vortex. Analyze financial risk with clinical precision. Be direct and data-heavy.',
+  },
+  {
+    id: 'iris',
+    name: 'Iris',
+    role: 'Wealth Concierge',
+    category: 'banking',
+    specialty: 'PRIVATE_BANKING',
+    languages: 'Global Multilingual',
+    benefit: 'White-glove service for high-net-worth individuals.',
+    icon: 'Crown',
+    color: 'from-gold-500/20 to-amber-500/20',
+    details: [
+      'Estate planning assistance',
+      'Concierge lifestyle services',
+      'Exclusive market reports'
+    ],
+    systemPromptPreview: 'You are Iris. Maintain the highest level of formality and discretion. Focus on portfolio preservation.',
+  },
+  {
+    id: 'spark',
+    name: 'Spark',
+    role: 'Retail Guide',
+    category: 'banking',
+    specialty: 'RETAIL_CORE',
+    languages: 'Hindi • English • Tamil',
+    benefit: 'Daily banking assistance for retail customers.',
+    icon: 'CreditCard',
+    color: 'from-pink-500/20 to-rose-500/20',
+    details: [
+      'Debit card activation help',
+      'Balance & Mini-statement',
+      'Reward points redemption'
+    ],
+    systemPromptPreview: 'You are Spark, a friendly retail bank guide. Focus on speed and simplicity for everyday queries.',
+  },
+  {
+    id: 'zenith',
+    name: 'Zenith',
+    role: 'Insurance Scout',
+    category: 'fintech',
+    specialty: 'INSURTECH',
+    languages: 'English • Arabic',
+    benefit: 'Finding the perfect protection for your assets.',
+    icon: 'ShieldCheck',
+    color: 'from-indigo-500/20 to-violet-500/20',
+    details: [
+      'Claim processing assistant',
+      'Premium optimization',
+      'Policy comparison engine'
+    ],
+    systemPromptPreview: 'You are Zenith. Explain insurance jargon clearly. Focus on the value of protection and long-term security.',
+  },
+  {
+    id: 'pixel',
+    name: 'Pixel',
+    role: 'Gen-Z Banker',
+    category: 'fintech',
+    specialty: 'NEOBANKING',
+    languages: 'English • Spanish (Fluent Slang)',
+    benefit: 'Banking that speaks the language of the internet.',
+    icon: 'Smartphone',
+    color: 'from-lime-500/20 to-yellow-500/20',
+    details: [
+      'Crypto-to-Fiat onboarding',
+      'Split-bill social features',
+      'Gamified saving goals'
+    ],
+    systemPromptPreview: 'You are Pixel. Be casual, high-energy, and use modern terminology. Make banking feel fun.',
+  },
+  {
+    id: 'oracle',
+    name: 'Oracle',
+    role: 'Mortgage Lead',
+    category: 'banking',
+    specialty: 'HOME_LOANS',
+    languages: 'English • Vietnamese',
+    benefit: 'Navigating the path to your dream home.',
+    icon: 'Home',
+    color: 'from-orange-500/20 to-brown-500/20',
+    details: [
+      'Pre-approval estimation',
+      'Downpayment calculators',
+      'Property appraisal links'
+    ],
+    systemPromptPreview: 'You are Oracle. Focus on the emotional and financial journey of home buying. Be patient and thorough.',
+  },
+  {
+    id: 'bolt',
+    name: 'Bolt',
+    role: 'Trade Exec',
+    category: 'fintech',
+    specialty: 'ALGO_TRADING',
+    languages: 'English • Korean',
+    benefit: 'High-speed execution for active traders.',
+    icon: 'Zap',
+    color: 'from-yellow-500/20 to-sky-500/20',
+    details: [
+      'Flash trade confirmations',
+      'Arbitrage opportunity alerts',
+      'Margin call prevention'
+    ],
+    systemPromptPreview: 'You are Bolt. Be lightning fast and extremely concise. Prioritize speed of execution and data accuracy.',
+  },
+  {
+    id: 'sage',
+    name: 'Sage',
+    role: 'Wellness Coach',
+    category: 'fintech',
+    specialty: 'FIN_WELLNESS',
+    languages: 'English • Marathi',
+    benefit: 'Holistic advice for financial peace of mind.',
+    icon: 'Heart',
+    color: 'from-green-500/20 to-emerald-500/20',
+    details: [
+      'Debt stress management',
+      'Budgeting for milestones',
+      'Financial literacy tips'
+    ],
+    systemPromptPreview: 'You are Sage. Be calm, compassionate, and educational. Help users achieve financial serenity.',
   }
 ];

@@ -28,7 +28,7 @@ export const AgentAvatar = ({ id, name, color, isMini, instanceId, isSwitcher = 
   return (
     <motion.div 
       layoutId={isSwitcher ? `avatar-container-${id}-${instanceId}-switcher` : `avatar-container-${id}-${instanceId}`}
-      className={`relative rounded-full bg-linear-to-br from-zinc-800 to-black ring-1 ring-white/10 flex items-center justify-center overflow-hidden ${isMini ? 'size-14 p-1.5' : 'size-32 p-4'}`}
+      className={`relative rounded-full bg-linear-to-br from-zinc-800 to-black ring-1 ring-white/10 flex items-center justify-center overflow-hidden size-full p-[10%]`}
     >
       <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-30 pointer-events-none" />
       <motion.div 
@@ -95,7 +95,9 @@ export const AgentFlipCard = ({
               )}
 
               {/* SHARED AVATAR */}
-              <AgentAvatar id={agent.id} name={agent.name} color={agent.color} isMini={isMini} instanceId={instanceId} isSwitcher={isSwitcher} />
+              <div className={isMini ? 'size-14' : 'size-32'}>
+                <AgentAvatar id={agent.id} name={agent.name} color={agent.color} isMini={isMini} instanceId={instanceId} isSwitcher={isSwitcher} />
+              </div>
             </div>
 
             {/* COLUMN 2: DATA & ACTION */}

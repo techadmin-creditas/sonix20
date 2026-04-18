@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "reactflow/dist/style.css";
+@config "../tailwind.config.js";
 
 @theme {
   --color-background: var(--background);
@@ -283,4 +284,17 @@
 
 .animate-pulse-subtle {
   animation: pulse-subtle 2s infinite ease-in-out;
+}
+
+/* --- Mobile Specific Fixes --- */
+@media (max-width: 640px) {
+  .section-container {
+    padding-top: 4rem;
+    justify-content: flex-start;
+  }
+}
+
+.h-safe-screen {
+  height: 100vh;
+  height: 100dvh;
 }

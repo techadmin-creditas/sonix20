@@ -9,11 +9,11 @@ export function NeuralBackground2D() {
 
   // --- LOGIC GRAPH CONFIG ---
   const CONFIG = {
-    HUB_COUNT: 12,
-    NODE_COUNT: 140,
+    HUB_COUNT: 8,
+    NODE_COUNT: 70,
     HUB_DIST: 350,
     NODE_DIST: 120,
-    VISIBILITY: isDark ? 0.9 : 0.4,
+    VISIBILITY: isDark ? 0.9 : 0.7, // Increased from 0.4 to 0.7 for light mode clarity
   };
 
   useEffect(() => {
@@ -102,7 +102,7 @@ export function NeuralBackground2D() {
       }
 
       // B. Draw Orange Logic Mesh (Node Connections)
-      ctx.lineWidth = 0.5;
+      ctx.lineWidth = 3;
       for (let i = 0; i < allNodes.length; i++) {
         for (let j = i + 1; j < allNodes.length; j++) {
           const dx = allNodes[i].x - allNodes[j].x;
@@ -182,22 +182,77 @@ export function NeuralBackground2D() {
     };
   }, [theme, isDark]);
 
+  // Secondary atmospheric particles (slow moving)
+  const ATMOSPHERIC_PARTICLES = Array.from({ length: 15 }, (_, i) => ({
+    id: i,
+    left: `${(i * 23 + 7) % 100}%`,
+    top:  `${(i * 17 + 11) % 100}%`,
+    size: 10 + (i % 2),
+    opacity: 0.05 + (i % 5) * 0.02,
+    duration: 10 + (i % 8) * 2,
+    delay: i * 0.5,
+  }));
+
 
   return (
     <div className="fixed inset-0 z-0 h-screen w-full bg-neural-bg overflow-hidden transition-colors duration-500">
-      {/* High-Visibility Logic Graph Layer */}
+      {/* ── Atmospheric Glows (Merged from BackgroundMesh) ── */}
+      <div className={`absolute inset-0 pointer-events-none ${isDark ? 'opacity-90' : 'opacity-100'} overflow-hidden`}>
+        {/* Hub 1: Top-Left (Primary) */}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-primary/40' : 'bg-primary/50'} blur-[160px]`}
+          animate={{ x: [0, 80, 0], y: [0, -50, 0], scale: [1, 1.25, 1] }}
+          transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+          style={{ width: 800, height: 800, top: '-15%', left: '-10%' }}
+        />
+        
+        {/* Hub 2: Bottom-Right (Secondary) */}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-secondary/30' : 'bg-secondary/40'} blur-[140px]`}
+          animate={{ x: [0, -90, 0], y: [0, 60, 0], scale: [1, 1.4, 1] }}
+          transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+          style={{ width: 750, height: 750, bottom: '-10%', right: '-10%' }}
+        />
+
+        {/* Hub 3: Center-Right (Tertiary) */}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-tertiary/20' : 'bg-tertiary/30'} blur-[120px]`}
+          animate={{ x: [0, 40, -40, 0], y: [0, -40, 40, 0] }}
+          transition={{ duration: 25, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
+          style={{ width: 600, height: 600, top: '30%', right: '10%' }}
+        />
+
+        {/* Hub 4: Mid-Left (Accent) */}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-primary/15' : 'bg-primary/25'} blur-[100px]`}
+          animate={{ x: [0, 30, 0], y: [0, 70, 0] }}
+          transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut', delay: 8 }}
+          style={{ width: 500, height: 500, top: '50%', left: '5%' }}
+        />
+
+        {/* Floating Atmospheric Particles */}
+        {ATMOSPHERIC_PARTICLES.map(p => (
+          <motion.div key={p.id} className="absolute rounded-full bg-primary"
+            animate={{ y: [0, -25, 0], x: [0, p.id % 2 === 0 ? 15 : -15, 0] }}
+            transition={{ duration: p.duration, delay: p.delay, repeat: Infinity, ease: 'easeInOut' }}
+            style={{ width: p.size, height: p.size, left: p.left, top: p.top, opacity: isDark ? p.opacity : p.opacity * 2.5 }}
+          />
+        ))}
+
+        {/* Horizontal Connectivity Tints */}
+        <div className={`absolute inset-x-0 top-0 h-40 bg-linear-to-b ${isDark ? 'from-primary/5' : 'from-primary/15'} to-transparent`} />
+        <div className={`absolute inset-x-0 bottom-0 h-40 bg-linear-to-t ${isDark ? 'from-secondary/5' : 'from-secondary/15'} to-transparent`} />
+      </div>
+
+      {/* ── Neural Logic Graph Layer (Canvas) ── */}
       <canvas 
         ref={canvasRef} 
-        className="absolute inset-0" 
-        style={{ opacity: 0.8 }}
+        className="absolute inset-0 z-10" 
+        style={{ opacity: isDark ? 0.8 : 0.9 }}
       />
 
-      {/* Atmospheric Overlays */}
-      <div className="absolute inset-0 bg-radial-vignette pointer-events-none" />
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
+      {/* ── Visual Polish & Overlays ── */}
+      <div className={`absolute inset-0 bg-radial-vignette pointer-events-none z-20 ${isDark ? 'opacity-100' : 'opacity-40'}`} />
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-[0.03] mix-blend-overlay pointer-events-none z-20" />
 
       {/* Voice Frequency Layer (Bottom) */}
-      <div className="absolute inset-x-0 bottom-0 h-32 pointer-events-none opacity-30">
+      <div className={`absolute inset-x-0 bottom-0 h-32 pointer-events-none z-20 ${isDark ? 'opacity-20' : 'opacity-40'}`}>
         <svg className="w-full h-full filter blur-[4px]" viewBox="0 0 1440 320" preserveAspectRatio="none">
           <motion.path
             animate={{
@@ -207,12 +262,12 @@ export function NeuralBackground2D() {
                 "M0,160 C320,260 420,10 720,160 C1020,310 1120,60 1440,160 V320 H0 Z"
               ]
             }}
-            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
             fill="url(#graphGrad)"
           />
           <defs>
             <linearGradient id="graphGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="var(--secondary)" stopOpacity="0.4" />
+              <stop offset="0%" stopColor="var(--secondary)" stopOpacity="0.3" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
           </defs>

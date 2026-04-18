@@ -4,7 +4,7 @@
  */
 
 export const themeConfig = {
-  selectedBrand: 'neuralSlate' as 'amber' | 'nocturnal' | 'neuralSlate',
+  selectedBrand: 'prismatic' as 'amber' | 'nocturnal' | 'neuralSlate' | 'prismatic',
   selectedMode: 'dark' as 'light' | 'dark',
 
   amber: {
@@ -89,25 +89,71 @@ export const themeConfig = {
     }
   },
 
+  /**
+   * prismatic — tri-color light-first theme
+   * Light: deep violet (primary) + cyan (secondary) + amber (tertiary)
+   * Dark:  bright violet + electric cyan + warm amber on a deep-violet base
+   */
+  prismatic: {
+    light: {
+      primary: '#7c3aed',
+      primaryContainer: '#ede9fe',
+      onPrimaryFixed: '#ffffff',
+      secondary: '#0891b2',
+      secondaryContainer: '#cffafe',
+      tertiary: '#d97706',
+      background: '#faf9ff',
+      surface: '#ffffff',
+      surfaceLow: '#f5f3ff',
+      surfaceHigh: '#ede9fe',
+      surfaceHighest: '#ddd6fe',
+      surfaceLowest: '#ffffff',
+      onSurface: '#0f0a1e',
+      onSurfaceVariant: '#4c4068',
+      outline: '#a99ec4',
+      outlineVariant: '#e8e4f7',
+      inputBg: '#f5f3ff',
+    },
+    dark: {
+      primary: '#a78bfa',
+      primaryContainer: '#4c1d95',
+      onPrimaryFixed: '#ffffff',
+      secondary: '#22d3ee',
+      secondaryContainer: '#164e63',
+      tertiary: '#fbbf24',
+      background: '#0d0b18',
+      surface: '#160f2e',
+      surfaceLow: '#1e1540',
+      surfaceHigh: '#2d2154',
+      surfaceHighest: '#3d2e6e',
+      surfaceLowest: '#090614',
+      onSurface: '#ede9ff',
+      onSurfaceVariant: '#b0a4d4',
+      outline: '#4c3a7e',
+      outlineVariant: '#2d2154',
+      inputBg: '#1e1540',
+    },
+  },
+
   neuralSlate: {
     light: {
-      primary: '#0ea5e9',
-      primaryContainer: '#e0f2fe',
+      primary: '#4f46e5',              // Deep indigo for stronger light-mode presence
+      primaryContainer: '#eef2ff',
       onPrimaryFixed: '#ffffff',
-      secondary: '#64748b',
-      secondaryContainer: '#f1f5f9',
-      tertiary: '#38bdf8',
-      background: '#f8fafc',
+      secondary: '#7c3aed',              // Rich violet
+      secondaryContainer: '#f5f3ff',
+      tertiary: '#06b6d4',              // Vivid cyan accent
+      background: '#f1f5f9',            // Slate-100 (Instead of f8f9ff)
       surface: '#ffffff',
-      surfaceLow: '#f1f5f9',
-      surfaceHigh: '#e2e8f0',
-      surfaceHighest: '#cbd5e1',
+      surfaceLow: '#f8fafc',            // Slate-50
+      surfaceHigh: '#e2e8f0',           // Slate-200
+      surfaceHighest: '#cbd5e1',        // Slate-300
       surfaceLowest: '#ffffff',
-      onSurface: '#0f172a',
-      onSurfaceVariant: '#475569',
-      outline: '#cbd5e1',
-      outlineVariant: '#e2e8f0',
-      inputBg: '#f1f5f9',
+      onSurface: '#0f172a',             // Slate-900 for absolute legibility
+      onSurfaceVariant: '#475569',      // Slate-600
+      outline: '#cbd5e1',               // Slate-300
+      outlineVariant: '#e2e8f0',        // Slate-200
+      inputBg: '#f8fafc',
     },
     dark: {
       primary: '#38bdf8',

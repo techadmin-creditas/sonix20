@@ -19,6 +19,7 @@ import Profile from './pages/Profile';
 import { NotificationProvider } from './contexts/NotificationContext';
 import TestUserManagement from './pages/TestUserManagement';
 import HomeNew from './pages/HomeNew';
+import { hdfcConfig } from './config/tenants/hdfc.config';
 import VoicePersonas from './pages/VoicePersonas';
 import DiyWithAI from './pages/DiyWithAI';
 import DiyPersonaPresets from './pages/DiyPersonaPresets';
@@ -68,6 +69,7 @@ function App() {
           <Routes>
             <Route path="/" element={<HomeNew />} />
             <Route path="/home" element={<HomeNew />} />
+            <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
             <Route
               path="/login"
               element={
@@ -102,6 +104,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/home" element={<HomeNew />} />
+              <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/sessions" element={<Sessions />} />
               <Route path="/sessions/live" element={<SessionControl />} />
