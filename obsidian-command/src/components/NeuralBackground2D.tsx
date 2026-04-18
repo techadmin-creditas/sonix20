@@ -248,11 +248,11 @@ export function NeuralBackground2D() {
       />
 
       {/* ── Visual Polish & Overlays ── */}
-      <div className={`absolute inset-0 bg-radial-vignette pointer-events-none z-20 ${isDark ? 'opacity-100' : 'opacity-40'}`} />
+      <div className={`absolute inset-0 bg-radial-vignette pointer-events-none z-20 ${isDark ? 'opacity-100' : 'opacity-100'}`} />
       <div className="absolute inset-0 bg-[url('data:image/svg+xml,...')] opacity-[0.03] mix-blend-overlay pointer-events-none z-20" />
 
       {/* Voice Frequency Layer (Bottom) */}
-      <div className={`absolute inset-x-0 bottom-0 h-32 pointer-events-none z-20 ${isDark ? 'opacity-20' : 'opacity-40'}`}>
+      <div className={`absolute inset-x-0 bottom-0 h-32 pointer-events-none z-20 ${isDark ? 'opacity-100' : 'opacity-100'}`}>
         <svg className="w-full h-full filter blur-[4px]" viewBox="0 0 1440 320" preserveAspectRatio="none">
           <motion.path
             animate={{
