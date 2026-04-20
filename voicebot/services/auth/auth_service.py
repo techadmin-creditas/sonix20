@@ -36,13 +36,14 @@ def verify_password(password: str, encoded: str) -> bool:
     return hmac.compare_digest(got, digest)
 
 
-def issue_access_token(user_id: str, username: str, role: str) -> str:
+def issue_access_token(user_id: str, username: str, role: str, permissions: list[str] = []) -> str:
     now = int(time.time())
     exp = now + int(settings.jwt_access_token_expire_minutes * 60)
     payload = {
         "sub": user_id,
         "username": username,
         "roles": [role],
+        "permissions": permissions,
         "iat": now,
         "exp": exp,
     }

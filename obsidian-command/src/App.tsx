@@ -31,129 +31,196 @@ import StudioTest from './pages/StudioTest';
 import StudioDashboard from './pages/StudioDashboard';
 import StudioPersonasNew from './pages/StudioPersonasNew';
 import { ThemeSynchronizer } from './components/ThemeSynchronizer';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
-function App() {
-  const [checkingAuth, setCheckingAuth] = React.useState(true);
-  const [currentUser, setCurrentUser] = React.useState<AuthUser | null>(null);
+function AppContent() {
+  const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
 
-  React.useEffect(() => {
-    async function bootstrap() {
-      const token = getAuthToken();
-      if (!token) {
-        setCurrentUser(null);
-        setCheckingAuth(false);
-        return;
-      }
-      try {
-        const me = await api.me();
-        setCurrentUser(me);
-      } catch {
-        clearAuthToken();
-        setCurrentUser(null);
-      } finally {
-        setCheckingAuth(false);
-      }
-    }
-    void bootstrap();
-  }, []);
-
-  if (checkingAuth) {
-    return <div className="min-h-screen flex items-center justify-center text-sm text-on-surface-variant">Checking session...</div>;
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-on-surface-variant font-headline tracking-widest uppercase animate-pulse">Checking neural identity...</div>;
   }
 
   if (!currentUser) {
     return (
-      <>
-        <ThemeSynchronizer />
-        <Router>
-          <Routes>
-            <Route path="/" element={<HomeNew />} />
-            <Route path="/home" element={<HomeNew />} />
-            <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
-            <Route
-              path="/login"
-              element={
-                <Login
-                  onLoggedIn={(user) => {
-                    setCurrentUser(user);
-                  }}
-                />
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Router>
-      </>
+      <Router>
+        <Routes>
+          <Route path="/" element={<HomeNew />} />
+          <Route path="/home" element={<HomeNew />} />
+          <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
+          <Route
+            path="/login"
+            element={
+              <Login
+                onLoggedIn={(user) => {
+                  setCurrentUser(user);
+                }}
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
     );
   }
 
   return (
-    <NotificationProvider>
-      <ThemeSynchronizer />
+    <Router>
+      <div className="flex min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary">
+        <Sidebar
+          currentUser={currentUser}
+          onLogout={logout}
+        />
+        <main className="flex-1 flex flex-col min-w-0">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/home" element={<HomeNew />} />
+            <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
+            
+            <Route path="/dashboard" element={
+              <ProtectedRoute moduleId="dashboard">
+                <Dashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/sessions" element={
+              <ProtectedRoute moduleId="sessions">
+                <Sessions />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/sessions/live" element={
+              <ProtectedRoute moduleId="sessions">
+                <SessionControl />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/sessions/:id" element={
+              <ProtectedRoute moduleId="sessions">
+                <SessionDetail />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/diy-with-ai" element={
+              <ProtectedRoute moduleId="studio">
+                <DiyWithAI />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/diy-with-ai/personas" element={
+              <ProtectedRoute moduleId="studio">
+                <DiyPersonaPresets />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/personas" element={
+              <ProtectedRoute moduleId="personas">
+                <Personas />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/personas/create" element={
+              <ProtectedRoute moduleId="personas">
+                <BotConfig />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/personas/:id/config" element={
+              <ProtectedRoute moduleId="personas">
+                <BotConfig />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/personas/:id/config/debug" element={
+              <ProtectedRoute moduleId="personas">
+                <BotConfig />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/knowledge" element={
+              <ProtectedRoute moduleId="knowledge">
+                <KnowledgeBase />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/workflows" element={
+              <ProtectedRoute moduleId="workflows">
+                <Workflows />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/workflows/create" element={
+              <ProtectedRoute moduleId="workflows">
+                <WorkflowEditor />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/workflows/:id/edit" element={
+              <ProtectedRoute moduleId="workflows">
+                <WorkflowEditor />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/analytics" element={
+              <ProtectedRoute moduleId="analytics">
+                <Analytics />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/profile" element={
+              <ProtectedRoute moduleId="profile">
+                <Profile currentUser={currentUser} />
+              </ProtectedRoute>
+            } />
 
-      <Router>
-        <div className="flex min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary">
-          <Sidebar
-            currentUser={currentUser}
-            onLogout={() => {
-              clearAuthToken();
-              setCurrentUser(null);
-            }}
-          />
-          <main className="flex-1 flex flex-col min-w-0">
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/home" element={<HomeNew />} />
-              <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/sessions" element={<Sessions />} />
-              <Route path="/sessions/live" element={<SessionControl />} />
-              <Route path="/sessions/:id" element={<SessionDetail />} />
-              <Route path="/diy-with-ai" element={<DiyWithAI />} />
-              <Route path="/diy-with-ai/personas" element={<DiyPersonaPresets />} />
-              <Route path="/personas" element={<Personas />} />
-              <Route path="/personas/create" element={<BotConfig />} />
-              <Route path="/personas/:id/config" element={<BotConfig />} />
-              <Route path="/personas/:id/config/debug" element={<BotConfig />} />
-              <Route path="/knowledge" element={<KnowledgeBase />} />
-              <Route path="/workflows" element={<Workflows />} />
-              <Route path="/workflows/create" element={<WorkflowEditor />} />
-              <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<Profile currentUser={currentUser} />} />
-              <Route path="/persona" element={<StudioLayout />}>
-                <Route index element={<StudioPersonas />} />
-              </Route>
+            {/* --- Voice Persona Studio Routes --- */}
+            <Route path="/studio" element={
+              <ProtectedRoute moduleId="studio">
+                <StudioLayout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<Navigate to="/studio/library" replace />} />
+              <Route path="overview" element={<StudioDashboard />} />
+              <Route path="agents" element={<StudioPersonas />} />
+              <Route path="library" element={<StudioLibrary />} />
+              <Route path="test" element={<StudioTest />} />
+            </Route>
 
+            <Route path="/settings" element={
+              <ProtectedRoute moduleId="settings" adminOnly>
+                <Settings />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/users" element={
+              <ProtectedRoute moduleId="users" adminOnly>
+                <UserManagement />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/test-users" element={
+              <ProtectedRoute adminOnly>
+                <TestUserManagement />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  );
+}
 
-              <Route path="/personaNew" element={<StudioLayout />}>
-                <Route index element={<StudioPersonasNew />} />
-              </Route>
-
-              {/* --- Voice Persona Studio Routes --- */}
-              <Route path="/studio" element={<StudioLayout />}>
-                <Route index element={<Navigate to="/studio/library" replace />} />
-                <Route path="overview" element={<StudioDashboard />} />
-                <Route path="agents" element={<StudioPersonas />} />
-                <Route path="library" element={<StudioLibrary />} />
-                <Route path="test" element={<StudioTest />} />
-              </Route>
-
-              <Route
-                path="/users"
-                element={
-                  currentUser.role === 'admin' ? <UserManagement /> : <Navigate to="/dashboard" replace />
-                }
-              />
-              <Route path="/test-users" element={<TestUserManagement />} />
-              <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </main>
-        </div>
-      </Router>
-    </NotificationProvider>
+function App() {
+  return (
+    <AuthProvider>
+      <NotificationProvider>
+        <ThemeSynchronizer />
+        <AppContent />
+      </NotificationProvider>
+    </AuthProvider>
   );
 }
 

@@ -135,6 +135,20 @@ class SQLiteProvider:
 
     def _create_tables(self) -> None:
         conn = self._get_conn()
+        # Role permissions table
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS roles (
+                id          TEXT PRIMARY KEY,
+                permissions TEXT DEFAULT '[]'
+            );
+            """
+        )
+        # Seed default roles if empty
+        if not conn.execute("SELECT 1 FROM roles LIMIT 1").fetchone():
+            conn.execute("INSERT INTO roles (id, permissions) VALUES (?, ?)", ('admin', json.dumps(["*"])))
+            conn.execute("INSERT INTO roles (id, permissions) VALUES (?, ?)", ('user', json.dumps(["read:*", "update:own"])))
+
         # Identity table for dashboard users (admin + standard users)
         conn.executescript(
             """
@@ -142,7 +156,8 @@ class SQLiteProvider:
                 id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
                 username      TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                role          TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+                role          TEXT NOT NULL DEFAULT 'user',
+                permissions   TEXT DEFAULT '[]',
                 is_active     INTEGER NOT NULL DEFAULT 1,
                 created_at    REAL NOT NULL DEFAULT (strftime('%s','now')),
                 updated_at    REAL NOT NULL DEFAULT (strftime('%s','now'))
@@ -150,6 +165,30 @@ class SQLiteProvider:
             """
         )
         conn.commit()
+    
+    async def list_roles(self) -> list[dict]:
+        def _do():
+            conn = self._get_conn()
+            rows = conn.execute("SELECT id, permissions FROM roles").fetchall()
+            return [{"id": r[0], "permissions": json.loads(r[1])} for r in rows]
+        return await self._run(_do)
+
+    async def update_role(self, role_id: str, permissions: list[str]) -> bool:
+        def _do():
+            conn = self._get_conn()
+            conn.execute("UPDATE roles SET permissions = ? WHERE id = ?", (json.dumps(permissions), role_id))
+            if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                conn.execute("INSERT INTO roles (id, permissions) VALUES (?, ?)", (role_id, json.dumps(permissions)))
+            conn.commit()
+            return True
+        return await self._run(_do)
+
+    async def get_role_permissions(self, role_id: str) -> list[str]:
+        def _do():
+            conn = self._get_conn()
+            row = conn.execute("SELECT permissions FROM roles WHERE id = ?", (role_id,)).fetchone()
+            return json.loads(row[0]) if row else []
+        return await self._run(_do)
         
         # 1. Create bots table
         conn.executescript("""
@@ -417,6 +456,7 @@ class SQLiteProvider:
                 theme_color        TEXT DEFAULT 'blue',
                 is_active          INTEGER NOT NULL DEFAULT 1,
                 is_deployed        INTEGER NOT NULL DEFAULT 0,
+                owner_user_id      TEXT REFERENCES users(id),
                 created_at         REAL NOT NULL DEFAULT (strftime('%s','now')),
                 updated_at         REAL NOT NULL DEFAULT (strftime('%s','now'))
             );
@@ -451,7 +491,10 @@ class SQLiteProvider:
             }
             for pid, color in color_map.items():
                 conn.execute("UPDATE aiPersonas SET theme_color = ? WHERE id = ?", (color, pid))
-            logger.info("Migrated aiPersonas: Added theme_color column.")
+        if "owner_user_id" not in existing_persona_cols:
+            conn.execute("ALTER TABLE aiPersonas ADD COLUMN owner_user_id TEXT REFERENCES users(id)")
+            logger.info("Persona Migration: Added owner_user_id column.")
+        
         conn.commit()
 
         admin_id = self._seed_default_admin()
@@ -876,6 +919,10 @@ class SQLiteProvider:
             "UPDATE sessions SET user_id = COALESCE(user_id, ?) WHERE user_id IS NULL OR user_id = ''",
             (admin_id,),
         )
+        conn.execute(
+            "UPDATE aiPersonas SET owner_user_id = COALESCE(owner_user_id, ?) WHERE owner_user_id IS NULL",
+            (admin_id,),
+        )
         conn.commit()
 
     # ─── Bot Registry ─────────────────────────────────────────────────────────
@@ -885,45 +932,82 @@ class SQLiteProvider:
     async def get_user_by_id(self, user_id: str) -> Optional[dict]:
         def _do():
             row = self._get_conn().execute(
-                "SELECT id, username, password_hash, role, is_active, created_at, updated_at FROM users WHERE id = ?",
+                "SELECT id, username, password_hash, role, permissions, is_active, created_at, updated_at FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
-            return dict(row) if row else None
+            if not row: return None
+            d = dict(row)
+            try:
+                d['permissions'] = json.loads(d.get('permissions', '[]'))
+            except:
+                d['permissions'] = []
+            return d
         return await self._run(_do)
 
     async def get_user_by_username(self, username: str) -> Optional[dict]:
         def _do():
             row = self._get_conn().execute(
-                "SELECT id, username, password_hash, role, is_active, created_at, updated_at FROM users WHERE lower(username) = lower(?)",
+                "SELECT id, username, password_hash, role, permissions, is_active, created_at, updated_at FROM users WHERE lower(username) = lower(?)",
                 (username,),
             ).fetchone()
-            return dict(row) if row else None
+            if not row: return None
+            d = dict(row)
+            try:
+                d['permissions'] = json.loads(d.get('permissions', '[]'))
+            except:
+                d['permissions'] = []
+            return d
         return await self._run(_do)
 
     async def list_users(self) -> list[dict]:
         def _do():
             rows = self._get_conn().execute(
-                "SELECT id, username, role, is_active, created_at, updated_at FROM users ORDER BY created_at ASC"
+                "SELECT id, username, role, permissions, is_active, created_at, updated_at FROM users ORDER BY created_at ASC"
             ).fetchall()
-            return [dict(r) for r in rows]
+            results = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    d['permissions'] = json.loads(d.get('permissions', '[]'))
+                except:
+                    d['permissions'] = []
+                results.append(d)
+            return results
         return await self._run(_do)
 
-    async def create_user(self, username: str, password_hash: str, role: str = "user") -> dict:
+    async def create_user(self, username: str, password_hash: str, role: str = "user", permissions: list[str] = None) -> dict:
         def _do():
             conn = self._get_conn()
             user_id = str(uuid.uuid4())
+            
+            # Use provided permissions or derive defaults by role
+            if permissions is not None:
+                perms = permissions
+            else:
+                perms = ["*"] if role == "admin" else ["read:personas"]
+                
+            perms_json = json.dumps(perms)
+            
             conn.execute(
                 """
-                INSERT INTO users (id, username, password_hash, role, is_active)
-                VALUES (?, ?, ?, ?, 1)
+                INSERT INTO users (id, username, password_hash, role, permissions, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
                 """,
-                (user_id, username, password_hash, role),
+                (user_id, username, password_hash, role, perms_json),
             )
             conn.commit()
-            return {"id": user_id, "username": username, "role": role, "is_active": 1}
+            return {"id": user_id, "username": username, "role": role, "permissions": perms, "is_active": 1}
         return await self._run(_do)
 
-    async def update_user(self, user_id: str, *, username: Optional[str] = None, role: Optional[str] = None, is_active: Optional[bool] = None) -> bool:
+    async def update_user(
+        self,
+        user_id: str,
+        *,
+        username: Optional[str] = None,
+        role: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        permissions: Optional[list[str]] = None
+    ) -> bool:
         def _do():
             updates: dict[str, Any] = {}
             if username is not None:
@@ -932,6 +1016,9 @@ class SQLiteProvider:
                 updates["role"] = role
             if is_active is not None:
                 updates["is_active"] = 1 if is_active else 0
+            if permissions is not None:
+                updates["permissions"] = json.dumps(permissions)
+            
             if not updates:
                 return False
             updates["updated_at"] = time.time()
@@ -1031,19 +1118,21 @@ class SQLiteProvider:
             return None
         return await self._run(_do)
 
-    async def list_bots(self) -> list[dict]:
-        """List all active bots."""
+    async def list_bots(self, owner_user_id: Optional[str] = None) -> list[dict]:
+        """List active bots, optionally filtered by owner."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1 ORDER BY created_at DESC").fetchall()
+            sql = "SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1"
+            if owner_user_id:
+                rows = conn.execute(sql + " AND owner_user_id = ? ORDER BY created_at DESC", (owner_user_id,)).fetchall()
+            else:
+                rows = conn.execute(sql + " ORDER BY created_at DESC").fetchall()
             results = []
             for r in rows:
                 d = dict(r)
                 if d.get("tools_enabled") and isinstance(d["tools_enabled"], str):
-                    try:
-                        d["tools_enabled"] = json.loads(d["tools_enabled"])
-                    except:
-                        d["tools_enabled"] = []
+                    try: d["tools_enabled"] = json.loads(d["tools_enabled"])
+                    except: d["tools_enabled"] = []
                 results.append(d)
             return results
         return await self._run(_do)
@@ -1143,15 +1232,23 @@ class SQLiteProvider:
             return data
         return await self._run(_do)
 
-    async def list_workflows(self) -> list[dict]:
-        """Fetch all workflow graphs."""
+    async def list_workflows(self, owner_user_id: Optional[str] = None) -> list[dict]:
+        """Fetch all workflow graphs, filtered by owner if provided."""
         def _do():
-            rows = self._get_conn().execute("SELECT * FROM workflows ORDER BY updated_at DESC, created_at DESC").fetchall()
+            conn = self._get_conn()
+            if owner_user_id:
+                rows = conn.execute(
+                    "SELECT * FROM workflows WHERE owner_user_id = ? ORDER BY updated_at DESC, created_at DESC",
+                    (owner_user_id,)
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM workflows ORDER BY updated_at DESC, created_at DESC").fetchall()
+            
             results = []
             for row in rows:
                 data = dict(row)
-                data['nodes'] = json.loads(data['nodes_json'])
-                data['edges'] = json.loads(data['edges_json'])
+                data['nodes'] = json.loads(data['nodes_json']) if data.get('nodes_json') else []
+                data['edges'] = json.loads(data['edges_json']) if data.get('edges_json') else []
                 results.append(data)
             return results
         return await self._run(_do)
@@ -1911,11 +2008,14 @@ class SQLiteProvider:
             }
         return await self._run(_do)
 
-    async def list_knowledge(self, limit: int = 100) -> list[dict]:
-        """List all knowledge base entries."""
+    async def list_knowledge(self, owner_user_id: Optional[str] = None, limit: int = 100) -> list[dict]:
+        """List all knowledge base entries, optionally filtered by owner."""
         def _do():
             conn = self._get_conn()
-            rows = conn.execute("SELECT * FROM knowledge_base ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            if owner_user_id:
+                rows = conn.execute("SELECT * FROM knowledge_base WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT ?", (owner_user_id, limit)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM knowledge_base ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
             return [dict(r) for r in rows]
         return await self._run(_do)
 
@@ -2415,7 +2515,7 @@ class SQLiteProvider:
 
     # ─── 🧠 AI Persona Builder CRUD ───────────────────────────────────────────
 
-    async def create_ai_persona(self, data: dict) -> dict:
+    async def create_ai_persona(self, data: dict, owner_user_id: Optional[str] = None) -> dict:
         """Create a new AI Persona in the registry."""
         def _do():
             conn = self._get_conn()
@@ -2425,8 +2525,8 @@ class SQLiteProvider:
                 INSERT INTO aiPersonas (
                     id, name, gender, language, tone, use_case, psychology,
                     emotion, urgency, empathy, stability, clarity,
-                    style_exaggeration, base_model, selected_voice, theme_color
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    style_exaggeration, base_model, selected_voice, theme_color, owner_user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     persona_id,
@@ -2445,10 +2545,11 @@ class SQLiteProvider:
                     data.get("baseModel", data.get("base_model", "Sonix-Flash-1")),
                     data.get("selectedVoice", data.get("selected_voice", "v1")),
                     data.get("themeColor", data.get("theme_color", "blue")),
+                    owner_user_id
                 ),
             )
             conn.commit()
-            return {"id": persona_id, **data}
+            return {"id": persona_id, "owner_user_id": owner_user_id, **data}
         return await self._run(_do)
 
     async def get_ai_persona(self, persona_id: str) -> Optional[dict]:
@@ -2460,12 +2561,19 @@ class SQLiteProvider:
             return _persona_row_to_dict(row) if row else None
         return await self._run(_do)
 
-    async def list_ai_personas(self) -> list[dict]:
-        """List all AI Personas ordered by creation date."""
+    async def list_ai_personas(self, owner_user_id: Optional[str] = None) -> list[dict]:
+        """List all AI Personas, filtered by owner if provided."""
         def _do():
-            rows = self._get_conn().execute(
-                "SELECT * FROM aiPersonas ORDER BY created_at DESC"
-            ).fetchall()
+            conn = self._get_conn()
+            if owner_user_id:
+                rows = conn.execute(
+                    "SELECT * FROM aiPersonas WHERE owner_user_id = ? ORDER BY created_at DESC", 
+                    (owner_user_id,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM aiPersonas ORDER BY created_at DESC"
+                ).fetchall()
             return [_persona_row_to_dict(r) for r in rows]
         return await self._run(_do)
 
@@ -2492,6 +2600,7 @@ class SQLiteProvider:
             "selected_voice": "selected_voice",
             "is_active": "is_active",
             "is_deployed": "is_deployed",
+            "owner_user_id": "owner_user_id",
             "themeColor": "theme_color",
             "theme_color": "theme_color",
         }

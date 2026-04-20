@@ -72,20 +72,42 @@ async def get_db() -> SQLiteProvider:
     return _db
 
 
-def _actor(request: Request) -> tuple[str, str]:
+def _actor(request: Request) -> tuple[str, str, list[str]]:
     user_id = str(getattr(request.state, "user_id", "") or "")
     roles = getattr(request.state, "roles", []) or []
     role = "admin" if "admin" in roles else "user"
-    return user_id, role
+    permissions = getattr(request.state, "permissions", []) or []
+    return user_id, role, permissions
 
 
 def _require_admin(request: Request) -> str:
-    user_id, role = _actor(request)
+    user_id, role, _ = _actor(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     if role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
     return user_id
+
+
+def _require_permission(request: Request, permission: str) -> str:
+    """Verifies the actor has the required permission string or is an admin."""
+    user_id, role, perms = _actor(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if role == "admin":
+        return user_id
+    
+    if "*" in perms:
+        return user_id
+    
+    # Check for exact match or wildcard match (read:* or update:*)
+    action, module = permission.split(":") if ":" in permission else (None, permission)
+    if permission in perms:
+        return user_id
+    if action and f"{action}:*" in perms:
+        return user_id
+        
+    raise HTTPException(status_code=403, detail=f"Required permission '{permission}' not granted")
 
 
 def _can_access_owner(owner_user_id: Optional[str], actor_user_id: str, actor_role: str) -> bool:
@@ -168,10 +190,17 @@ async def login(data: dict):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not verify_password(password, str(user.get("password_hash") or "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Resolve merged permissions: Role Default + User Overrides
+    role_permissions = await db.get_role_permissions(user["role"])
+    user_permissions = user.get("permissions", [])
+    merged_permissions = list(set(role_permissions + user_permissions))
+    
     token = issue_access_token(
         user_id=str(user["id"]),
         username=str(user["username"]),
         role=str(user["role"]),
+        permissions=merged_permissions,
     )
     return {
         "access_token": token,
@@ -180,33 +209,89 @@ async def login(data: dict):
             "id": user["id"],
             "username": user["username"],
             "role": user["role"],
+            "permissions": merged_permissions,
         },
     }
 
 
 @router.get("/auth/me", tags=["auth"])
-async def me(request: Request):
-    user_id, _ = _actor(request)
+async def auth_me(request: Request):
+    user_id, role, _ = _actor(request)
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     db = await get_db()
     user = await db.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    # Simplified single-source-of-identity logic:
+    # If custom permissions are set, they ARE the identity. Otherwise, use role base.
+    custom_perms = user.get("permissions", [])
+    if custom_perms:
+        effective_perms = custom_perms
+    else:
+        role_base = await db.get_role_permissions(user["role"])
+        effective_perms = role_base or []
+
     return {
         "id": user["id"],
         "username": user["username"],
         "role": user["role"],
-        "is_active": user["is_active"],
+        "permissions": effective_perms,
+        "overrides": custom_perms,
+        "is_active": user["is_active"]
     }
 
+
+@router.delete("/admin/users/{user_id}", tags=["admin"])
+async def delete_user_route(user_id: str, request: Request):
+    _require_admin(request)
+    db = await get_db()
+    ok = await db.delete_user(user_id)
+    return {"status": "deleted" if ok else "noop"}
+
+@router.get("/admin/roles", tags=["admin"])
+async def get_roles(request: Request):
+    _require_admin(request)
+    db = await get_db()
+    roles = await db.list_roles()
+    return {"roles": roles}
+
+@router.patch("/admin/roles/{role_id}", tags=["admin"])
+async def update_role_route(role_id: str, request: Request, data: dict):
+    _require_admin(request)
+    db = await get_db()
+    permissions = data.get("permissions")
+    if permissions is None:
+         raise HTTPException(status_code=422, detail="permissions is required")
+    await db.update_role(role_id, permissions)
+    return {"status": "updated", "role_id": role_id}
 
 @router.get("/admin/users", tags=["admin"])
 async def list_users(request: Request):
     _require_admin(request)
     db = await get_db()
     users = await db.list_users()
-    return {"users": users, "count": len(users)}
+    roles = await db.list_roles()
+    roles_map = {r["id"]: r["permissions"] for r in roles}
+    
+    # Enrich users with Single Source (Effective) permissions
+    enriched = []
+    for u in users:
+        role_base = roles_map.get(u["role"], [])
+        overrides = u.get("permissions", [])
+        
+        # If overrides exist, use them. Otherwise use role base.
+        if overrides:
+            u["effective_permissions"] = overrides
+        else:
+            u["effective_permissions"] = role_base
+            
+        u["role_permissions"] = role_base
+        u["overrides"] = overrides
+        enriched.append(u)
+        
+    return {"users": enriched, "count": len(enriched)}
 
 
 @router.post("/admin/users", tags=["admin"])
@@ -223,7 +308,12 @@ async def create_user(request: Request, data: dict):
     existing = await db.get_user_by_username(username)
     if existing:
         raise HTTPException(status_code=409, detail="username already exists")
-    user = await db.create_user(username=username, password_hash=hash_password(password), role=role)
+    user = await db.create_user(
+        username=username, 
+        password_hash=hash_password(password), 
+        role=role,
+        permissions=data.get("permissions")
+    )
     return {"status": "created", "user": user}
 
 
@@ -231,16 +321,24 @@ async def create_user(request: Request, data: dict):
 async def patch_user(user_id: str, request: Request, data: dict):
     _require_admin(request)
     db = await get_db()
-    target = await db.get_user_by_id(user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
+    # Unpack for the keyword-only args in SQLiteProvider.update_user
     ok = await db.update_user(
         user_id,
         username=data.get("username"),
         role=data.get("role"),
         is_active=data.get("is_active"),
+        permissions=data.get("permissions")
     )
     return {"status": "updated" if ok else "noop", "user_id": user_id}
+
+
+@router.post("/admin/users/{user_id}/reset-permissions", tags=["admin"])
+async def reset_user_permissions(user_id: str, request: Request):
+    _require_admin(request)
+    db = await get_db()
+    # Clearing the permissions array restores role defaults
+    ok = await db.update_user(user_id, permissions=[])
+    return {"status": "reset" if ok else "failed", "user_id": user_id}
 
 
 @router.patch("/admin/users/{user_id}/password", tags=["admin"])
@@ -276,7 +374,7 @@ async def create_session(
     import uuid
     session_id = str(uuid.uuid4())
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     owner_user_id = actor_user_id
     if not owner_user_id:
         # Allow anonymous sessions for the landing page flow
@@ -375,9 +473,8 @@ async def create_session(
 async def list_sessions(request: Request, limit: int = 50):
     """List recent voice sessions with metadata."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
-    if not actor_user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:sessions")
     sessions = await db.list_sessions(limit=limit)
     if actor_role != "admin":
         sessions = [s for s in sessions if str(s.get("user_id") or "") == actor_user_id]
@@ -413,7 +510,7 @@ async def get_session(session_id: str, request: Request):
     session_data = await db.get_session(session_id)
     if not session_data:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session_data.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     return session_data
@@ -426,7 +523,7 @@ async def get_session_log(session_id: str, request: Request):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     log = await db.get_session_log(session_id)
@@ -440,7 +537,7 @@ async def submit_session_feedback(session_id: str, data: dict, request: Request)
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     outcome = data.get("outcome", "resolved")
@@ -461,7 +558,7 @@ async def get_session_feedback(session_id: str, request: Request):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     feedback = await db.get_session_feedback(session_id)
@@ -475,7 +572,7 @@ async def get_session_facts(session_id: str, request: Request):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     facts = await db.get_session_facts(session_id)
@@ -553,7 +650,7 @@ async def recommend_for_session(session_id: str, request: Request, data: Optiona
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     if not _can_access_owner(sess.get("user_id"), actor_user_id, actor_role):
@@ -690,7 +787,7 @@ async def diy_generate_persona(request: Request, data: Optional[dict] = None):
     from voicebot.services.llm.groq_provider import GroqStreamingProvider
     from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
 
-    actor_user_id, _actor_role = _actor(request)
+    actor_user_id, _actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -806,10 +903,10 @@ async def diy_generate_persona(request: Request, data: Optional[dict] = None):
 async def list_bots(request: Request):
     """List all active bot configurations with aggregate usage."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
-    bots = await db.list_bots()
-    if actor_role != "admin":
-        bots = [b for b in bots if str(b.get("owner_user_id") or "") == actor_user_id]
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:personas")
+    owner_filter = None if actor_role == "admin" else actor_user_id
+    bots = await db.list_bots(owner_user_id=owner_filter)
     
     # Enrich with lifetime usage
     enriched = []
@@ -827,7 +924,8 @@ async def get_bot(bot_id: str, request: Request):
     bot = await db.get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:personas")
     if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     
@@ -837,9 +935,8 @@ async def get_bot(bot_id: str, request: Request):
 
 @router.post("/bots", tags=["bots"])
 async def create_bot(data: dict, request: Request):
-    actor_user_id, actor_role = _actor(request)
-    if not actor_user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "update:personas")
     """
     Create a new bot persona.
     
@@ -905,7 +1002,7 @@ async def update_bot(bot_id: str, data: dict, request: Request):
     bot = await db.get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     await db.update_bot(bot_id, **data)
@@ -916,51 +1013,66 @@ async def update_bot(bot_id: str, data: dict, request: Request):
 
 @router.get("/ai-personas", tags=["ai-personas"])
 async def list_ai_personas(request: Request):
-    """List all AI Personas."""
-    actor_user_id, _ = _actor(request)
+    """List all AI Personas with ownership filtering."""
+    actor_user_id, roles, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
     db = await get_db()
-    personas = await db.list_ai_personas()
+    # Filter by owner if not admin
+    owner_filter = None if "admin" in roles else actor_user_id
+    personas = await db.list_ai_personas(owner_user_id=owner_filter)
     return {"personas": personas, "count": len(personas)}
 
 
 @router.post("/ai-personas", tags=["ai-personas"])
 async def create_ai_persona(data: dict, request: Request):
-    """Create a new AI Persona."""
-    actor_user_id, _ = _actor(request)
+    """Create a new AI Persona for the current user."""
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     if not data.get("name", "").strip():
         raise HTTPException(status_code=422, detail="'name' is required")
+    
     db = await get_db()
-    persona = await db.create_ai_persona(data)
+    owner_user_id = actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id)
+    persona = await db.create_ai_persona(data, owner_user_id=owner_user_id)
     return {"status": "created", "persona": persona}
 
 
 @router.get("/ai-personas/{persona_id}", tags=["ai-personas"])
 async def get_ai_persona(persona_id: str, request: Request):
-    """Get a single AI Persona by ID."""
-    actor_user_id, _ = _actor(request)
+    """Get a single AI Persona by ID with ownership check."""
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
     db = await get_db()
     persona = await db.get_ai_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="AI Persona not found")
+        
+    if not _can_access_owner(persona.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=404, detail="AI Persona not found")
+        
     return persona
 
 
 @router.patch("/ai-personas/{persona_id}", tags=["ai-personas"])
 async def update_ai_persona(persona_id: str, data: dict, request: Request):
-    """Update fields on an existing AI Persona."""
-    actor_user_id, _ = _actor(request)
+    """Update fields on an existing AI Persona with ownership check."""
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
     db = await get_db()
     persona = await db.get_ai_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="AI Persona not found")
+        
+    if not _can_access_owner(persona.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this persona")
+        
     ok = await db.update_ai_persona(persona_id, data)
     updated = await db.get_ai_persona(persona_id)
     return {"status": "updated" if ok else "noop", "persona": updated}
@@ -968,28 +1080,38 @@ async def update_ai_persona(persona_id: str, data: dict, request: Request):
 
 @router.delete("/ai-personas/{persona_id}", tags=["ai-personas"])
 async def delete_ai_persona(persona_id: str, request: Request):
-    """Permanently delete an AI Persona."""
-    actor_user_id, _ = _actor(request)
+    """Permanently delete an AI Persona with ownership check."""
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
     db = await get_db()
     persona = await db.get_ai_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="AI Persona not found")
+        
+    if not _can_access_owner(persona.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this persona")
+        
     ok = await db.delete_ai_persona(persona_id)
     return {"status": "deleted" if ok else "noop", "persona_id": persona_id}
 
 
 @router.post("/ai-personas/{persona_id}/toggle-deploy", tags=["ai-personas"])
 async def toggle_ai_persona_deploy(persona_id: str, request: Request):
-    """Toggle active deployment status for a persona."""
-    actor_user_id, _ = _actor(request)
+    """Toggle active deployment status for a persona with ownership check."""
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+        
     db = await get_db()
     persona = await db.get_ai_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="AI Persona not found")
+        
+    if not _can_access_owner(persona.get("owner_user_id"), actor_user_id, actor_role):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this persona")
+        
     updated = await db.toggle_ai_persona_deployment(persona_id)
     return {"status": "toggled", "persona": updated}
 
@@ -1079,7 +1201,7 @@ async def delete_bot(bot_id: str, request: Request):
     bot = await db.get_bot(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
     await db.delete_bot(bot_id)
@@ -1093,7 +1215,7 @@ async def delete_workflow(workflow_id: str, request: Request):
     wf = await db.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(wf.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Workflow not found")
     await db.delete_workflow(workflow_id)
@@ -1107,7 +1229,7 @@ async def delete_session(session_id: str, request: Request):
     session = await db.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(session.get("user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Session not found")
     await db.delete_session(session_id)
@@ -1224,10 +1346,9 @@ def _enrich_workflow(wf: dict) -> dict:
 @router.get("/workflows", tags=["workflows"])
 async def list_workflows(request: Request):
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
-    workflows = await db.list_workflows()
-    if actor_role != "admin":
-        workflows = [w for w in workflows if str(w.get("owner_user_id") or "") == actor_user_id]
+    actor_user_id, actor_role, _ = _actor(request)
+    owner_filter = None if actor_role == "admin" else actor_user_id
+    workflows = await db.list_workflows(owner_user_id=owner_filter)
     enriched = [_enrich_workflow(wf) for wf in workflows]
     return {"workflows": enriched, "count": len(enriched)}
 
@@ -1301,7 +1422,7 @@ async def get_workflow(workflow_id: str, request: Request):
     wf = await db.get_workflow(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not _can_access_owner(wf.get("owner_user_id"), actor_user_id, actor_role):
         raise HTTPException(status_code=404, detail="Workflow not found")
     return _enrich_workflow(wf)
@@ -1311,7 +1432,7 @@ async def get_workflow(workflow_id: str, request: Request):
 async def save_workflow(data: dict, request: Request):
     import uuid
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     workflow_id = data.get("id") or str(uuid.uuid4())
@@ -1327,7 +1448,8 @@ async def save_workflow(data: dict, request: Request):
         if not _can_access_owner(existing.get("owner_user_id"), actor_user_id, actor_role):
             raise HTTPException(status_code=404, detail="Workflow not found")
     await db.save_workflow(
-        workflow_id, name, description, nodes, edges, owner_user_id=actor_user_id
+        workflow_id, name, description, nodes, edges, 
+        owner_user_id=actor_user_id if actor_role != "admin" else data.get("owner_user_id", actor_user_id)
     )
     wf = await db.get_workflow(workflow_id)
     return _enrich_workflow(wf) if wf else {"status": "saved", "id": workflow_id}
@@ -1633,7 +1755,8 @@ async def create_appointment(data: dict):
 async def search_knowledge(request: Request, q: str, bot_id: Optional[str] = None):
     """Search the knowledge base (useful for testing retrieval)."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:knowledge")
     if actor_role != "admin" and bot_id:
         bot = await db.get_bot(bot_id)
         if not bot or str(bot.get("owner_user_id") or "") != actor_user_id:
@@ -1648,10 +1771,10 @@ async def search_knowledge(request: Request, q: str, bot_id: Optional[str] = Non
 async def list_knowledge(request: Request, limit: int = 100):
     """List all knowledge base entries."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
-    entries = await db.list_knowledge(limit=limit)
-    if actor_role != "admin":
-        entries = [e for e in entries if str(e.get("owner_user_id") or "") == actor_user_id]
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:knowledge")
+    owner_filter = None if actor_role == "admin" else actor_user_id
+    entries = await db.list_knowledge(owner_user_id=owner_filter, limit=limit)
     return {"entries": entries, "count": len(entries)}
 
 
@@ -1659,7 +1782,8 @@ async def list_knowledge(request: Request, limit: int = 100):
 async def add_knowledge(data: dict, request: Request):
     """Add a knowledge base entry."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "update:knowledge")
     if not actor_user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     bot_id = data.get("bot_id")
@@ -1687,7 +1811,8 @@ async def add_knowledge(data: dict, request: Request):
 async def delete_knowledge(entry_id: int, request: Request):
     """Delete a knowledge base entry."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "update:knowledge")
     entries = await db.list_knowledge(limit=100000)
     ent = next((e for e in entries if int(e.get("id", -1)) == entry_id), None)
     if not ent:
@@ -2541,7 +2666,8 @@ async def test_llm(data: dict):
 async def get_dashboard_analytics(request: Request):
     """Get aggregated metrics for the dashboard overview."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:dashboard")
     stats = await db.get_dashboard_analytics(
         owner_user_id=None if actor_role == "admin" else actor_user_id
     )
@@ -2552,7 +2678,8 @@ async def get_dashboard_analytics(request: Request):
 async def get_latency_analytics(request: Request, limit: int = 30):
     """Return per-session average latency metrics (STT/LLM/TTS/total) for the last N sessions."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:dashboard")
     records = await db.get_latency_analytics(
         limit=limit,
         owner_user_id=None if actor_role == "admin" else actor_user_id,
@@ -2564,7 +2691,8 @@ async def get_latency_analytics(request: Request, limit: int = 30):
 async def get_intent_analytics(request: Request, limit: int = 100):
     """Return intent distribution grouped by intent label from recent sessions."""
     db = await get_db()
-    actor_user_id, actor_role = _actor(request)
+    actor_user_id, actor_role, _ = _actor(request)
+    _require_permission(request, "read:dashboard")
     intents = await db.get_intent_analytics(
         limit=limit,
         owner_user_id=None if actor_role == "admin" else actor_user_id,

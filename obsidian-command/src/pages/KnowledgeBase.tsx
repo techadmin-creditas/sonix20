@@ -19,6 +19,8 @@ import { KNOWLEDGE_BASE } from '../constants';
 import { cn } from '../lib/utils';
 import { api, KnowledgeEntry, RawVectorEntry, QACacheEntry } from '../lib/api';
 import { Loader2 } from 'lucide-react';
+import { PermissionGuard } from '../components/PermissionGuard';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function KnowledgeBase() {
   const [entries, setEntries] = useState<any[]>([]);
@@ -53,7 +55,7 @@ export default function KnowledgeBase() {
       if (activeTab === 'manual') {
         const data = await api.getKnowledgeEntries();
         setEntries(data);
-      } else if (activeTab === 'learned' || activeTab === 'manual') {
+      } else if (activeTab === 'learned') {
           // Fallback or specific logic
           if (activeTab === 'learned' && selectedBotId) {
             const data = await api.getLearnedMemory(selectedBotId);
@@ -153,6 +155,20 @@ export default function KnowledgeBase() {
     }
   };
 
+  const handleIngest = async () => {
+    if (!ingestUrl.trim()) return;
+    setIngestLoading(true);
+    try {
+      await api.ingestUrl(ingestUrl);
+      setIngestUrl('');
+      alert('Ingestion job forked successfully!');
+    } catch (err) {
+      alert('Failed to trigger ingestion.');
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -199,20 +215,19 @@ export default function KnowledgeBase() {
         subtitle="Manage knowledge core and autonomous tools."
         actions={
           <div className="flex gap-4">
-             <button 
-               onClick={() => setIsModalOpen(true)}
-               className="h-10 px-6 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-outline font-bold flex items-center gap-2"
-             >
-                <PlusCircle className="size-4" />
+            <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+              <button
+                onClick={() => {
+                  setFormData({ question: '', answer: '', topic: 'General', priority: 2 });
+                  setSelectedEntry(null);
+                  setIsModalOpen(true);
+                }}
+                className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+              >
+                <PlusCircle className="size-5" />
                 New Entry
-             </button>
-             <button 
-               onClick={() => setActiveTab('tools')}
-               className="h-10 px-6 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-             >
-                <Cpu className="size-4" />
-                Forge Tool
-             </button>
+              </button>
+            </PermissionGuard>
           </div>
         }
       />
@@ -220,7 +235,7 @@ export default function KnowledgeBase() {
       <div className="flex-1 overflow-y-auto px-10 pb-10 custom-scrollbar z-10">
         <div className="flex justify-between items-end mb-10 mt-8">
           <div>
-            <h2 className="text-4xl font-extrabold text-on-surface tracking-tight uppercase tracking-widest">Neural Memory Core</h2>
+            <h2 className="text-4xl font-extrabold text-on-surface uppercase tracking-widest">Neural Memory Core</h2>
             <p className="text-outline mt-2 text-lg">Manage distributed knowledge shards and autonomous capabilities.</p>
           </div>
         </div>
@@ -339,25 +354,24 @@ export default function KnowledgeBase() {
                         </div>
                         <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Crawl Intelligence</h3>
                         <p className="text-outline text-sm mb-10 font-medium max-w-xs">Index any website or support documentation directly into the neural cluster.</p>
-                        <div className="space-y-4">
-                            <input 
-                              type="text" 
-                              placeholder="https://docs.example.com/shipping-policy"
-                              className="w-full h-14 px-6 bg-surface-highest rounded-xl ghost-border text-on-surface focus:outline-none focus:border-primary/50 transition-all font-mono text-xs"
-                              value={ingestUrl}
-                              onChange={e => setIngestUrl(e.target.value)}
-                            />
-                            <button 
-                              onClick={async () => {
-                                setIngestLoading(true);
-                                try { await api.ingestUrl(ingestUrl); alert('Ingestion job forked!'); setIngestUrl(''); } catch(e) { alert('Failed'); }
-                                finally { setIngestLoading(false); }
-                              }}
-                              disabled={ingestLoading || !ingestUrl}
-                              className="w-full h-14 rounded-xl ember-gradient text-on-primary-fixed font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg hover:brightness-110 active:scale-95 transition-all"
+                        <div className="flex gap-4">
+                          <input
+                            type="text"
+                            placeholder="https://example.com/docs"
+                            value={ingestUrl}
+                            onChange={(e) => setIngestUrl(e.target.value)}
+                            className="flex-1 bg-surface-highest ghost-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50"
+                          />
+                          <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                            <button
+                              onClick={handleIngest}
+                              disabled={ingestLoading || !ingestUrl.trim()}
+                              className="px-8 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-lg disabled:opacity-50 disabled:grayscale transition-all active:scale-95 flex items-center gap-2"
                             >
-                                {ingestLoading ? <Loader2 size={20} className="animate-spin" /> : 'Execute Neural Index'}
+                              {ingestLoading ? <Loader2 className="size-4 animate-spin" /> : <PlusCircle className="size-4" />}
+                              Sync URL
                             </button>
+                          </PermissionGuard>
                         </div>
                     </div>
 
@@ -388,11 +402,20 @@ export default function KnowledgeBase() {
             ) : activeTab === 'tools' ? (
               <div className="space-y-6">
                  <div className="p-10 rounded-3xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden">
-                    <div className="flex justify-between items-center mb-10">
-                        <div>
-                            <h3 className="text-3xl font-black text-on-surface uppercase tracking-tight">Active Tool Registry</h3>
-                            <p className="text-outline text-sm font-medium mt-1">Manage dynamically discovered tools and custom API endpoints.</p>
-                        </div>
+                    <div className="flex items-center justify-between mb-10">
+                      <div className="flex flex-col gap-1">
+                        <h3 className="font-headline text-lg font-bold">External Knowledge Tools</h3>
+                        <p className="text-sm text-outline">Connect real-time API endpoints for dynamic retrieval.</p>
+                      </div>
+                      <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                        <button
+                          onClick={() => setIsToolModalOpen(true)}
+                          className="px-6 py-2.5 rounded-xl bg-surface-high border border-outline-variant/20 font-bold text-xs hover:bg-surface-highest transition-all flex items-center gap-2"
+                        >
+                          <PlusCircle className="size-4" />
+                          Add Tool
+                        </button>
+                      </PermissionGuard>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {tools.map(tool => (
@@ -414,13 +437,6 @@ export default function KnowledgeBase() {
                                 </div>
                             </div>
                         ))}
-                        <button 
-                          onClick={() => setIsToolModalOpen(true)}
-                          className="flex flex-col items-center justify-center gap-4 p-8 rounded-2xl border-2 border-dashed border-white/5 hover:border-primary/30 hover:bg-primary/5 transition-all text-outline hover:text-primary group"
-                        >
-                            <PlusCircle size={40} className="opacity-20 group-hover:opacity-100 group-hover:scale-110 transition-all" />
-                            <span className="text-[11px] font-black uppercase tracking-[0.2em]">Forge New Tool Capability</span>
-                        </button>
                     </div>
                  </div>
               </div>
@@ -447,7 +463,12 @@ export default function KnowledgeBase() {
                              </div>
                              <div className="flex justify-between items-start mb-6">
                                <div className="flex items-center gap-3">
-                                 <div className={cn("size-10 rounded-xl flex items-center justify-center shrink-0 shadow-lg", entry.priority >= 5 ? "bg-primary/20 text-primary ring-1 ring-primary/30" : "bg-surface-highest text-outline ring-1 ring-white/5")}>
+                                 <div className={cn(
+                                    "size-12 rounded-2xl bg-linear-to-br flex items-center justify-center border border-outline-variant/20",
+                                    entry.priority === 3 ? "from-red-500/10 to-transparent text-red-500" :
+                                      entry.priority === 2 ? "from-primary/10 to-transparent text-primary" :
+                                        "from-emerald-500/10 to-transparent text-emerald-500"
+                                  )}>
                                     {activeTab === 'vector' ? <Cpu className="size-5" /> : activeTab === 'learned' ? <History className="size-5" /> : <Database className="size-5" />}
                                  </div>
                                  <div>

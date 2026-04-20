@@ -5,7 +5,11 @@ const AUTH_TOKEN_KEY = 'voicebot.auth.token';
 export type AuthUser = {
   id: string;
   username: string;
-  role: 'admin' | 'user';
+  role: string;
+  permissions?: string[];
+  effective_permissions?: string[];
+  role_permissions?: string[];
+  overrides?: string[];
   is_active?: number;
 };
 
@@ -302,7 +306,7 @@ export const api = {
     return data.customers || [];
   },
 
-  async createUser(data: { username: string; password: string; role?: 'admin' | 'user' }): Promise<any> {
+  async createUser(data: { username: string; password: string; role?: string; permissions?: string[] }): Promise<any> {
     const res = await fetch(`${BASE_URL}/admin/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -312,13 +316,27 @@ export const api = {
     return res.json();
   },
 
-  async updateUser(userId: string, data: { username?: string; role?: 'admin' | 'user'; is_active?: boolean }): Promise<any> {
+  async updateUser(userId: string, data: { username?: string; role?: 'admin' | 'user'; is_active?: boolean; permissions?: string[] }): Promise<any> {
     const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update user'));
+    return res.json();
+  },
+
+  async listRoles(): Promise<{ roles: { id: string; permissions: string[] }[] }> {
+    const res = await fetch(`${BASE_URL}/admin/roles`);
+    return res.json();
+  },
+
+  async updateRole(roleId: string, permissions: string[]): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/roles/${roleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions }),
+    });
     return res.json();
   },
 
@@ -336,6 +354,14 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'));
+    return res.json();
+  },
+  
+  async resetUserPermissions(userId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}/reset-permissions`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to reset permissions'));
     return res.json();
   },
 

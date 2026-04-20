@@ -29,7 +29,6 @@ SKIP_AUTH_PATHS = {
     "/redoc",
     "/openapi.json",
     "/api/v1/auth/login",
-    "/api/v1/sessions",
 }
 
 
@@ -63,6 +62,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 # Attach user info to request state
                 request.state.user_id = payload.get("sub", "")
                 request.state.roles = payload.get("roles", [])
+                request.state.permissions = payload.get("permissions", [])
             else:
                 # If a token was provided but is invalid, we strictly reject.
                 return JSONResponse(

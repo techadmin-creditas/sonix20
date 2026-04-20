@@ -22,8 +22,12 @@ import {
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Header } from '../components/Header';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function TestUserManagement() {
+  const { isAdmin, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [schema, setSchema] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +41,7 @@ export default function TestUserManagement() {
   const [userFormData, setUserFormData] = useState<any>({});
 
   const fetchData = async () => {
+    if (!isAdmin) return;
     setLoading(true);
     try {
       const [schemaRes, customerRes] = await Promise.all([
@@ -53,8 +58,41 @@ export default function TestUserManagement() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isAdmin) fetchData();
+  }, [isAdmin]);
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-background">
+        <Loader2 className="size-10 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex-1 flex flex-col bg-background p-6 lg:p-10">
+        <Header title="Vault Access Restricted" subtitle="Identity Shield Active" />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="max-w-2xl w-full glass-panel rounded-3xl p-12 text-center border border-primary/10 shadow-2xl">
+            <div className="size-20 rounded-full bg-primary/10 flex items-center justify-center text-primary mx-auto mb-8 shadow-inner">
+              <Database className="size-10" />
+            </div>
+            <h2 className="text-3xl font-headline font-black tracking-tight mb-4">Neural Clearance Required</h2>
+            <p className="text-on-surface-variant max-w-sm mx-auto mb-10 leading-relaxed">
+              The Test User Vault contains sensitive identity samples. Your current clearance is insufficient.
+            </p>
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="px-8 py-3.5 rounded-xl bg-primary text-on-primary-fixed font-bold flex items-center gap-2 mx-auto hover:brightness-110 active:scale-95 transition-all shadow-lg"
+            >
+              Return to Grid
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   const handleAddColumn = async () => {
     if (!newColumnName.trim()) return;

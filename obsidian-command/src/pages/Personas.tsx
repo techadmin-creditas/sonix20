@@ -28,6 +28,8 @@ import {
   Languages,
   Clock,
 } from 'lucide-react';
+import { PermissionGuard } from '../components/PermissionGuard';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Personas() {
   const [personas, setPersonas] = React.useState<Bot[]>([]);
@@ -116,13 +118,15 @@ export default function Personas() {
                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
                   />
                 </div>
-                <Link
-                  to="/personas/create"
-                  className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-                >
-                  <PlusCircle className="size-5" />
-                  Create Bot
-                </Link>
+                <PermissionGuard require={{ module: 'personas', action: 'update' }}>
+                  <Link
+                    to="/personas/create"
+                    className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+                  >
+                    <PlusCircle className="size-5" />
+                    Create Bot
+                  </Link>
+                </PermissionGuard>
               </>
             )}
           </div>
@@ -171,9 +175,11 @@ export default function Personas() {
               </p>
             </div>
             {!searchQuery && (
+            <PermissionGuard require={{ module: 'personas', action: 'update' }}>
               <Link to="/personas/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
                 Create Your First Bot
               </Link>
+            </PermissionGuard>
             )}
           </div>
         )}
@@ -309,12 +315,20 @@ export default function Personas() {
                     </div>
                   ) : (
                     <>
-                      <Link
-                        to={`/personas/${persona.id}/config`}
-                        className="flex-1 py-2.5 rounded-xl bg-surface-high text-on-surface font-bold text-xs hover:bg-surface-highest transition-all border border-outline-variant/10 text-center"
-                      >
-                        Configure
-                      </Link>
+                  <div className="flex-1 flex items-center gap-3">
+                    <Link
+                      to={`/personas/${persona.id}/config`}
+                      className={cn(
+                        "flex-1 py-2.5 rounded-xl text-on-surface font-bold text-xs transition-all border border-outline-variant/10 text-center",
+                        useAuth().canUpdate('personas', (persona as any).owner_user_id)
+                          ? "bg-surface-high hover:bg-surface-highest"
+                          : "bg-surface-low opacity-60 cursor-not-allowed"
+                      )}
+                    >
+                      {useAuth().canUpdate('personas', (persona as any).owner_user_id) ? 'Configure' : 'View Config'}
+                    </Link>
+                    
+                    <PermissionGuard require={{ module: 'personas', action: 'update', ownerId: (persona as any).owner_user_id }}>
                       <Link
                         to={`/personas/create?clone=${persona.id}`}
                         className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
@@ -329,6 +343,8 @@ export default function Personas() {
                       >
                         <Trash2 className="size-4" />
                       </button>
+                    </PermissionGuard>
+                  </div>
                     </>
                   )}
                 </div>
@@ -364,7 +380,7 @@ function PersonaTileAvatar({ bot }: { bot: Bot }) {
     <div className="relative">
       <div className={cn(
         "size-12 shrink-0 rounded-xl flex items-center justify-center border border-outline-variant/20 shadow-lg group-hover:scale-110 transition-transform",
-        "bg-gradient-to-br",
+        "bg-linear-to-br",
         accent,
         bot.color === 'secondary' ? "text-secondary" : "text-primary"
       )}>

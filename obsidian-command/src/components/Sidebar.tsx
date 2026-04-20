@@ -1,39 +1,11 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Mic2,
-  BarChart3,
-  Settings,
-  Database,
-  Bot,
-  Sparkles,
-  LogOut,
-  PlusCircle,
-  GitBranch,
-  Users,
-  User
-} from 'lucide-react';
+import { AVAILABLE_MODULES } from '../constants/modules';
 import { cn } from '../lib/utils';
 import { AuthUser } from '../lib/api';
 import { ThemeToggle } from './ThemeToggle';
-
-const NAV_ITEMS = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-  { icon: MessageSquare, label: 'Sessions', path: '/sessions' },
-  { icon: Mic2, label: 'Voice Library', path: '/studio' },
-  // { icon: Sparkles, label: 'DIY With AI', path: '/diy-with-ai' },
-  { icon: Bot, label: 'Bot Factory', path: '/personas' },
-  { icon: Sparkles, label: 'Persona Builder', path: '/persona' },
-  // { icon: Sparkles, label: 'Persona Builder N', path: '/personaNew' },
-  { icon: GitBranch, label: 'Workflows', path: '/workflows' },
-  { icon: Database, label: 'Test User Vault', path: '/test-users' },
-  // { icon: Database, label: 'Knowledge Base', path: '/knowledge' },
-  // { icon: BarChart3, label: 'Analytics', path: '/analytics' },
-  // { icon: Settings, label: 'Settings', path: '/settings' },
-  { icon: User, label: 'Profile', path: '/profile' },
-];
+import { LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar({
   currentUser,
@@ -42,55 +14,41 @@ export function Sidebar({
   currentUser: AuthUser;
   onLogout: () => void;
 }) {
+  const { canRead, isAdmin } = useAuth();
+  
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0 z-50">
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.1</h1>
-            {/* <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-outline mt-1">The Obsidian Command</p> */}
           </div>
           <ThemeToggle />
         </div>
 
         <nav className="flex flex-col gap-2">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
-                isActive
-                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
-                  : "text-on-surface-variant hover:bg-surface-high/50"
-              )}
-            >
-              {({ isActive }) => (
-                <>
-                  <item.icon className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
-                  <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>{item.label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
-          {currentUser.role === 'admin' && (
-            <NavLink
-              to="/users"
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
-                isActive
-                  ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
-                  : "text-on-surface-variant hover:bg-surface-high/50"
-              )}
-            >
-              {({ isActive }) => (
-                <>
-                  <Users className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
-                  <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>Users</span>
-                </>
-              )}
-            </NavLink>
-          )}
+          {AVAILABLE_MODULES.map((item) => {
+            if (!canRead(item.id)) return null;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) => cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
+                  isActive
+                    ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
+                    : "text-on-surface-variant hover:bg-surface-high/50"
+                )}
+              >
+                {({ isActive }) => (
+                  <>
+                    <item.icon className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
+                    <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* <div className="mt-4">
