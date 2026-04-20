@@ -50,7 +50,13 @@ class ElevenLabsStreamingProvider:
         if self.api_key:
             self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.voice_id = voice_id or settings.elevenlabs_voice_id
-        self.model_id = model_id
+        
+        # 🛡️ Validate model_id: If it looks like an LLM model, fallback to a safe TTS default.
+        if model_id and any(x in model_id.lower() for x in ["llama", "gpt-", "claude", "gemini", "instruct", "instant", "versatile"]):
+            logger.warning("Detected non-TTS model ID '%s' passed to ElevenLabs. Falling back to 'eleven_flash_v2_5'.", model_id)
+            model_id = "eleven_flash_v2_5"
+            
+        self.model_id = model_id or "eleven_flash_v2_5"
         self.output_format = output_format
         
         self._cache = None

@@ -132,7 +132,12 @@ async def create_voice_tts(
     """
     prov = str(bot_config.get("tts_provider") or "deepgram_ws").lower()
     vid = str(bot_config.get("voice_id") or bot_config.get("tts_voice_id") or "")
-    mid = str(bot_config.get("tts_model") or bot_config.get("llm_model") or "")
+    mid = str(bot_config.get("tts_model") or "")
+    
+    # 🛡️ Robustness: Only fallback to llm_model for specific multimodal providers 
+    # to avoid passing LLM IDs like 'llama-3.1-8b-instant' to standalone TTS APIs.
+    if not mid and prov == "gemini":
+        mid = str(bot_config.get("llm_model") or "")
     
     # 1. Instantiate primary
     primary = await _instantiate_voice_tts(prov, vid, settings, tts_model=mid)

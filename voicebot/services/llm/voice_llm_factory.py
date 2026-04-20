@@ -4,10 +4,13 @@ Construct the voice-session LLM stack (primary + optional fallbacks) from bot co
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from voicebot.shared.config import AppSettings
 from voicebot.shared.utils.validation import is_valid_api_key
+
+logger = logging.getLogger("llm-factory")
 
 
 def _instantiate_voice_llm(provider: str, model: str, settings: AppSettings) -> Optional[Any]:
@@ -125,8 +128,52 @@ def wrap_llm_with_fallbacks(primary: Any, bot_config: dict, settings: AppSetting
             add(_instantiate_voice_llm("openai", settings.openai_model or "", settings), "openai")
 
     if len(chain) == 1:
-        return primary
+        # 🛡️ RESILIENCE: If we only have ONE provider and it's OpenRouter or Gemini,
+        # we MUST add a reliable fallback (Groq) to prevent quota-based hangs.
+        prim_provider = labels[0]
+        if prim_provider in ("openrouter", "gemini", "anthropic"):
+            add(_instantiate_voice_llm("groq", settings.groq_model or "llama-3.3-70b-versatile", settings), "groq")
+            add(_instantiate_voice_llm("openai", settings.openai_model or "gpt-4o-mini", settings), "openai")
+            
+        if len(chain) == 1:
+            return primary
+
 
     from voicebot.services.llm.fallback_provider import FallbackStreamingProvider
 
     return FallbackStreamingProvider(chain, labels)
+
+
+def create_voice_llm(bot_config: dict, settings: AppSettings) -> Any:
+    """
+    High-level entry point to create a fully configured LLM stack.
+    Includes high-performance overrides (e.g. forcing Groq for certain bots).
+    """
+    provider_name = str(bot_config.get("llm_provider") or "").lower()
+    model = bot_config.get("llm_model")
+    bot_name_lower = str(bot_config.get("name", "")).lower()
+
+    if not model:
+        raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no LLM Model configured.")
+
+    # 🚀 PRODUCTION OPTIMIZATION: Force Groq for high-performance Hindi banking bots.
+    is_high_perf = ("hindi" in bot_name_lower or "banking" in bot_name_lower)
+    if is_high_perf and (provider_name == "openrouter" or "openai/gpt-4o-mini" in str(model)):
+        provider_name = "groq"
+        model = "llama-3.3-70b-versatile"
+        logger.warning("🚀 OVERRIDING slow model with high-perf Groq (%s) for low-latency session.", model)
+
+    # 1. Instantiate primary
+    primary = None
+    if provider_name == "openrouter" or ("/" in str(model) and provider_name not in ("gemini", "openai", "groq", "anthropic")):
+        primary = _instantiate_voice_llm("openrouter", model, settings)
+    elif provider_name in ("openai", "gemini", "anthropic", "groq"):
+        primary = _instantiate_voice_llm(provider_name, model, settings)
+    
+    if not primary:
+        # Default fallback for instantiation
+        model = model or "llama3-70b-8192"
+        primary = _instantiate_voice_llm("groq", model, settings)
+
+    # 2. Wrap with fallbacks
+    return wrap_llm_with_fallbacks(primary, bot_config, settings)

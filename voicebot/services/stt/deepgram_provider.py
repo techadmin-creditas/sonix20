@@ -55,20 +55,30 @@ STREAM_FRAME_BYTES = 320  # 10 ms × 16 kHz × 16-bit mono
 def resolve_stt_language_for_session(session_language: str, conversation_policy: Optional[dict] = None) -> str:
     pol = conversation_policy or {}
     mode = str(pol.get("stt_language_mode") or "").lower().strip()
-    if mode in ("multilingual", "detect", "auto", "hinglish"):
+    
+    # 🚀 HINGLISH: If the user explicitly wants Hinglish, use hi-Latn (Latin script Hindi)
+    if mode == "hinglish":
+        return "hi-Latn"
+        
+    if mode in ("multilingual", "detect", "auto"):
         return "multilingual"
+        
     return (session_language or "hi").lower().strip()
 
 
 def deepgram_listen_language_params(listen_language: str) -> dict[str, str]:
-    _lang = (listen_language or "hi").lower().strip()
-    if _lang in ("auto", "detect", "multilingual"):
+    lang_raw = (listen_language or "hi").strip()
+    lang_lower = lang_raw.lower()
+    
+    if lang_lower in ("auto", "detect", "multilingual"):
         return {"language": "multi"}
-    if _lang == "en":
+    if lang_lower == "en":
         return {"language": "en"}
-    if _lang in ("hi", "hindi", "hi-in"):
+    if lang_lower in ("hi", "hindi", "hi-in"):
         return {"language": "hi"}
-    return {"language": _lang}
+    if lang_lower in ("hi-latn", "hinglish","hi-en"):
+        return {"language": "hi-Latn"}
+    return {"language": lang_raw}
 
 
 def extract_linear16_pcm_16k_mono(audio: bytes, *, raw_pcm: bool) -> bytes:
@@ -178,7 +188,7 @@ class DeepgramStreamingProvider:
         self,
         api_key: Optional[str] = None,
         language: str = "en",
-        model: str = "nova-2",
+        model: str = "nova",
         sample_rate: int = 16000,
         channels: int = 1,
         encoding: str = "linear16",
@@ -261,7 +271,7 @@ class DeepgramStreamingProvider:
     def streaming_listen_query_params(self) -> dict[str, str]:
         _lang_params = deepgram_listen_language_params(self.language or "hi")
         return {
-            "model": self.model or "nova-2",
+            "model": self.model or "nova",
             "encoding": "linear16",
             "sample_rate": "16000",
             "channels": "1",
@@ -328,7 +338,14 @@ class DeepgramStreamingProvider:
             self._receive_task = asyncio.create_task(self._receive_loop())
 
         except Exception as e:
-            logger.error("Failed to connect to Deepgram: %s", e)
+            if self._websocket:
+                try:
+                    close_code = self._websocket.close_code
+                    close_reason = self._websocket.close_reason
+                    logger.info("Disconnected from Deepgram (Code: %s, Reason: %s)", close_code, close_reason)
+                except:
+                    logger.info("Disconnected from Deepgram")
+            
             self._connected = False
             raise
 

@@ -54,6 +54,10 @@ class RuleEngine:
         normalized_text = "".join(ch for ch in text if ch not in ["\u200b", "\u200c", "\u200d", "\ufeff"])
         normalized_text = normalized_text.replace("\u00a0", " ") # Convert non-breaking space to space
         
+        # 🇮🇳 HINGLISH FUZZY NORMALIZATION: Standardize common spelling variations
+        # to make keyword matching more robust (e.g. 'vahi' vs 'wahi').
+        fuzzy_text = self._normalize_hinglish(normalized_text)
+        
         current_text = normalized_text
         for rule in self.rules:
             if not rule.is_active:
@@ -63,8 +67,8 @@ class RuleEngine:
             if rule.scope != RuleScope.BOTH and rule.scope != scope:
                 continue
 
-            # Detection
-            triggered = self._check_trigger(rule, current_text)
+            # Check matches against both raw and fuzzy text for maximum recall
+            triggered = self._check_trigger(rule, current_text) or self._check_trigger(rule, fuzzy_text)
             if triggered:
                 # 1. Check for Blocking (Stop everything)
                 if rule.action == RuleAction.BLOCK:
@@ -118,6 +122,26 @@ class RuleEngine:
             pass
 
         return False
+
+    def _normalize_hinglish(self, text: str) -> str:
+        """
+        Normalize Romanized Hindi spellings for more robust keyword matching.
+        Standardizes binary variations: v/w, i/ee, u/oo, etc.
+        """
+        t = text.lower()
+        # 1. Standardize v/w (Vahi vs Wahi)
+        t = t.replace("w", "v")
+        # 2. Standardize i/ee (Thik vs Theek)
+        t = t.replace("ee", "i")
+        # 3. Standardize u/oo (Pucha vs Poocha)
+        t = t.replace("oo", "u")
+        # 4. Standardize ph/f (Phaltu vs Faltu)
+        t = t.replace("ph", "f")
+        # 5. Standardize j/z (Majaa vs Mazaa)
+        t = t.replace("z", "j")
+        # 6. Simple de-noising (multiple characters like 'Saaaahi' -> 'Sahi')
+        t = re.sub(r'([a-z])\1{2,}', r'\1', t)
+        return t
 
     def _mask_text(self, rule: GuardrailRule, text: str) -> str:
         """Replace matching text with defined replacement."""

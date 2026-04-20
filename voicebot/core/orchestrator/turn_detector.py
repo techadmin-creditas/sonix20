@@ -240,20 +240,48 @@ class TurnDetector:
             
         return False
 
-    def is_meaningful_barge_in(self, barge_in_text: str, last_processed_text: str) -> bool:
+    def is_meaningful_barge_in(
+        self, 
+        barge_in_text: str, 
+        last_processed_text: str, 
+        bot_last_spoken_text: Optional[str] = None
+    ) -> bool:
         """
         Determine if the current barge-in collection is a fresh utterance
-        or just trailing noise/reflections from the last turn.
+        or just trailing noise/reflections/echo from the last turn or current bot speech.
         """
-        if not barge_in_text.strip():
+        text = barge_in_text.strip().lower()
+        if not text:
             return False
             
-        # If it's a duplicate of the turn we just finished, it's NOT meaningful.
+        # 1. Length Filter: Ignore extremely short fragments that are likely noise
+        # (unless it's a known short meaningful word like 'yes' or 'ji')
+        meaningful_short_words = {"yes", "no", "ji", "haan", "stop", "ok", "a", "b"}
+        if len(text) < 3 and text not in meaningful_short_words:
+            logger.debug("🧠 Barge-in Suppressed: Noise-like short fragment '%s'", text)
+            return False
+
+        # 2. Echo Suppression: If the user transcript is contained within or highly similar 
+        # to what the bot just said (acoustic echo leakage).
+        if bot_last_spoken_text:
+            bot_text = bot_last_spoken_text.lower().strip()
+            # Direct overlapping check
+            if text in bot_text and len(text) > 4:
+                 logger.info("🧠 Barge-in Suppressed: Echo detected ('%s' matched bot speech)", text)
+                 return False
+            # Fuzzy overlap check (suffix of bot speech)
+            if any(bot_text.endswith(part) for part in text.split() if len(part) > 3):
+                 logger.info("🧠 Barge-in Suppressed: Tailing echo detected")
+                 return False
+            
+        # 3. Duplicate Suppression: If it's a late artifact of the turn we just finished.
         if self.is_likely_duplicate(barge_in_text, last_processed_text):
+            logger.debug("🧠 Barge-in Suppressed: Duplicate of last turn")
             return False
             
-        # If it's a pure backchannel, it's acknowledged but NOT an interruption.
+        # 4. Backchannel Filter: Verbal nods are acknowledged but NOT meaningful interruptions.
         if self.is_backchannel(barge_in_text):
+            logger.debug("🧠 Barge-in Suppressed: Backchannel vocalization '%s'", text)
             return False
             
         return True

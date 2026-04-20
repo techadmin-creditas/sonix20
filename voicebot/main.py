@@ -248,6 +248,7 @@ async def voice_websocket(
     language: str = Query(default="hi"),
     bot_id: Optional[str] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
+    stt_mode: Optional[str] = Query(default=None),
 ):
     """
     Unified real-time voice endpoint.
@@ -299,7 +300,7 @@ async def voice_websocket(
             logger.info("Loaded persona: %s (%s)", bot_config.get('name'), bot_id)
         else:
             logger.warning("Bot ID '%s' not found, using default fallback", bot_id)
-    
+
     if not bot_config:
         # Check for explicit landing page default first
         landing_bot = await db.get_landing_page_default_bot()
@@ -316,6 +317,22 @@ async def voice_websocket(
                 )
                 bot_config = await db.get_bot(pick_id) or {}
                 logger.info("Defaulting to bot: %s", bot_config.get("name"))
+
+    # 🚀 OVERRIDE: Allow forcing STT mode (e.g. 'hinglish') via query param
+    if stt_mode and bot_config is not None:
+        try:
+            raw_pol = bot_config.get("conversation_policy") or {}
+            pol = {}
+            if isinstance(raw_pol, str):
+                pol = json.loads(raw_pol)
+            elif isinstance(raw_pol, dict):
+                pol = raw_pol
+                
+            pol["stt_language_mode"] = stt_mode
+            bot_config["conversation_policy"] = json.dumps(pol)
+            logger.info("Setting STT language mode override: %s", stt_mode)
+        except Exception as e:
+            logger.warning("Failed to safely override stt_mode: %s", e)
 
     p_mode = str(bot_config.get("pipeline_mode") or "classic").lower()
     if p_mode == "speech_speech":
@@ -475,111 +492,49 @@ async def voice_websocket(
 
     # ─── Initialize Providers with bot-specific overrides ──────────────────
     try:
-        from voicebot.shared.policy import parse_json_dict
+        # 1. STT — Factory handles language detection and endpointing policies
+        from voicebot.services.stt.voice_stt_factory import create_voice_stt
+        stt_provider = create_voice_stt(bot_config, session_language, settings)
+        logger.info("STT provider initialized ✅")
 
-        # STT — language from policy (hinglish → multilingual detect) + optional endpointing
-        from voicebot.services.stt.deepgram_provider import (
-            DeepgramStreamingProvider,
-            resolve_stt_language_for_session,
-        )
+        # 2. LLM — Factory handles provider detection, high-perf overrides (Groq), and fallbacks
+        from voicebot.services.llm.voice_llm_factory import create_voice_llm
+        llm_provider = create_voice_llm(bot_config, settings)
+        logger.info("LLM stack initialized ✅")
 
-        _conv_pol = parse_json_dict(bot_config.get("conversation_policy") or {})
-        _stt_lang = resolve_stt_language_for_session(session_language, _conv_pol)
-        _stt_ep = _conv_pol.get("stt_endpointing_ms")
-        try:
-            _stt_ep_i = int(_stt_ep) if _stt_ep is not None else None
-        except (TypeError, ValueError):
-            _stt_ep_i = None
-        _stt_vad = _conv_pol.get("stt_rms_vad_threshold")
-        try:
-            _stt_vad_f = float(_stt_vad) if _stt_vad is not None else None
-        except (TypeError, ValueError):
-            _stt_vad_f = None
-        stt_provider = DeepgramStreamingProvider(
-            language=_stt_lang,
-            endpointing_ms=_stt_ep_i,
-            vad_rms_threshold=_stt_vad_f,
-        )
-        
-        # LLM — auto-detect provider from bot config or model slug
-        # --- LLM Provider (Detect from Bot Config + High-Perf Default) ---
-        _llm_prov = str(bot_config.get("llm_provider") or "").lower()
-        llm_model = bot_config.get("llm_model")
-        _bot_name_lower = str(bot_config.get("name", "")).lower()
-
-        if not llm_model:
-            raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no LLM Model configured.")
-
-        # 🚀 PRODUCTION OPTIMIZATION: Force Groq for high-performance Hindi banking bots.
-        # OpenRouter (even with 4o-mini) adds ~500ms protocol delay. Direct Groq is the goal.
-        _is_high_perf = ("hindi" in _bot_name_lower or "banking" in _bot_name_lower)
-        if _is_high_perf and (_llm_prov == "openrouter" or "openai/gpt-4o-mini" in str(llm_model)):
-             _llm_prov = "groq"
-             llm_model = "llama-3.3-70b-versatile"
-             logger.warning("🚀 OVERRIDING slow model with high-perf Groq (%s) for low-latency session.", llm_model)
-
-        # OpenRouter models use "provider/model" slugs
-        if _llm_prov == "openrouter" or ("/" in str(llm_model) and _llm_prov not in ("gemini", "openai", "groq", "anthropic")):
-             from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
-             llm_provider = OpenRouterStreamingProvider(model=llm_model)
-             logger.info("Using OpenRouter LLM (model=%s) ✅", llm_model)
-        elif _llm_prov == "openai":
-            llm_provider = OpenAIStreamingProvider(model=llm_model)
-            logger.info("Using OpenAI LLM (model=%s) ✅", llm_model)
-        elif _llm_prov == "gemini":
-            llm_provider = GeminiStreamingProvider(model=llm_model)
-            logger.info("Using Gemini LLM (model=%s) ✅", llm_model)
-        elif _llm_prov == "anthropic":
-            from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
-            llm_provider = AnthropicStreamingProvider(model=llm_model)
-            logger.info("Using Anthropic LLM (model=%s) ✅", llm_model)
-        else:
-            # Default for all core bots (Groq is the performance standard)
-            _model = llm_model or "llama3-70b-8192"
-            llm_provider = GroqStreamingProvider(model=_model)
-            logger.info("Using Groq LLM (model=%s) ✅", _model)
-
-        from voicebot.services.llm.voice_llm_factory import wrap_llm_with_fallbacks
-
-        llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
-
-        # --- TTS Provider (Robust, Anti-Fallback, Hindi-Aware) ---
-        voice_id = bot_config.get("voice_id")
-        if not voice_id:
-            raise ValueError(f"Bot '{bot_config.get('name', 'Unknown')}' has no Voice Profile configured.")
-            
-        _tts_prov_name = str(bot_config.get("tts_provider") or "").lower()
-        _is_hindi_bot = (bot_config.get("default_language") or "").lower().startswith("hi")
-        
-        # 🚀 HIGH-LEVEL OPTIMIZATION: Automatic Hindi routing to ElevenLabs
-        # 3. TTS Provider (Hindi-Aware & Factory-Based)
+        # 3. TTS — Factory handles multi-provider selection and fallbacks
         from voicebot.services.tts.voice_tts_factory import create_voice_tts
         tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
-        logger.info("TTS stack initialized via factory ✅")
+        logger.info("TTS stack initialized ✅")
 
+        from voicebot.services.memory.redis_provider import RedisSessionProvider
         # Attach Redis cache for high-frequency phrase caching
         memory_local = RedisSessionProvider(redis_url=settings.redis_url)
         await memory_local.connect()
         if hasattr(tts_provider, "set_cache"):
             tts_provider.set_cache(memory_local)
 
-        # Essential Services — policies from bot JSON (Obsidian / API)
-        from voicebot.shared.policy import output_guard_extra_patterns
-
-        _gp = parse_json_dict(bot_config.get("guardrail_policy"))
-        guardrail = PIIDetector()
-        _default_output_patterns = [
-            r"password: \w+",
-            r"api_key: \w+",
-            r"secret_key: \w+",
-            r"bearer [A-Za-z0-9\-\.\_]+",
-            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-        ]
-        output_guard = OutputGuard(
-            forbidden_patterns=_default_output_patterns + output_guard_extra_patterns(_gp)
-        )
+        # Attach Redis cache for high-frequency phrase caching
+        # 4. Memory — Primary session state store (Redis)
         memory = RedisSessionProvider(redis_url=settings.redis_url)
         await memory.connect()
+        logger.info("Redis memory connected ✅")
+
+        # Attach Redis cache to TTS provider if supported
+        if hasattr(tts_provider, "set_cache"):
+            tts_provider.set_cache(memory)
+
+        # 5. Guardrails — policies from bot JSON
+        from voicebot.shared.policy import parse_json_dict, output_guard_extra_patterns
+        _gp = parse_json_dict(bot_config.get("guardrail_policy"))
+        guardrail = PIIDetector()
+        output_guard = OutputGuard(
+            forbidden_patterns=[
+                r"password: \w+", r"api_key: \w+", r"secret_key: \w+",
+                r"bearer [A-Za-z0-9\-\.\_]+",
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+            ] + output_guard_extra_patterns(_gp)
+        )
 
         # Vector memory (optional — ChromaDB for RAG; skips silently if not installed)
         from voicebot.services.memory.vector_provider import VectorMemoryProvider

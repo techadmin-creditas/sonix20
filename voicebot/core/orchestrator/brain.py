@@ -28,118 +28,28 @@ from typing import Any, Awaitable, Callable, List, Optional
 
 # ─── Constants ────────────────────────────────────────────────────────
 
-# Ordered from longest to shortest so longer prefixes are matched first.
-# These are suspicious suffixes that may be the start of a hallucination tag.
-_SUSPICIOUS_PREFIXES: tuple[str, ...] = (
-    "<function=", "(function=",
-    "```json", "```", "[TOOL:",
-    "<function", "<functio", "<functi", "<funct", "<func", "<fun", "<fu", "<f", "<",
+# ─── Constants ────────────────────────────────────────────────────────
+
+from voicebot.core.orchestrator.policies import (
+    SUSPICIOUS_PREFIXES,
+    COMMITMENT_PROMPTS,
+    DYNAMIC_RESPONSES,
+    LATENCY_FILLERS,
+    SCOPE_TOOL_NAMES,
+    POST_CALL_REFLECTION_PROMPT
 )
 
 
 def _suspicious_prefix_length(text: str) -> int:
     """Return the length of a suspicious suffix at the end of `text`, or 0 if clean."""
-    for prefix in _SUSPICIOUS_PREFIXES:
+    for prefix in SUSPICIOUS_PREFIXES:
         for length in range(len(prefix), 0, -1):
             if text.endswith(prefix[:length]):
                 return length
     return 0
 
 # ─── Dynamic Response Pools (To prevent robotic repetition) ────────────────
-_COMMITMENT_PROMPTS = {
-    "extract_commitment": (
-        "Did the user just make a commitment, promise, or clear statement of intent?\n"
-        "A commitment is any definite statement about what they WILL do, WANT, or have AGREED to.\n"
-        "NOT a commitment: questions, greetings, filler words ('okay', 'haan'), passive statements.\n"
-        "{few_shots}"
-        "User said: \"{text}\"\n\n"
-        "If a commitment exists, reply with ONLY the commitment as one short sentence (max 15 words).\n"
-        "If no commitment, reply with exactly: NONE"
-    ),
-    "check_contradiction": (
-        "Prior commitments made by the user in this call:\n{commitments}\n\n"
-        "{few_shots}"
-        "User just said: \"{text}\"\n\n"
-        "Does the user's current statement directly contradict or walk back any prior commitment?\n"
-        "Clarifying questions, partial information, or unrelated statements are NOT contradictions.\n\n"
-        "If YES — reply in this exact format:\n"
-        "CONTRADICTION: <prior commitment text> | <what they are now saying>\n\n"
-        "If NO contradiction — reply with exactly: NONE"
-    ),
-}
-
-_DYNAMIC_RESPONSES = {
-    "low_confidence_reprompt": {
-        "en": [
-            "I didn't quite catch that. Could you say that again?",
-            "Sorry, I missed that. Can you please repeat it?",
-            "I'm sorry, I didn't hear you clearly. Could you say that once more?",
-            "Excuse me, I missed the last part. What was that?"
-        ],
-        "hi": [
-            "Maaf kijiye, main sun nahi paaya. Kya aap phir se kahenge?",
-            "Sorry, mujhe samajh nahi aaya. Ek baar phir bolenge?",
-            "Kshama kijiye, main sun nahi saka. Dobara bol sakte hain?",
-            "Aapki awaaz thodi kat gayi thi. Phir se batayiye?"
-        ]
-    },
-    "sentiment_escalation": {
-        "en": [
-            "I can hear this is frustrating. Let me connect you with a team member who can help you directly.",
-            "I understand your frustration. I'm transferring you to a senior advisor now.",
-            "I'm sorry this is difficult. Let me get a specialist on the line for you.",
-            "I want to make sure you get the right help. Let me connect you with one of our managers."
-        ],
-        "hi": [
-            "Main samajh sakta hoon ki aap pareshaan hain. Main aapki baat apne senior se karwata hoon.",
-            "Maaf kijiye, main aapko senior advisor se connect kar raha hoon jo isme behtar madad kar sakein.",
-            "Main aapka frustration samajh sakta hoon. Line par rahiye, main call transfer kar raha hoon.",
-            "Main chahta hoon aapki poori madad ho. Main call senior team member ko de raha hoon."
-        ]
-    },
-    "topic_violation": {
-        "en": [
-            "I am specialized in {topic}. Is there something related to that I can help with?",
-            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
-            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
-            "My expertise is limited to {topic}. Happy to help you with that!"
-        ],
-        "hi": [
-            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
-            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
-            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
-            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
-        ]
-    },
-    "security_block": {
-        "en": [
-            "I'm sorry, I can't process that request.",
-            "I am unable to perform that action for security reasons.",
-            "That request goes beyond what I'm allowed to do.",
-            "I'm unable to fulfill that specific request."
-        ],
-        "hi": [
-            "Maaf kijiye, main yeh nahi kar sakta.",
-            "Suraksha kaarno se main yeh request poori nahi kar sakta.",
-            "Kshama kijiye, yeh mere adhikaar kshetra se bahar hai.",
-            "Main is request ko poora karne mein asamarth hoon."
-        ]
-    },
-    "topic_violation": {
-        "en": [
-            "I am specialized in {topic}. Is there something related to that I can help with?",
-            "Actually, I'm only trained to assist with {topic} right now. Any questions on that?",
-            "I'm here to help with {topic}. Let's stick to that for now, if that's okay.",
-            "My expertise is limited to {topic}. Happy to help you with that!"
-        ],
-        "hi": [
-            "Main abhi sirf {topic} mein madad kar sakta hoon. Kya aap is baare mein kuch poochna chahein?",
-            "Kshama kijiye, main sirf {topic} par baat kar sakta hoon.",
-            "Mera kaam sirf {topic} se juda hai. Kya main isme aapki koi madad karoon?",
-            "Main filhaal sirf {topic} ke liye trained hoon. Is par baat karte hain."
-        ]
-    },
-}
+# ─── End Constants ───────────────────────────────────────────────────
 # ─── End Constants ───────────────────────────────────────────────────
 
 from voicebot.shared.config import get_settings
@@ -200,82 +110,9 @@ def _merge_stt_final_with_partial(last_interim: str, final_text: str) -> str:
         return part
     return fin
 
-# Latency bridge phrases (watchdog). Override via conversation_policy.latency_fillers or bot_config.
-_LATENCY_FILLERS_EN_DEFAULT = (
-    "One moment please.",
-    "Just a second.",
-    "Let me check that for you.",
-    "Bear with me.",
-    "Alright, one moment.",
-    "Hmm, give me a moment.",
-)
-_LATENCY_FILLERS_EN_QUESTION = (
-    "Let me look that up.",
-    "Good question — one moment.",
-    "Let me find that for you.",
-)
-_LATENCY_FILLERS_EN_ACK = (
-    "Got it — one moment.",
-    "Thanks — let me check.",
-    "Okay, just a second.",
-)
-_LATENCY_FILLERS_EN_FRUSTRATION = (
-    "I understand — let me help with that.",
-    "Sorry about the wait — one moment.",
-    "Let me sort that out for you.",
-)
-_LATENCY_FILLERS_HI_DEFAULT = (
-    "Ek second, main check karta hoon.",
-    "Thoda wait kijiye.",
-    "Bas ek moment...",
-    "Theek hai, abhi dekh raha hoon.",
-    "Ek minute, please.",
-    "Haan, bas ek second.",
-)
-_LATENCY_FILLERS_HI_QUESTION = (
-    "Achha, yeh dekh leta hoon.",
-    "Theek hai, main check karta hoon.",
-    "Ek second, main dekh raha hoon.",
-)
-_LATENCY_FILLERS_HI_ACK = (
-    "Theek hai, ek second.",
-    "Samajh gaya, bas ek moment.",
-    "Ji, abhi check karta hoon.",
-)
-_LATENCY_FILLERS_HI_FRUSTRATION = (
-    "Main samajhta hoon — ek second.",
-    "Theek hai, main madad karta hoon.",
-    "Bas ek moment, dekh leta hoon.",
-)
 
-_SCOPE_TOOL_NAMES = {
-    "knowledge": ("search_knowledge",),
-    "appointments": ("book_appointment", "get_appointments"),
-    "user_memory": ("remember_user_fact",),
-    "weather": ("get_weather",),
-    "banking": ("verify_customer", "get_account_balance", "get_loan_status"),
-}
 
-# 🧠 SELF-LEARNING: Post-Call Reflection Prompt
-_POST_CALL_REFLECTION_PROMPT = """
-You are a Senior Conversation Analyst. Your goal is to review a voice conversation and extract deep insights for future use.
 
-### ANALYSIS GOALS:
-1.  **USER FACTS**: Identify specific facts about the user (preferences, account details mentioned, constraints, personality traits).
-2.  **SUCCESSFUL TACTICS**: Identify specifically what the bot did that worked well (e.g., "Used a calm tone during frustration," "Offered a discount").
-3.  **SUMMARY**: A concise 1-2 sentence summary of the call outcome.
-4.  **CONFIDENCE**: For each fact/tactic, provide a confidence score between 0.0 and 1.0.
-
-### OUTPUT FORMAT (JSON ONLY):
-{{
-    "user_facts": [{{"fact": "...", "confidence": 0.95}}, ...],
-    "successful_tactics": [{{"tactic": "...", "confidence": 0.8}}, ...],
-    "outcome_summary": "Summary text..."
-}}
-
-### CONVERSATION TRANSCRIPT:
-{transcript}
-"""
 
 
 class BotState(str, Enum):
@@ -344,6 +181,9 @@ class AgenticBrain:
         self._last_state_change_time = 0.0 # Grace period tracking
         self._last_emitted_transcript = "" # Deduplication for UI
         self._last_speech_stop_time = time.time()  # Track latency
+        self._last_bot_phrase = "" # Echo suppression tracking
+        self._bot_response_buffer = "" # Active turn buffer
+        self._interruption_in_progress = False
         
         self._on_state_change = on_state_change
         self._on_audio_output = on_audio_output
@@ -493,11 +333,9 @@ class AgenticBrain:
         user_lang = self.session.detected_language or "en"
         lang_key = "hi" if ("hi" in user_lang.lower() or user_lang.lower().startswith("hi")) else "en"
         
-        pool = _DYNAMIC_RESPONSES.get(category, {}).get(lang_key, [])
+        pool = DYNAMIC_RESPONSES.get(category, {}).get(lang_key, [])
         if not pool:
             return "..." # Ultimate fallback
-
-        # Prevent immediate repetition
         history_key = f"_last_{category}"
         last_used = getattr(self, history_key, "")
         
@@ -858,147 +696,105 @@ class AgenticBrain:
                 await self._handle_fatal_error(VoiceBotError(error_msg), context="stt_terminal_error")
                 return
 
-            # Track VAD timing locally to assist with barge-in decision logic
-            if msg_type == "speech_started":
-                self._last_vad_signal_time = time.time()
-
             confidence = kwargs.get("confidence", 1.0)
             
-            # [DEDUPLICATION] Deepgram sometimes sends duplicate Finals if the connection is slow.
+            # [DEDUPLICATION]
             if is_final and text.strip() and text.strip() == getattr(self, "_last_processed_text", ""):
                  time_since_processed = time.time() - getattr(self, "_last_processed_time", 0.0)
-                 if time_since_processed < 5.0:  # Ignore identical finals within 5s
-                     logger.debug("🧠 Brain STT Filter: ignoring duplicate final transcript '%s'", text.strip())
+                 if time_since_processed < 5.0:
                      return
 
             # [GEMINI-GRADE] Noise & Hallucination Filter
             if text.strip() and len(text.strip()) < 2 and not is_final and confidence < 0.5:
-                 logger.debug("🧠 Hallucination Filter: dropping short token '%s' (conf=%.2f)", text.strip(), confidence)
                  return
 
-            # Skip empty finals ONLY if we have no buffered text (otherwise we need it to reset the watchdog)
+            # Skip empty finals ONLY if we have no buffered text
             buffer_has_text = bool((getattr(self, "_utterance_buffer", "") or "").strip() or (getattr(self, "_partial_buffer", "") or "").strip())
             if is_final and not text.strip() and not buffer_has_text:
-                logger.debug("🧠 Noise Filter: skipping empty final transcript")
                 return
 
             logger.info("🧠 Brain STT Ingested: '%s' [final=%s, type=%s, state=%s]", text, is_final, msg_type, self.state.value)
 
-            # Handle interruptions with a configurable debounce (default 350 ms).
-            # We now allow interruptions during SPEAKING and (optionally) PROCESSING.
+            # --- Interruption/Barge-in Logic ---
             _barge_in_enabled = bool(self._bot_config.get("enable_barge_in", True))
             
             if msg_type == "speech_started" and _barge_in_enabled:
-                # 🛡️ SILENCE TIMER PROTECTION: If we already have a full sentence in the buffer (is_final),
-                # do NOT cancel the silence timer for a new 'speech_started' signal unless we actually
-                # see new text coming in. This prevents background noise from "resetting" the turn
-                # and leaving the bot in a silent hanging state.
-                has_pending_final = bool(self._utterance_buffer.strip())
-                
-                if self._silence_timer:
-                    if has_pending_final:
-                        logger.debug("🧠 STT Noise Filter: speech_started received but buffer has content. Keeping silence timer.")
-                    else:
-                        logger.debug("🧠 STT Signal: User speaking, cancelling silence timer.")
-                        self._silence_timer.cancel()
-                        self._silence_timer = None
-
-                # 🚀 PRODUCTION: Always allow interruption during SPEAKING or PROCESSING
-                # to achieve human-like responsiveness.
+                # 🛡️ IMMEDIATE MUTE: If the user makes any sound, we mute the bot instantly
+                # but don't cancel the thought process yet (might be noise).
                 if self.state in (BotState.SPEAKING, BotState.PROCESSING):
-                    # Post-turn guard window: ignore interruptions very early to prevent
-                    # self-interruption from late STT fragments / echo.
-                    # Value from conversation_policy (set in _apply_conversation_policy_derived).
                     _elapsed = (time.time() - self._last_state_change_time) * 1000
-                    if _elapsed < self._barge_in_grace_ms:
-                        logger.debug("🧠 Barge-in Ignored: Within post-turn guard window (%.0fms < %dms)", _elapsed, self._barge_in_grace_ms)
-                        return
-
-                    # Signal the frontend to MUTE audio playback instantly
-                    if self._on_audio_interrupt:
-                        await self._on_audio_interrupt()
-
-                    # Short confirmation window — distinguishes real speech from single noise burst.
-                    await asyncio.sleep(self._barge_in_debounce_ms / 1000.0)
-                    
-                    if self.state in (BotState.SPEAKING, BotState.PROCESSING):
-                        snapshot = (self._partial_buffer or text).strip()
+                    if _elapsed > self._barge_in_grace_ms:
+                        if self._on_audio_interrupt:
+                            await self._on_audio_interrupt()
                         
-                        # 🛡️ LATENCY FIX: Extended Grace Window
-                        # If the STT endpoint triggered a VAD signal but hasn't returned text yet, 
-                        # hold the mute state for an extra 300ms to allow the network to catch up.
-                        if not snapshot:
-                            logger.debug("🧠 Barge-in: VAD triggered but text is empty. Holding mute for 300ms grace window...")
-                            await asyncio.sleep(0.3)
-                            # Re-fetch the snapshot after waiting
+                        # Start a verification task to see if sound becomes meaningful speech
+                        async def _verify_and_interrupt():
+                            await asyncio.sleep(self._barge_in_debounce_ms / 1000.0)
+                            # If after debounce we still have no text, or it's noise, resume.
                             snapshot = (self._partial_buffer or text).strip()
+                            if not snapshot:
+                                await asyncio.sleep(0.3) # Give one last chance for transcript
+                                snapshot = (self._partial_buffer or text).strip()
                             
-                        # If STILL no text after the extended wait, it was just a noise burst. Resume playback.
-                        if not snapshot:
-                            logger.info("🧠 Barge-in Suppressed: No text arrived during extended grace window. Resuming.")
-                            if self._on_audio_resume:
-                                await self._on_audio_resume()
-                            return
-                        
-                        # 🛡️ New meaningful barge-in check (Deduplication + Backchannel)
-                        if not self.turn_detector.is_meaningful_barge_in(snapshot, self._last_processed_text):
-                            logger.info("🧠 Barge-in Suppressed: Non-meaningful or duplicate found ('%s')", snapshot)
-                            self.session.false_interruption_count += 1
-                            if self._on_audio_resume:
-                                await self._on_audio_resume()
-                            return
+                            if not snapshot:
+                                logger.debug("🤌 Barge-in was noise/echo (no text); resuming.")
+                                if self._on_audio_resume: await self._on_audio_resume()
+                                return
+                            
+                            if not self.turn_detector.is_meaningful_barge_in(snapshot, self._last_processed_text, bot_last_spoken_text=self._bot_response_buffer):
+                                logger.debug("🤌 Barge-in was meaningless/duplicate; resuming.")
+                                if self._on_audio_resume: await self._on_audio_resume()
+                                return
 
-                        await self.handle_interruption()
-                    else:
-                        self.session.false_interruption_count += 1
-                        if self._on_audio_resume:
-                            await self._on_audio_resume()
-                        self._barge_in_buffer = ""
-                    return
+                            # SUCCESS: We have confirmed meaningful speech. Kill everything.
+                            await self.handle_interruption()
+                            
+                        asyncio.create_task(_verify_and_interrupt())
+                return
 
-
-            # If speaking/processing, capture transcripts into the barge-in buffer.
-            # If speaking/processing, capture transcripts into the barge-in buffer.
+            # Capture transcripts into the barge-in buffer if speaking/processing
             if self.state in (BotState.SPEAKING, BotState.PROCESSING):
                 if text.strip():
-                    # 🛡️ DEDUPLICATION: Ignore late fragments of the turn we just finished.
-                    if self.turn_detector.is_likely_duplicate(text, self._last_processed_text):
-                        logger.debug("🧠 Barge-in Junk Filter: skipping late fragment '%s'", text.strip())
+                    # 🚀 FAST TRACK: If high-confidence final speech arrives, interrupt instantly
+                    _barge_conf = self.turn_detector.compute_turn_complete_confidence(text, 0)
+                    if _barge_conf > 0.85:
+                        logger.info("🚀 Barge-in Fast Track: '%s'", text)
+                        await self.handle_interruption()
+                        self._utterance_buffer = text
+                        # Trigger turn processing immediately
+                        if not self._current_turn_task or self._current_turn_task.done():
+                           self._current_turn_task = asyncio.create_task(self._process_user_turn(text))
                         return
 
                     _clean_text = text.strip()
-                    # Secondary prefix trimming for cumulative streams
-                    if self._last_processed_text and _clean_text.lower().startswith(self._last_processed_text.lower()[:10]):
-                        _clean_text = _clean_text[len(self._last_processed_text):].strip()
-                    
-                    if not _clean_text:
+                    if self.turn_detector.is_likely_duplicate(_clean_text, self._last_processed_text):
                         return
-                    
+                        
                     self._partial_buffer = _clean_text
-                    
                     if is_final:
                         sep = " " if self._barge_in_buffer else ""
                         self._barge_in_buffer = (self._barge_in_buffer + sep + _clean_text).strip()
-                        logger.debug("Captured barge-in text (cleaned): '%s'", self._barge_in_buffer)
                 return
 
+            # Capture transcripts into the barge-in buffer if speaking
+            if self.state in (BotState.SPEAKING, BotState.PROCESSING):
+                if text.strip():
+                    if self.turn_detector.is_likely_duplicate(text, self._last_processed_text):
+                        return
+                    _clean_text = text.strip()
+                    if self._last_processed_text and _clean_text.lower().startswith(self._last_processed_text.lower()[:10]):
+                        _clean_text = _clean_text[len(self._last_processed_text):].strip()
+                    if not _clean_text: return
+                    self._partial_buffer = _clean_text
+                    if is_final:
+                        sep = " " if self._barge_in_buffer else ""
+                        self._barge_in_buffer = (self._barge_in_buffer + sep + _clean_text).strip()
+                return
 
-            # Language Detection Module logic: Update session language if detected with high confidence
-            stt_lang = kwargs.get("language")
-            if stt_lang and stt_lang != self.session.detected_language:
-                # We only switch if it's a stable signal
-                logger.debug("Language Detection: Detected '%s' (current: '%s')", stt_lang, self.session.detected_language)
-                self.session.detected_language = stt_lang
-
-            # Update partial buffer
-            _should_emit = False
+            # Normal path: LISTENING
             if text.strip():
                 self._reset_inactivity_timer()
-                
-                # 🛡️ UI NOISE FILTER: Only emit to UI if the text is new OR final.
                 _should_emit = is_final or text != getattr(self, "_last_emitted_transcript", "")
-                
-                # --- Anticipation Module ---
                 if not is_final and len(text.split()) > 2:
                     asyncio.create_task(self._predictive_prewarm(text))
 
@@ -1010,160 +806,75 @@ class AgenticBrain:
                 if is_final:
                     final_t = text.strip()
                     chosen = _merge_stt_final_with_partial(_prior_interim, final_t)
-                    if chosen != final_t:
-                        logger.info(
-                            "STT: kept fuller interim over short final (interim_len=%d final_len=%d)",
-                            len(_prior_interim),
-                            len(final_t),
-                        )
                     sep = " " if self._utterance_buffer else ""
                     self._utterance_buffer = (self._utterance_buffer + sep + chosen).strip()
 
-            # Notify client (with deduplication)
-            if self._on_transcript and _should_emit and not suppress_transcript:
-                self._last_emitted_transcript = text
-                await self._on_transcript(text, is_final)
+                if self._on_transcript and _should_emit and not suppress_transcript:
+                    self._last_emitted_transcript = text
+                    await self._on_transcript(text, is_final)
 
-
-
-            # Store STT confidence for low-confidence graceful recovery
             incoming_confidence = kwargs.get("confidence")
             if incoming_confidence is not None:
                 self._last_stt_confidence = float(incoming_confidence)
 
             if text.strip():
-                # ⏱️ STT latency: time from last non-final partial to this final (avoids bogus multi-second RTT
-                # when Deepgram delivers a late duplicate final after a long gap).
-                if is_final:
-                    _now_m = time.monotonic()
-                    _partial_m = float(getattr(self, "_last_stt_partial_monotonic", 0.0) or 0.0)
-                    if _partial_m > 0 and (_now_m - _partial_m) < 30.0:
-                        stt_rtt = (_now_m - _partial_m) * 1000.0
-                    else:
-                        stt_rtt = (time.time() - self._last_speech_stop_time) * 1000
-                    logger.info("📊 STT Latency: %.0f ms [Final Received]", stt_rtt)
-                    self.session.last_stt_latency_ms = stt_rtt
-                    self._last_stt_partial_monotonic = 0.0
-                else:
-                     # On every partial, we 'bump' the speech stop time to the NOW
-                     # until the user actually stops speaking.
-                     self._last_speech_stop_time = time.time()
-                
                 self._last_utterance_end_time = time.time()
                 if is_final:
                     await self._log_event("[STT]", f"Final transcript: \"{text}\"", "text-yellow-400")
 
             # Turn Detection Logic (Debounce)
             if text.strip() or is_final or msg_type == "utterance_end":
-                # --- Smart Reset Optimization ---
-                # If the current text is identical to what we just processed, it's likely a
-                # trailing Deepgram partial or background noise hallucination — ignore it.
                 clean_text = text.strip()
                 if clean_text == self._last_processed_text and not is_final and not (msg_type == "utterance_end"):
-                    logger.debug("Suppressing debounce reset: text unchanged (noise filter)")
                     return
 
-                # Recalculate silence threshold dynamically based on linguistic confidence
-                # (silence duration is not yet known; it will be passed in _wait_for_silence)
                 combined_text = (self._utterance_buffer or self._partial_buffer).strip()
-                
-                # Advanced: Use the TurnDetector's dynamic logic (Phase 1)
                 dynamic_threshold = self.turn_detector.get_recommended_threshold(
-                    combined_text,
-                    self._max_silence_threshold_ms,
-                    pitch_signal=kwargs.get("pitch_signal")
+                    combined_text, self._max_silence_threshold_ms, pitch_signal=kwargs.get("pitch_signal")
                 )
 
-                # Endpoint-specific optimizations (slightly faster but still forgiving)
                 if is_final:
-                    # Deepgram already waited its internal silence (e.g. 200ms)
                     dynamic_threshold = min(dynamic_threshold, 600.0)
                 elif msg_type == "utterance_end":
-                    # Definitive VAD signal — snap respond
                     dynamic_threshold = 300.0
 
                 if self._silence_timer:
                     self._silence_timer.cancel()
 
-                self._silence_timer = asyncio.create_task(
-                    self._wait_for_silence(dynamic_threshold)
-                )
+                self._silence_timer = asyncio.create_task(self._wait_for_silence(dynamic_threshold))
         except Exception as e:
             await self._handle_fatal_error(e, "stt_processing_failed")
 
     async def _wait_for_silence(self, initial_threshold_ms: float) -> None:
-        """
-        Wait for silence and periodically re-evaluate if the user's turn is complete.
-        This provides a reliable "Watchdog" that fires even for low-confidence utterances
-        (like numbers or brief nods) once enough silence is detected.
-        """
         try:
-            # ── Step 1: Initial Wait ──
             await asyncio.sleep(initial_threshold_ms / 1000.0)
-            
-            # ── Step 2: Reliable Watchdog Loop ──
-            # We poll until either the turn is deemed complete or the global max threshold is reached.
             total_waited_ms = initial_threshold_ms
-            poll_interval_ms = 250.0  # Periodic checks for snappy response
+            poll_interval_ms = 250.0
             
             while True:
-                # Basic sanity checks before each poll
-                if self.state != BotState.LISTENING:
-                    logger.debug("🧠 Silence Loop: State changed to %s. Aborting.", self.state)
-                    return
-                
+                if self.state != BotState.LISTENING: return
                 transcript = (self._utterance_buffer or self._partial_buffer).strip()
-                if not transcript:
-                    return
+                if not transcript: return
 
-                # Proceed with turn completion logic even if text matches last processed (e.g. repeated user command)
-                # Deduplication is already handled at the STT ingestion layer.
-
-                # Calculate actual elapsed silence since the last STT activity
                 actual_silence_ms = total_waited_ms
                 if self._last_utterance_end_time > 0:
                      actual_silence_ms = (time.time() - self._last_utterance_end_time) * 1000
 
-                # ── Determination A: Hard Watchdog (Full timeout) ──
-                # If silence exceeds our global limit (e.g. 2s), FORCE-SUBMIT.
                 if actual_silence_ms >= self._max_silence_threshold_ms:
-                    logger.info("🧠 Watchdog Triggered: Force-submitting turn after %.1fs silence", actual_silence_ms/1000)
                     break
 
-                # ── Determination B: Semantic Re-evaluation ──
-                # Let the TurnDetector decide if linguistic + silence score is sufficient.
-                is_complete = self.turn_detector.is_turn_complete(
-                    transcript, actual_silence_ms
-                )
-                
-                if is_complete:
-                    logger.debug("🧠 Silence Loop: Turn complete semantically at %dms", actual_silence_ms)
+                if self.turn_detector.is_turn_complete(transcript, actual_silence_ms):
                     break
                 
-                # ── Determination C: No Progress ──
-                # If not complete, sleep for another short window and try again.
                 await asyncio.sleep(poll_interval_ms / 1000.0)
                 total_waited_ms += poll_interval_ms
 
-
-            # Silence threshold reached — user has finished speaking
-            logger.info(
-                "Turn complete (silence detected): threshold=%.0fms, transcript='%s'",
-                initial_threshold_ms,
-                transcript[:50],
-            )
             self.session.is_user_speaking = False
-
-            # Cancel proactive timer since user just spoke
             if self._proactive_timer:
                 self._proactive_timer.cancel()
                 self._proactive_timer = None
 
-            # After the turn, start the proactive silence timer
-            # Track this text to prevent repeated debounce resets on the same content
             self._last_processed_text = transcript
-
-            # ⏱️ PHASE 6: Track turn task for cancellation
             self._current_turn_task = asyncio.create_task(self._process_user_turn(transcript))
             
             # Helper to clear task on completion
@@ -1442,11 +1153,16 @@ class AgenticBrain:
         _filler_fired_this_turn = False  # Track whether watchdog filler already played
         self._force_no_tools_this_turn = False
         self._last_call_sig = None  # 🛡️ Reset loop detector for every NEW user turn
+        self._bot_response_buffer = "" # Reset real-time tracking
 
         try:
             if self.llm:
                 max_iterations = 4  # Allow enough steps for (Tool 1 -> Tool 2 -> Recovery -> Response)
                 while iteration < max_iterations:
+                    # 🛡️ Interruption Check: Skip any follow-up iterations if we were barge-in'd
+                    if self._interrupt_event.is_set():
+                        break
+                    
                     iteration += 1
                     # 🏎️ LATENCY OPTIMIZATION: Reduce history window for voice turns (5000 char cap effectively)
                     context = self.session.get_context_window(max_turns=10)
@@ -1522,8 +1238,21 @@ class AgenticBrain:
 
                         async def _latency_watchdog():
                             nonlocal _tokens_received, _watchdog_fired, _filler_fired_this_turn
+                            
+                            # 🚀 PREDICTIVE TIMING: Adjust watchdog sleep based on query complexity.
+                            # Complex queries (tools/search) fire faster; simple ones stay snappy.
+                            hint_l = _watchdog_user_hint.lower()
+                            words = hint_l.split()
+                            is_complex = any(w in hint_l for w in ("check", "search", "find", "batao", "dikhao", "status", "account", "kya", "kaise", "kab"))
+                            
+                            dynamic_wd_sec = _wd_sec
+                            if len(words) <= 2 and not is_complex:
+                                dynamic_wd_sec *= 1.4  # Be patient with simple queries
+                            elif is_complex or len(words) >= 6:
+                                dynamic_wd_sec *= 0.6  # Fire proactively for heavy turns
+                            
                             try:
-                                await asyncio.sleep(_wd_sec)
+                                await asyncio.sleep(dynamic_wd_sec)
                             except asyncio.CancelledError:
                                 return
                             if _tokens_received:
@@ -1599,6 +1328,7 @@ class AgenticBrain:
                                 
                                 if chunk.content:
                                     text_accumulated_whole_turn += chunk.content
+                                    self._bot_response_buffer = text_accumulated_whole_turn
                                     tts_buffer += chunk.content
 
                                     # 🛡️ SUSPICIOUS-PREFIX HOLD (Layer 1 real-time detection)
@@ -1665,7 +1395,7 @@ class AgenticBrain:
                                                 else:
                                                     await self._emit_tts_audio_stream(safe_tts_text)
                                             if self._on_bot_transcript:
-                                                await self._on_bot_transcript(text_accumulated_whole_turn, False)
+                                                await self._on_bot_transcript(self._strip_technical_artifacts(text_accumulated_whole_turn), False)
                                             tts_buffer = ""
                                             _first_segment_done = True
 
@@ -1682,6 +1412,10 @@ class AgenticBrain:
                         if self._interrupt_event.is_set():
                             pass
                         elif whole_turn and tts_buffer.strip() and self.tts:
+                            # Release final whole turn transcript (fully stripped)
+                            if self._on_bot_transcript:
+                                final_text = self._strip_technical_artifacts(text_accumulated_whole_turn)
+                                await self._on_bot_transcript(final_text, True)
                             safe_final, block_meta = await self._guard_tts_segment(tts_buffer)
                             if block_meta:
                                 await self._emit_tts_audio_stream(block_meta.get("message", "I'm sorry, I cannot provide that information."), turbo=True)
@@ -1697,7 +1431,8 @@ class AgenticBrain:
                                 else:
                                     await self._emit_tts_audio_stream(safe_tail)
                             if self._on_bot_transcript:
-                                await self._on_bot_transcript(text_accumulated_whole_turn, False)
+                                await self._on_bot_transcript(self._strip_technical_artifacts(text_accumulated_whole_turn), False)
+                            self._last_bot_phrase = text_accumulated_whole_turn
 
                     finally:
                         if _watchdog_task is not None and not _watchdog_task.done():
@@ -1792,6 +1527,9 @@ class AgenticBrain:
                                         "Stop calling tools and respond directly to the user."
                                     )
                                     continue
+
+                        if self._interrupt_event.is_set():
+                            break
 
                         # 2. Execute and Record Results
                         tool_results = await self._execute_tools(tool_calls_this_turn)
@@ -2427,7 +2165,7 @@ class AgenticBrain:
         if not user_text or not user_text.strip():
             return
         few_shots = await self._load_commitment_few_shots("extract_commitment")
-        prompt = _COMMITMENT_PROMPTS["extract_commitment"].format(
+        prompt = COMMITMENT_PROMPTS["extract_commitment"].format(
             text=user_text[:300], few_shots=few_shots
         )
         try:
@@ -2470,7 +2208,7 @@ class AgenticBrain:
             f"- (turn {c['turn']}) {c['text']}" for c in prior[-5:]
         )
         few_shots = await self._load_commitment_few_shots("check_contradiction")
-        prompt = _COMMITMENT_PROMPTS["check_contradiction"].format(
+        prompt = COMMITMENT_PROMPTS["check_contradiction"].format(
             commitments=commitment_lines,
             few_shots=few_shots,
             text=user_text[:300],
@@ -2735,11 +2473,31 @@ class AgenticBrain:
             return p
         if not p:
             return b
+            
         bl, pl = b.lower(), p.lower()
+        
+        # 🛡️ CASE 1: Exact containment
         if pl in bl:
             return b
         if bl in pl:
             return p
+            
+        # 🛡️ CASE 2: Overlapping suffixes (Avoid stutter: "hello " + "hello world" -> "hello world")
+        b_words = bl.split()
+        p_words = pl.split()
+        
+        # Look for the largest overlap from p's beginning in b's end
+        max_overlap_words = 0
+        for i in range(1, min(len(b_words), len(p_words)) + 1):
+            if b_words[-i:] == p_words[:i]:
+                max_overlap_words = i
+                
+        if max_overlap_words > 0:
+            # Join original casing from p after the overlap
+            p_actual_words = p.split()
+            suffix = " ".join(p_actual_words[max_overlap_words:])
+            return f"{b} {suffix}".strip()
+            
         return f"{b} {p}".strip()
 
     def _get_sentiment_sidecar_llm(self) -> Any:
@@ -2783,64 +2541,84 @@ class AgenticBrain:
     async def handle_interruption(self) -> None:
         """
         Handle user interruption of bot speech.
-
         Strategy:
-          1. Set the interrupt event (signals all streaming loops to stop)
-          2. Stop TTS playback
-          3. Transition back to LISTENING
-          4. Record the partial response in history
+          - Instant mute (signals loops to stop)
+          - Cancel current 'thinking' or 'speaking' tasks
+          - Transition to LISTENING
+          - Restore speech buffer for turn analysis
         """
+        if self._interruption_in_progress:
+            return
+            
         if self.state not in (BotState.SPEAKING, BotState.PROCESSING):
             return
 
-        logger.info(
-            "Interruption detected — session=%s", self.session.session_id[:8]
-        )
+        self._interruption_in_progress = True
+        try:
+            logger.info("⚡ Interruption confirmed — session=%s", self.session.session_id[:8])
 
-        # Signal all streaming loops to stop immediately
-        self._interrupt_event.set()
+            # 1. Signal all streaming loops (LLM, TTS, Watchdogs) to stop immediately
+            self._interrupt_event.set()
+            
+            # 2. IMMEDIATE STATE SWITCH: Revert to LISTENING so incoming audio is correctly buffered
+            await self._set_state(BotState.LISTENING)
 
-        # Cancel the TTS consumer task immediately — do not wait for the next
-        # chunk boundary inside _emit_tts_audio_stream.  This is the key change
-        # that reduces TTS stop latency from ~200-400ms to <20ms.
-        if self._active_tts_consumer_task and not self._active_tts_consumer_task.done():
-            self._active_tts_consumer_task.cancel()
+            # 3. Kill the current generation task (thinking/speaking)
+            if self._current_turn_task and not self._current_turn_task.done():
+                logger.debug("Cancelling active turn task.")
+                self._current_turn_task.cancel()
+                self._current_turn_task = None
 
-        # Notify the frontend to flush its audio queue right away.
-        # if self._on_bot_transcript:
-        #     await self._on_bot_transcript("Interruption", is_final=True)
-                        
-        if self._on_audio_interrupt:
-            await self._on_audio_interrupt()
+            # 4. Stop the speaker (TTS provider and local client via callback)
+            if self._on_audio_interrupt:
+                await self._on_audio_interrupt()
+                
+            if self.tts:
+                if hasattr(self.tts, "reset"):
+                    await self.tts.reset()
+                else:
+                    await self.tts.stop()
 
-        # Cancel a pending silence timer so a ghost turn doesn't fire after the interrupt.
-        if self._silence_timer:
-            self._silence_timer.cancel()
-            self._silence_timer = None
+            # 5. KILL BACKGROUND TOOLS: Ensure no long-running tools keep running
+            if hasattr(self, "task_manager"):
+                await self.task_manager.cancel_all()
 
-        # Restore any user speech captured during the barge-in debounce window.
-        # Without this, short phrases ("stop", "wait", "ok") spoken while the bot
-        # was talking are lost and the bot freezes in LISTENING state with no turn to fire.
-        # Merge finals (_barge_in_buffer) with the latest partial so mid-utterance text is not dropped.
-        self._utterance_buffer = self._merge_barge_in_utterance()
-        self._partial_buffer = ""
-        self._barge_in_buffer = ""
+            # 6. Stop active consumer pipelines
+            if self._active_tts_consumer_task and not self._active_tts_consumer_task.done():
+                self._active_tts_consumer_task.cancel()
+                            
+            # Reset flags
+            self._is_fast_track_turn = False
+            if self._silence_timer:
+                self._silence_timer.cancel()
+                self._silence_timer = None
 
-        self.session.mark_interrupted()
-        if self._conversation_policy.get("interrupt_aware_reply", True):
-            self.session.interrupt_prompt_pending = True
-            logger.debug("📌 Tracked interruption prompt pending (session=%s)", self.session.session_id[:8])
+            # Restore any user speech captured during the barge-in window.
+            combined_text = self._merge_barge_in_utterance()
+            self._utterance_buffer = combined_text
+            self._partial_buffer = ""
+            self._barge_in_buffer = ""
 
-        # Stop TTS if it's playing.
-        # For the persistent WS TTS provider, reset() clears Deepgram's buffer
-        # so stale synthesis doesn't leak into the next turn.
-        if self.tts:
-            if hasattr(self.tts, "reset"):
-                await self.tts.reset()
-            else:
-                await self.tts.stop()
+            # 🚀 CRITICAL: After interruption, we MUST restart the silence timer
+            # so that we eventually trigger a response for the text that caused the interruption.
+            if combined_text.strip():
+                # Use a slightly more aggressive threshold for interruptions (e.g. 500ms)
+                # to keep the conversation feeling snappy after a barge-in.
+                dynamic_threshold = self.turn_detector.get_recommended_threshold(
+                    combined_text, self._max_silence_threshold_ms
+                )
+                # Cap it lower for interruptions to avoid long awkward pauses after "Stop"
+                dynamic_threshold = min(dynamic_threshold, 800.0) 
+                
+                self._silence_timer = asyncio.create_task(
+                    self._wait_for_silence(dynamic_threshold)
+                )
 
-        await self._set_state(BotState.LISTENING)
+            self.session.mark_interrupted()
+            if self._conversation_policy.get("interrupt_aware_reply", True):
+                self.session.interrupt_prompt_pending = True
+        finally:
+            self._interruption_in_progress = False
 
         # If the user already finished speaking during the debounce window, their text
         # is now in _utterance_buffer but no more transcripts will arrive to trigger a
@@ -2871,7 +2649,7 @@ class AgenticBrain:
         if has_scopes:
             for s in scopes:
                 key = str(s).lower()
-                for n in _SCOPE_TOOL_NAMES.get(key, ()):
+                for n in SCOPE_TOOL_NAMES.get(key, ()):
                     enabled.add(n)
 
         # 3. Optional explicit tool list: when scopes are set, intersect so tools_enabled
@@ -3099,6 +2877,55 @@ class AgenticBrain:
 
         return status
 
+    def _get_latency_filler(self, user_text: str = "", lang: str = "en", custom: dict = {}) -> str:
+        """Choose a context-aware latency filler (thinking sound) to keep user engaged."""
+        if custom:
+            lang_l = (lang or "en").lower()
+            key = "hi" if ("hi" in lang_l or lang_l.startswith("hi")) else "en"
+            raw = custom.get(key) or custom.get("default") or []
+            if isinstance(raw, list):
+                opts = [str(x).strip() for x in raw if str(x).strip()]
+                if opts:
+                    return self._choose_latency_filler_no_repeat(tuple(opts))
+
+        lang_l = (lang or "en").lower()
+        ut = (user_text or "").strip()
+        ut_lower = ut.lower()
+        lang_key = "hi" if ("hi" in lang_l or lang_l.startswith("hi") or self.is_hindi(ut)) else "en"
+        
+        # 🧪 Enhanced Contextual Intent Detection
+        has_question = "?" in ut or any(w in ut_lower for w in (
+            "what", "how", "when", "why", "where", "which", 
+            "kya", "kaise", "kab", "kahan", "kitna", "bataiye", "batao", "poochna"
+        ))
+        
+        words = ut_lower.split()
+        is_ack = bool(ut) and len(words) <= 4 and any(
+            ut_lower == w or ut_lower.startswith(w + " ") or ut_lower.endswith(" " + w) 
+            for w in ("yes", "yeah", "yep", "ok", "okay", "sure", "ha", "haan", "han", "ji", "theek", "thik", "sahi", "bilkul")
+        )
+        
+        is_frustration = any(w in ut_lower for w in (
+            "sorry", "problem", "issue", "frustrat", "angry", "wait", "slow", 
+            "samajh", "galat", "galti", "help", "madad", "ruko", "stop"
+        ))
+
+        last_bot_phrase = (getattr(self, "_last_bot_phrase", "") or "").strip().lower()
+        is_reply_to_question = last_bot_phrase.endswith("?") or any(w in last_bot_phrase for w in ("kya", "kaise", "kahan"))
+
+        category = "default"
+        if is_frustration:
+            category = "frustration"
+        elif has_question:
+            category = "question"
+        elif is_ack or (is_reply_to_question and len(words) <= 3):
+            category = "ack"
+        elif any(w in ut_lower for w in ("book", "appointment", "update", "karna", "set")):
+            category = "action"
+
+        pool = LATENCY_FILLERS.get(lang_key, {}).get(category, LATENCY_FILLERS[lang_key]["default"])
+        return self._choose_latency_filler_no_repeat(pool)
+
     def _choose_latency_filler_no_repeat(self, pool: tuple[str, ...]) -> str:
         choices = list(pool)
         if not choices:
@@ -3119,110 +2946,10 @@ class AgenticBrain:
     def _pick_latency_watchdog_filler(self, lang: str, user_text: str) -> str:
         """
         Short thinking-bridge line when the LLM is slow. No extra LLM call.
-
-        Override: conversation_policy.latency_fillers or bot_config.latency_fillers
-        as a list of strings, or dict with keys en / hi / default.
         """
-        custom = self._conversation_policy.get("latency_fillers")
-        if custom is None:
-            custom = self._bot_config.get("latency_fillers")
-        if isinstance(custom, list):
-            opts = [str(x).strip() for x in custom if str(x).strip()]
-            if opts:
-                return self._choose_latency_filler_no_repeat(tuple(opts))
-        if isinstance(custom, dict):
-            lang_l = (lang or "en").lower()
-            key = "hi" if ("hi" in lang_l or lang_l.startswith("hi")) else "en"
-            raw = custom.get(key) or custom.get("default") or []
-            if isinstance(raw, list):
-                opts = [str(x).strip() for x in raw if str(x).strip()]
-                if opts:
-                    return self._choose_latency_filler_no_repeat(tuple(opts))
-
-        lang_l = (lang or "en").lower()
-        ut = (user_text or "").strip()
-        ut_lower = ut.lower()
-        is_hi_family = (
-            "hi" in lang_l
-            or lang_l.startswith("hi")
-            or self.is_hindi(ut)
-        )
-        has_question = "?" in ut or any(
-            w in ut_lower
-            for w in (
-                "what ",
-                "how ",
-                "when ",
-                "why ",
-                "where ",
-                "which ",
-                "kya ",
-                "kaise ",
-                "kab ",
-                "kahan ",
-                "kitna ",
-            )
-        )
-        words = ut_lower.split()
-        is_ack = bool(ut) and len(words) <= 4 and any(
-            ut_lower == w
-            or ut_lower.startswith(w + " ")
-            or ut_lower.endswith(" " + w)
-            or (len(words) == 1 and words[0].startswith(w))
-            for w in (
-                "yes",
-                "yeah",
-                "yep",
-                "ok",
-                "okay",
-                "sure",
-                "ha",
-                "haan",
-                "han",
-                "ji",
-                "theek",
-                "thik",
-                "sahi",
-            )
-        )
-        is_frustration = any(
-            w in ut_lower
-            for w in (
-                "sorry",
-                "problem",
-                "issue",
-                "frustrat",
-                "angry",
-                "wait",
-                "slow",
-                "samajh",
-                "galat",
-                "galti",
-                "help",
-                "madad",
-            )
-        )
-
-        if is_hi_family:
-            if is_frustration:
-                pool = _LATENCY_FILLERS_HI_FRUSTRATION
-            elif has_question:
-                pool = _LATENCY_FILLERS_HI_QUESTION
-            elif is_ack:
-                pool = _LATENCY_FILLERS_HI_ACK
-            else:
-                pool = _LATENCY_FILLERS_HI_DEFAULT
-        else:
-            if is_frustration:
-                pool = _LATENCY_FILLERS_EN_FRUSTRATION
-            elif has_question:
-                pool = _LATENCY_FILLERS_EN_QUESTION
-            elif is_ack:
-                pool = _LATENCY_FILLERS_EN_ACK
-            else:
-                pool = _LATENCY_FILLERS_EN_DEFAULT
-
-        return self._choose_latency_filler_no_repeat(pool)
+        # We reuse the same contextual logic used by the explicit thinking-bridge triggers
+        custom = self._conversation_policy.get("latency_fillers") or self._bot_config.get("latency_fillers") or {}
+        return self._get_latency_filler(user_text=user_text, lang=lang, custom=custom)
 
     def _register_latency_watchdog_task(self, task: asyncio.Task) -> None:
         self._pending_latency_watchdogs.append(task)
@@ -3611,7 +3338,7 @@ class AgenticBrain:
             
             # 2. Call the reflection engine (Non-streaming, high-intelligence)
             # NOTE: We use the direct provider call to avoid speech/guardrail overhead.
-            prompt = _POST_CALL_REFLECTION_PROMPT.format(transcript=full_transcript)
+            prompt = POST_CALL_REFLECTION_PROMPT.format(transcript=full_transcript)
             
             # Try to pick a 'Heavy' model if using OpenRouter
             heavy_model = "google/gemini-2.0-flash-001" 
