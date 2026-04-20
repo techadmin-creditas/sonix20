@@ -451,6 +451,52 @@ export const api = {
     return res.json();
   },
 
+  async testTts(data: {
+    tts_provider: string;
+    voice_id: string;
+    tts_model?: string;
+    text: string;
+    language?: string;
+    emotion?: string;
+    stability?: number;
+    similarity_boost?: number;
+    style?: number;
+  }): Promise<Response> {
+    const res = await fetch(`${BASE_URL}/tts/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('TTS test failed');
+    return res;
+  },
+
+  async getTestingMetadata(): Promise<{
+    languages: any[];
+    tones: any[];
+    stress_corpus: any[];
+  }> {
+    const res = await fetch(`${BASE_URL}/metadata/testing`);
+    if (!res.ok) throw new Error('Failed to fetch testing metadata');
+    return res.json();
+  },
+
+  async cloneVoice(audioBlob: Blob, name: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'clone.wav');
+    formData.append('name', name);
+
+    const res = await fetch(`${BASE_URL}/metadata/clone`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown cloning error' }));
+        throw new Error(err.detail || 'Voice cloning failed');
+    }
+    return res.json();
+  },
+
   async getDashboardStats(): Promise<DashboardStats> {
     const res = await fetch(`${BASE_URL}/analytics/dashboard`);
     if (!res.ok) throw new Error('Failed to fetch dashboard stats');

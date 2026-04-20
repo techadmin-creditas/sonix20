@@ -3187,7 +3187,26 @@ class AgenticBrain:
                 "Never say you don't know something that is listed above."
             )
 
-        return f"{extra}{memory_block}{contradiction_block}{caller_context_block}{phase_hint}"
+        # --- Acoustic Behavioral Modifiers (Forge Integration) ---
+        acoustic_block = ""
+        tts_provider = self._bot_config.get("tts_provider", "elevenlabs")
+        if "eleven" not in tts_provider.lower():
+            # For Deepgram/others, inject modifiers into LLM behavior
+            stability = self._bot_config.get("stability", 0.8)
+            clarity = self._bot_config.get("clarity", 0.6)
+            
+            modifier = "vibrant and expressive" if stability < 0.5 else "calm and professional"
+            precision = "clear and articulate" if clarity > 0.5 else "soft and conversational"
+            
+            acoustic_block = (
+                f"\n\n[BEHAVIORAL STYLE — Derived from Forge Settings]\n"
+                f"- Style: Speak in a {modifier} manner.\n"
+                f"- Articulation: Be {precision}.\n"
+                f"- Target Stability: {stability * 100}% (affecting your emotional consistency).\n"
+                f"- Target Clarity: {clarity * 100}% (affecting your precision of speech)."
+            )
+
+        return f"{extra}{memory_block}{contradiction_block}{caller_context_block}{acoustic_block}{phase_hint}"
 
     def _build_system_prompt(self) -> str:
         """

@@ -1897,17 +1897,15 @@ async def get_supported_voices():
     # ✅ ELEVENLABS (Dynamic Fetch)
     if is_valid_key(settings.elevenlabs_api_key):
         try:
-            # from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-            # provider = ElevenLabsStreamingProvider()
-            # el_voices = await provider.get_voices()
-            # if el_voices:
-            #     # Filter out known failing voices
-            #     blacklist = ["RnauXKDOkyVg9FjwISwR", "FGY2WhTYpPnrIDTdsKH5"]
-            #     el_voices = [v for v in el_voices if v["id"] not in blacklist]
-            #     voices += el_voices
-            # else:
-            #     # Fallback to high-quality Hindi set if API fails
-            voices += [
+            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+            provider = ElevenLabsStreamingProvider()
+            el_voices = await provider.get_voices()
+            if el_voices:
+                # Filter out known failing voices or non-speech voices if needed
+                voices += el_voices
+            else:
+                # Fallback to high-quality Hindi set if API fails
+                voices += [
                     {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah (Hindi - Natural)", "provider": "elevenlabs"},
                     {"id": "zEvjs17jNQ2fH5FxAat2", "name": "Anika (Hindi - Gentle)", "provider": "elevenlabs"},
                     {"id": "BKAA4PPBFfn6s91XfihW", "name": "Roopa (Hindi - Professional)", "provider": "elevenlabs"},
@@ -1916,6 +1914,72 @@ async def get_supported_voices():
             logger.error("Failed to fetch ElevenLabs voices: %s", e)
 
     return {"voices": voices, "total": len(voices)}
+    
+    
+@router.get("/metadata/testing", tags=["metadata"])
+async def get_testing_metadata():
+    """Returns dynamic lists for languages, tones, and the voice stress corpus."""
+    corpus_path = "data/voice_stress_corpus.json"
+    corpus = {}
+    if os.path.exists(corpus_path):
+        with open(corpus_path, "r") as f:
+            corpus = json.load(f)
+            
+    return {
+        "languages": [
+            {"id": "en", "name": "English", "label": "United States", "sub": "Primary"},
+            {"id": "hi", "name": "Hindi", "label": "India", "sub": "Regional"},
+            {"id": "hinglish", "name": "Hinglish", "label": "In-Hi Mix", "sub": "Native Mix"},
+            {"id": "es", "name": "Spanish", "label": "Spain", "sub": "Europe"},
+        ],
+        "tones": [
+            {"id": "empathetic", "name": "Empathetic", "label": "Warm & Caring", "icon": "Heart"},
+            {"id": "analytical", "name": "Analytical", "label": "Precise & Calm", "icon": "Cpu"},
+            {"id": "firm", "name": "Firm", "label": "Direct & Strong", "icon": "ShieldCheck"},
+            {"id": "casual", "name": "Casual", "label": "Friendly & Chill", "icon": "MessageSquare"},
+        ],
+        "stress_corpus": corpus.get("test_categories", [])
+    }
+
+
+@router.post("/metadata/clone", tags=["metadata"])
+async def clone_voice(request: Request):
+    """
+    Instant Voice Cloning via ElevenLabs.
+    Expects multipart/form-data with a 'file' field (audio) and 'name' field.
+    """
+    from fastapi import UploadFile, File
+    form = await request.form()
+    audio_file = form.get("file")
+    name = form.get("name", f"Clone-{uuid.uuid4().hex[:4]}")
+
+    if not audio_file:
+        raise HTTPException(status_code=400, detail="No audio file provided")
+
+    import httpx
+    url = "https://api.elevenlabs.io/v1/voices/add"
+    headers = {"xi-api-key": settings.elevenlabs_api_key}
+    
+    # Read file content
+    content = await audio_file.read()
+    
+    files = {
+        "files": (audio_file.filename, content, audio_file.content_type),
+    }
+    data = {
+        "name": name,
+        "description": "Cloned via Sonix Persona Forge"
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, headers=headers, data=data, files=files)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            err_data = response.json() if response.headers.get("content-type") == "application/json" else {"detail": response.text}
+            msg = err_data.get("detail", {}).get("message") or err_data.get("detail") or "Unknown ElevenLabs Error"
+            logger.error("ElevenLabs Cloning failed: %s", response.text)
+            raise HTTPException(status_code=response.status_code if response.status_code != 200 else 502, detail=msg)
     
 @router.get("/metadata/guardrails", tags=["metadata", "guardrails"])
 async def get_guardrail_options():
@@ -2356,23 +2420,97 @@ async def upload_pdf(
 
 # ─── Test Utilities ───────────────────────────────────────────────────────────
 
+@router.post("/bots/{bot_id}/preview", tags=["bots", "test"])
+async def preview_bot_persona(bot_id: str, data: dict):
+    """
+    Generate speech for the given text using the bot's specific voice/persona configuration.
+    Returns binary audio stream.
+    """
+    from fastapi.responses import StreamingResponse
+    from voicebot.services.tts.voice_tts_factory import create_voice_tts
+    
+    db = await get_db()
+    bot = await db.get_bot(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail=f"Bot '{bot_id}' not found")
+
+    text = data.get("text", bot.get("greeting") or "Hello, I am ready to assist you.")
+    
+    # Use the bot's configured TTS settings
+    provider_type = bot.get("tts_provider", "deepgram_ws")
+    voice_id = bot.get("voice_id")
+    tts_model = bot.get("tts_model")
+
+    try:
+        provider = create_voice_tts(
+            provider_type=provider_type,
+            voice_id=voice_id,
+            tts_model=tts_model
+        )
+
+        async def generate():
+            async for chunk in provider.stream_speech(text):
+                yield chunk
+
+        return StreamingResponse(generate(), media_type="audio/wav")
+    except Exception as e:
+        logger.error("Persona preview failed for bot %s: %s", bot_id, e)
+        raise HTTPException(status_code=502, detail=f"Speech generation failed: {e}")
+
+
 @router.post("/tts/test", tags=["test"])
 async def test_tts(data: dict):
-    """Test TTS with a simple text. Returns binary audio stream."""
+    """
+    Experimental TTS endpoint. 
+    Accepts tts_provider, voice_id, tts_model, and text.
+    Also supports advanced tuning: stability, similarity_boost, style.
+    """
     from fastapi.responses import StreamingResponse
-    from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
-    from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
-
-    provider_type = data.get("provider", "deepgram")
-    text = data.get("text", "Hello, I am the voice bot.")
+    from voicebot.services.tts.voice_tts_factory import create_voice_tts
     
-    provider = DeepgramTTSProvider() if provider_type == "deepgram" else ElevenLabsStreamingProvider()
+    provider_type = (data.get("provider") or data.get("tts_provider") or "deepgram").lower()
+    voice_id = data.get("voice_id")
+    tts_model = data.get("tts_model")
+    text = data.get("text", "Hello, how can I help you today?")
+    
+    # Advanced tuning
+    tuning = {
+        "stability": data.get("stability", 0.5),
+        "similarity_boost": data.get("similarity_boost", 0.75),
+        "style": data.get("style", 0.0)
+    }
 
-    async def generate():
-        async for chunk in provider.stream_speech(text):
-            yield chunk
+    # Identity data
+    language = data.get("language", "English")
+    tone = data.get("emotion") or data.get("tone") or "Neural"
 
-    return StreamingResponse(generate(), media_type="audio/wav")
+    # Determine appropriate format for browser preview
+    # ElevenLabs: MP3 (pcm_16000 is default but not playable without header)
+    # Deepgram: WAV (linear16 is default but not playable without header)
+    out_format = "mp3_44100_128" if "eleven" in provider_type else "wav"
+    media_type = "audio/mpeg" if "eleven" in provider_type else "audio/wav"
+
+    try:
+        provider = await create_voice_tts(
+            bot_config={
+                "tts_provider": provider_type,
+                "voice_id": voice_id,
+                "tts_model": tts_model,
+                "language": language,
+                "tone": tone,
+                "output_format": out_format
+            },
+            settings=get_settings()
+        )
+
+        async def generate():
+            async for chunk in provider.stream_speech(text, **tuning):
+                yield chunk
+
+        return StreamingResponse(generate(), media_type=media_type)
+    except Exception as e:
+        logger.error("TTS test failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Speech generation failed: {e}")
 
 
 @router.post("/llm/test", tags=["test"])

@@ -19,7 +19,8 @@ async def _instantiate_voice_tts(
     provider: str, 
     voice_id: str, 
     settings: AppSettings,
-    tts_model: Optional[str] = None
+    tts_model: Optional[str] = None,
+    output_format: Optional[str] = None
 ) -> Optional[Any]:
     provider = (provider or "").lower()
     
@@ -27,12 +28,16 @@ async def _instantiate_voice_tts(
         from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
         return ElevenLabsStreamingProvider(
             voice_id=voice_id or settings.elevenlabs_voice_id,
-            model_id=tts_model or "eleven_flash_v2_5"
+            model_id=tts_model or "eleven_flash_v2_5",
+            output_format=output_format or "pcm_16000"
         )
         
     if provider == "deepgram_ws" and is_valid_api_key(settings.deepgram_api_key):
         from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
-        p = DeepgramWSTTSProvider(model=voice_id or "aura-asteria-en")
+        p = DeepgramWSTTSProvider(
+            model=voice_id or "aura-asteria-en",
+            encoding=output_format or "linear16"
+        )
         try:
             await asyncio.wait_for(p.connect(), timeout=3.0)
             return p
@@ -40,9 +45,23 @@ async def _instantiate_voice_tts(
             logger.warning("Failed to connect to Deepgram WS TTS: %s", e)
             return None
 
+    if provider == "deepgram" and is_valid_api_key(settings.deepgram_api_key):
+        # Default 'deepgram' to WebSocket for performance, but honor IDs
+        from voicebot.services.tts.deepgram_ws_tts_provider import DeepgramWSTTSProvider
+        p = DeepgramWSTTSProvider(model=voice_id or "aura-asteria-en")
+        try:
+            await asyncio.wait_for(p.connect(), timeout=3.0)
+            return p
+        except Exception:
+            # Silence connection warnings; the factory fallback loop will handle it
+            return None
+
     if provider == "deepgram_http" and is_valid_api_key(settings.deepgram_api_key):
         from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
-        return DeepgramTTSProvider(model=voice_id or "aura-asteria-en")
+        return DeepgramTTSProvider(
+            model=voice_id or "aura-asteria-en",
+            output_format=output_format or "linear16"
+        )
 
     if provider == "gemini" and is_valid_api_key(settings.gemini_api_key):
         from voicebot.services.tts.gemini_provider import GeminiTTSProvider
@@ -138,14 +157,26 @@ async def create_voice_tts(
     # to avoid passing LLM IDs like 'llama-3.1-8b-instant' to standalone TTS APIs.
     if not mid and prov == "gemini":
         mid = str(bot_config.get("llm_model") or "")
+
+    # 🌐 Multilingual Optimization: If language is non-English, force high-fidelity multilingual models
+    lang = str(bot_config.get("default_language") or bot_config.get("language") or "en").lower()
+    is_non_english = any(l in lang for l in ["hi", "es", "fr", "de", "it", "pt", "kn", "ta", "te"])
+    
+    if is_non_english and prov == "elevenlabs" and not mid:
+        mid = "eleven_multilingual_v2"
+        logger.info("Auto-selected multilingual model for language: %s", lang)
     
     # 1. Instantiate primary
-    primary = await _instantiate_voice_tts(prov, vid, settings, tts_model=mid)
+    primary = await _instantiate_voice_tts(
+        prov, vid, settings, 
+        tts_model=mid, 
+        output_format=bot_config.get("output_format")
+    )
     
-    # Fallback to local deepgram if primary creation fails
+    # Fallback to deepgram_http if primary creation fails (WS failure or provider mismatch)
     if not primary:
-        logger.warning("Primary TTS (%s) failed init, falling back to emergency default.", prov)
-        primary = await _instantiate_voice_tts("deepgram_http", "aura-asteria-en", settings)
+        logger.warning("Primary TTS (%s) failed init, falling back to emergency HTTP.", prov)
+        primary = await _instantiate_voice_tts("deepgram_http", vid or "aura-asteria-en", settings)
     
     # 2. Wrap with fallbacks
     return await wrap_tts_with_fallbacks(primary, bot_config, settings, on_log_fn=on_log_fn)

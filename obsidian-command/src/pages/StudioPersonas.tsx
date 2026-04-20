@@ -140,25 +140,124 @@ const NeuralIdentityForge = ({
 
    const [activeTab, setActiveTab] = React.useState<'Voice' | 'Language' | 'Tone'>('Voice');
    const [isPlaying, setIsPlaying] = React.useState(false);
+   const [isCloning, setIsCloning] = React.useState(false);
+   const [mediaRecorder, setMediaRecorder] = React.useState<MediaRecorder | null>(null);
+   const [audioChunks, setAudioChunks] = React.useState<Blob[]>([]);
+   const [isRecording, setIsRecording] = React.useState(false);
+
+   const startRecording = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+         const blob = new Blob(chunks, { type: 'audio/wav' });
+         setIsCloning(true);
+         try {
+            const result = await api.cloneVoice(blob, `Clone-${Date.now()}`);
+            setAvailableVoices(prev => [{ id: result.voice_id, name: result.name, provider: 'elevenlabs' }, ...prev]);
+            patch({ selectedVoice: result.voice_id });
+         } catch (e) {
+            alert('Cloning failed: ' + e);
+         } finally {
+            setIsCloning(false);
+            stream.getTracks().forEach(t => t.stop());
+         }
+      };
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      setTimeout(() => recorder.stop(), 5000); // 5s recording
+   };
+   const [availableVoices, setAvailableVoices] = React.useState<{ id: string, name: string, provider: string }[]>([]);
+   const [isFetchingVoices, setIsFetchingVoices] = React.useState(false);
+   
+   // Metadata state
+   const [metadata, setMetadata] = React.useState<{ languages: any[], tones: any[], stress_corpus: any[] }>({
+      languages: [],
+      tones: [],
+      stress_corpus: []
+   });
+   const [selectedStressIndex, setSelectedStressIndex] = React.useState(0);
+
+   React.useEffect(() => {
+      const loadData = async () => {
+         setIsFetchingVoices(true);
+         try {
+            const [voices, meta] = await Promise.all([
+               api.getVoices(),
+               api.getTestingMetadata()
+            ]);
+            setAvailableVoices(voices);
+            setMetadata(meta);
+         } catch (e) {
+            console.error('Failed to load metadata:', e);
+         } finally {
+            setIsFetchingVoices(false);
+         }
+      };
+      loadData();
+   }, []);
 
    const patch = (val: Partial<AiPersona>) => setFormData(prev => ({ ...prev, ...val }));
 
-   const handlePlayPreview = () => {
+   const handlePlayPreview = async () => {
       if (!formData.selectedVoice || !formData.language || !formData.emotion) return;
+      
       if (isPlaying) {
          setIsPlaying(false);
          return;
       }
-      setIsPlaying(true);
-   };
 
-   React.useEffect(() => {
-      let timer: any;
-      if (isPlaying) {
-         timer = setTimeout(() => setIsPlaying(false), 5000);
+      setIsPlaying(true);
+
+      const voice = availableVoices.find(v => v.id === formData.selectedVoice || v.name === formData.selectedVoice);
+      if (!voice) {
+         console.warn('Voice not found for preview:', formData.selectedVoice);
+         setIsPlaying(false);
+         return;
       }
-      return () => clearTimeout(timer);
-   }, [isPlaying]);
+
+      // 🎯 Stress Corpus or Dynamic Greeting
+      const currentCategory = metadata.stress_corpus[selectedStressIndex % metadata.stress_corpus.length];
+      // Rotate through items in the category based on index
+      const phraseIndex = Math.floor(selectedStressIndex / metadata.stress_corpus.length) % (currentCategory?.items?.length || 1);
+      const testPhrase = currentCategory ? currentCategory.items[phraseIndex] : null;
+      
+      const text = testPhrase || `Hello! I am ${formData.name || voice.name}. My tone is ${formData.emotion} and I am speaking in ${formData.language}. How do I sound?`;
+
+      try {
+         const response = await api.testTts({
+            tts_provider: voice.provider,
+            voice_id: voice.id,
+            text: text,
+            language: formData.language,
+            emotion: formData.emotion,
+            stability: (formData.stability || 80) / 100,
+            similarity_boost: (formData.clarity || 60) / 100,
+            style: (formData.expressiveness || 35) / 100
+         });
+
+         const blob = await response.blob();
+         const url = URL.createObjectURL(blob);
+         const audio = new Audio(url);
+         
+         audio.onended = () => {
+            setIsPlaying(false);
+            URL.revokeObjectURL(url);
+         };
+
+         audio.onerror = () => {
+             setIsPlaying(false);
+             URL.revokeObjectURL(url);
+         };
+
+         await audio.play();
+      } catch (e) {
+         console.error('Preview failed:', e);
+         setIsPlaying(false);
+      }
+   };
 
    React.useEffect(() => {
       if (isPlaying) {
@@ -179,43 +278,43 @@ const NeuralIdentityForge = ({
       { id: 'v3', name: 'Saira', image: '/avatars/saira.png', label: 'Female • 28y', info: 'Tech Expert' },
    ];
 
-   const languages = [
-      { id: 'en', name: 'English', label: 'United States', sub: 'Primary' },
-      { id: 'hi', name: 'Hindi', label: 'India', sub: 'Regional' },
-      { id: 'hinglish', name: 'Hinglish', label: 'In-Hi Mix', sub: 'Native Mix' },
-      { id: 'es', name: 'Spanish', label: 'Spain', sub: 'Europe' },
-   ];
-
-   const tones = [
-      { id: 'empathetic', name: 'Empathetic', label: 'Warm & Caring', icon: Heart },
-      { id: 'analytical', name: 'Analytical', label: 'Precise & Calm', icon: Cpu },
-      { id: 'firm', name: 'Firm', label: 'Direct & Strong', icon: ShieldCheck },
-      { id: 'casual', name: 'Casual', label: 'Friendly & Chill', icon: MessageSquare },
-   ];
+   const getVoiceAvatar = (voiceName?: string) => {
+      return avatars.find(a => a.name === voiceName)?.image || avatars[0].image;
+   };
 
    const renderTabContent = () => {
       switch (activeTab) {
          case 'Voice':
-            return avatars.map((av, i) => (
+            if (isFetchingVoices) {
+               return (
+                  <div className="flex items-center gap-2 p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                     <Loader2 className="size-4 animate-spin" /> Fetching Neural Assets...
+                  </div>
+               );
+            }
+            return availableVoices.map((av, i) => (
                <button
                   key={i}
-                  onClick={() => patch({ gender: av.name.includes('Marcus') ? 'Male' : 'Female', selectedVoice: av.name })}
+                  onClick={() => patch({ 
+                     gender: av.name.toLowerCase().includes('female') || av.name === 'Rachel' || av.name === 'Saira' ? 'Female' : 'Male', 
+                     selectedVoice: av.id 
+                  })}
                   className={cn(
                      "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
-                     formData.selectedVoice === av.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                     formData.selectedVoice === av.id ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
                   )}
                >
-                  <div className="size-10 rounded-full bg-slate-50 overflow-hidden border border-slate-200">
-                     {av.image ? <img src={av.image} alt={av.name} className="w-full h-full object-cover" /> : <Bot className="size-full p-2 text-outline" />}
+                  <div className="size-10 rounded-full bg-slate-50 overflow-hidden border border-slate-200 flex items-center justify-center">
+                     <Bot className="size-6 text-indigo-500/40" />
                   </div>
                   <div className="text-left">
-                     <div className="text-[11px] font-bold text-slate-900">{av.name}</div>
-                     <div className="text-[8px] font-medium text-slate-400">{av.info}</div>
+                     <div className="text-[11px] font-bold text-slate-900 line-clamp-1 max-w-[120px]">{av.name}</div>
+                     <div className="text-[8px] font-medium text-slate-400 uppercase tracking-tighter">{av.provider}</div>
                   </div>
                </button>
             ));
          case 'Language':
-            return languages.map((lang, i) => (
+            return (metadata.languages.length > 0 ? metadata.languages : []).map((lang, i) => (
                <button
                   key={i}
                   onClick={() => patch({ language: lang.name })}
@@ -231,22 +330,26 @@ const NeuralIdentityForge = ({
                </button>
             ));
          case 'Tone':
-            return tones.map((tone, i) => (
-               <button
-                  key={i}
-                  onClick={() => patch({ emotion: tone.name })}
-                  className={cn(
-                     "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
-                     formData.emotion === tone.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
-                  )}
-               >
-                  <tone.icon className={cn("size-4", formData.emotion === tone.name ? "text-indigo-500" : "text-slate-400")} />
-                  <div className="text-left">
-                     <div className="text-[11px] font-bold text-slate-900">{tone.name}</div>
-                     <div className="text-[8px] font-medium text-slate-400">{tone.label}</div>
-                  </div>
-               </button>
-            ));
+            const toneIcons: Record<string, any> = { Heart, Cpu, ShieldCheck, MessageSquare };
+            return (metadata.tones.length > 0 ? metadata.tones : []).map((tone, i) => {
+               const Icon = toneIcons[tone.icon] || MessageSquare;
+               return (
+                  <button
+                     key={i}
+                     onClick={() => patch({ emotion: tone.name })}
+                     className={cn(
+                        "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
+                        formData.emotion === tone.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                     )}
+                  >
+                     <Icon className={cn("size-4", formData.emotion === tone.name ? "text-indigo-500" : "text-slate-400")} />
+                     <div className="text-left">
+                        <div className="text-[11px] font-bold text-slate-900">{tone.name}</div>
+                        <div className="text-[8px] font-medium text-slate-400">{tone.label}</div>
+                     </div>
+                  </button>
+               );
+            });
       }
    };
 
@@ -339,12 +442,40 @@ const NeuralIdentityForge = ({
                            </div>
                         </div>
                         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+                           {activeTab === 'Voice' && (
+                              <button
+                                 onClick={startRecording}
+                                 disabled={isRecording || isCloning}
+                                 className={cn(
+                                    "flex flex-col items-center justify-center gap-2 p-2 px-6 rounded-2xl border border-dashed transition-all shrink-0",
+                                    isRecording ? "border-red-500 bg-red-50 text-red-500" : "border-slate-300 bg-slate-50 text-slate-400 hover:border-indigo-400 hover:bg-indigo-50"
+                                 )}
+                              >
+                                 {isCloning ? <Loader2 className="size-5 animate-spin" /> : isRecording ? <Mic2 className="size-5 animate-pulse" /> : <Plus className="size-5" />}
+                                 <div className="text-[9px] font-black uppercase tracking-tighter">
+                                    {isCloning ? 'Cloning...' : isRecording ? 'Recording...' : 'Clone Me'}
+                                 </div>
+                              </button>
+                           )}
                            {renderTabContent()}
                         </div>
                      </div>
 
                      <div className="bg-white border border-slate-100 rounded-[2.5rem] p-8 space-y-6 shadow-sm">
-                        <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Acoustic Tuning</h4>
+                        <div className="flex items-center justify-between">
+                           <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                              <CloudLightning className="size-3 text-indigo-500" /> Acoustic Tuning
+                           </h4>
+                           {metadata.stress_corpus.length > 0 && (
+                              <button 
+                                 onClick={() => setSelectedStressIndex(i => i + 1)}
+                                 className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-[9px] font-bold text-indigo-600 hover:bg-indigo-500 hover:text-white transition-all shadow-sm"
+                              >
+                                 <RefreshCw className="size-2.5" /> 
+                                 Test: {metadata.stress_corpus[selectedStressIndex % metadata.stress_corpus.length]?.category}
+                              </button>
+                           )}
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                            <div className="space-y-6">
                               <PremiumSlider label="Urgency" value={formData.urgency || 45} onChange={v => patch({ urgency: v })} />
@@ -383,7 +514,7 @@ const NeuralIdentityForge = ({
                         )}
                         <div className="aspect-4/5 relative">
                            <img
-                              src={avatars.find(a => a.name === formData.selectedVoice)?.image || avatars[0].image}
+                              src={getVoiceAvatar(availableVoices.find(v => v.id === formData.selectedVoice)?.name)}
                               alt="Current Persona"
                               className="absolute inset-0 w-full h-full object-cover"
                            />
@@ -396,7 +527,9 @@ const NeuralIdentityForge = ({
                                        {isPlaying ? 'Audio Link Active' : 'System Standby'}
                                     </span>
                                  </div>
-                                 <h4 className="text-3xl font-bold text-white tracking-tighter">{formData.selectedVoice || 'Rachel'}</h4>
+                                 <h4 className="text-3xl font-bold text-white tracking-tighter">
+                                    {availableVoices.find(v => v.id === formData.selectedVoice)?.name || 'Select Identity'}
+                                 </h4>
                               </div>
 
                               <div className="flex gap-4">
@@ -484,6 +617,8 @@ interface PersonaCardProps {
    onToggleDeploy: (p: AiPersona) => void | Promise<void>;
    isDeleting: boolean;
    isToggling: boolean;
+   onQuickPreview: (p: AiPersona) => void;
+   activePreviewId: string | null;
 }
 
 const PersonaCard: React.FC<PersonaCardProps> = ({
@@ -494,6 +629,8 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
    onToggleDeploy,
    isDeleting,
    isToggling,
+   onQuickPreview,
+   activePreviewId,
 }) => (
    <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -531,6 +668,16 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
          </div>
 
          <div className="flex gap-1.5">
+            <button
+               onClick={() => onQuickPreview(persona)}
+               className={cn(
+                  "p-2.5 rounded-lg transition-all border border-outline-variant/10 shadow-sm",
+                  activePreviewId === persona.id ? "bg-primary text-white" : "bg-surface-low hover:bg-surface-high text-outline hover:text-primary"
+               )}
+               title="Quick Preview"
+            >
+               {activePreviewId === persona.id ? <Loader2 className="size-3.5 animate-spin" /> : <Volume2 className="size-3.5" />}
+            </button>
             <button
                onClick={() => onEdit(persona)}
                className="p-2.5 rounded-lg bg-surface-low hover:bg-surface-high text-outline hover:text-primary transition-all border border-outline-variant/10 shadow-sm"
@@ -692,6 +839,44 @@ export default function StudioPersonas() {
       setIsForgeOpen(true);
    };
 
+
+   // --- Registry Grid Logic ---
+   const [activePreviewId, setActivePreviewId] = React.useState<string | null>(null);
+
+   const handleQuickPreview = async (persona: AiPersona) => {
+      if (activePreviewId) {
+         setActivePreviewId(null);
+         return;
+      }
+
+      setActivePreviewId(persona.id);
+      try {
+         const response = await api.testTts({
+            tts_provider: 'elevenlabs', 
+            voice_id: persona.selectedVoice || 'Sarah',
+            text: `Hello, I am ${persona.name}. My current role is ${persona.useCase}.`
+         });
+
+         const blob = await response.blob();
+         const url = URL.createObjectURL(blob);
+         const audio = new Audio(url);
+         
+         audio.onended = () => {
+            setActivePreviewId(null);
+            URL.revokeObjectURL(url);
+         };
+
+         audio.onerror = () => {
+            setActivePreviewId(null);
+            URL.revokeObjectURL(url);
+         };
+
+         await audio.play();
+      } catch (e) {
+         console.error('Quick preview failed:', e);
+         setActivePreviewId(null);
+      }
+   };
 
    const filtered = personas.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -865,6 +1050,8 @@ export default function StudioPersonas() {
                      onToggleDeploy={handleToggleDeploy}
                      isDeleting={deletingId === persona.id}
                      isToggling={togglingId === persona.id}
+                     onQuickPreview={handleQuickPreview}
+                     activePreviewId={activePreviewId}
                   />
                ))}
             </div>

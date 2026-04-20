@@ -1,0 +1,14 @@
+{
+  "text": "Namaste! Main Creditas se bol raha hoon. Kya aap mujhe sun sakte hain?",
+  "timestamp": "Mon Apr 20 12:39:34 2026",
+  "results": [
+    {
+      "name": "Sarah Hindi",
+      "error": "create_voice_tts() got an unexpected keyword argument 'provider_type'"
+    },
+    {
+      "name": "Deepgram Hinglish",
+      "error": "create_voice_tts() got an unexpected keyword argument 'provider_type'"
+    }
+  ]
+}
