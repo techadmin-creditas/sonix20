@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Header } from '../components/Header';
 import {
   Activity,
@@ -61,6 +62,7 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 export default function SessionControl() {
+  const location = useLocation();
   const [availableBots, setAvailableBots] = useState<Bot[]>([]);
   const [selectedBot, setSelectedBot] = useState<Bot | null>(null);
   const [availablePersonas, setAvailablePersonas] = useState<AiPersona[]>([]);
@@ -159,7 +161,15 @@ export default function SessionControl() {
   useEffect(() => {
     api.getBots().then(bots => {
       setAvailableBots(bots);
-      if (bots.length > 0) setSelectedBot(bots[0]);
+      const state = location.state as { initialBotName?: string } | null;
+      if (bots.length > 0) {
+        if (state?.initialBotName) {
+          const preSelected = bots.find(b => b.name === state.initialBotName);
+          setSelectedBot(preSelected || bots[0]);
+        } else {
+          setSelectedBot(bots[0]);
+        }
+      }
     });
 
     api.listAiPersonas().then(personas => {
@@ -228,7 +238,7 @@ export default function SessionControl() {
   // Audio Processing Refs
   const audioContextRef = React.useRef<AudioContext | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
-  const processorRef = React.useRef<ScriptProcessorNode | null>(null);
+  const processorRef = React.useRef<any>(null);
   const analyzerRef = React.useRef<AnalyserNode | null>(null);
   const nextScheduledTimeRef = React.useRef<number>(0);
   /** Coalesce small PCM frames and add lookahead before first play to reduce underruns/gaps. */
@@ -237,7 +247,7 @@ export default function SessionControl() {
   /** Track scheduled sources to allow immediate cancellation on interrupt. */
   const scheduledSourcesRef = React.useRef<AudioBufferSourceNode[]>([]);
   /** Flush tail PCM after a short idle gap (binary stopped) so samples are not held until the next segment. */
-  const botPcmIdleFlushRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const botPcmIdleFlushRef = React.useRef<any>(null);
   const BOT_LOOKAHEAD_BYTES_MIN = 3200; // ~100ms
   const BOT_LOOKAHEAD_BYTES_MAX = 9600; // ~300ms
   const dynamicLookaheadRef = React.useRef(4800); // Start at 150ms

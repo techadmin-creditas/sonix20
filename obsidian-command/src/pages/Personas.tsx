@@ -31,10 +31,14 @@ import {
 import { PermissionGuard } from '../components/PermissionGuard';
 import { useAuth } from '../contexts/AuthContext';
 
-export default function Personas() {
+export default function Personas({ debug }: { debug?: boolean }) {
   const [personas, setPersonas] = React.useState<Bot[]>([]);
+  const [users, setUsers] = React.useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = React.useState<any | null>(null);
+  const [roles, setRoles] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const [botStats, setBotStats] = React.useState<Record<string, { sessions: number; completion: number; dropoff: number; avgDuration: number }>>({});
-  const [botStatsLoading, setBotStatsLoading] = React.useState(true);
+  const [botStatsLoading, setBotStatsLoading] = React.useState(!debug);
   const [error, setError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
@@ -58,15 +62,37 @@ export default function Personas() {
   };
 
   React.useEffect(() => {
-    async function loadBots() {
+    async function loadInitial() {
+      setLoading(true);
       try {
-        const [data, sessions] = await Promise.all([
-          api.getBots(),
-          // Higher limit so per-bot stats are meaningful on the listing page.
-          api.getSessions(1000),
-        ]);
-        setPersonas(data);
+        // ALWAYS fetch bots - this is common to all users
+        const bots = await api.getBots();
+        setPersonas(bots);
 
+        // ONLY fetch users/roles if in debug mode (Admin assignment matrix)
+        if (debug) {
+          try {
+            const [userData, rolesData] = await Promise.all([
+              api.listUsers(),
+              api.listRoles()
+            ]);
+            setUsers(userData);
+            setRoles(rolesData.roles);
+          } catch (adminErr) {
+            console.error('Administrative link failed (Admin role likely required):', adminErr);
+            // Don't crash the whole page, just log it.
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load personas:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const sessions = await api.getSessions(1000);
         const stats = sessions.reduce<Record<string, { sessions: number; completed: number; totalDuration: number }>>((acc, s) => {
           const botId = s.bot_id;
           if (!botId) return acc;
@@ -90,23 +116,65 @@ export default function Personas() {
         }
         setBotStats(normalized);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        console.error('Failed to load stats:', err);
       } finally {
         setBotStatsLoading(false);
       }
     }
-    loadBots();
-  }, []);
+
+    loadInitial();
+    if (!debug) loadStats();
+  }, [debug]);
+
+  const handleToggleAssignment = async (bot: Bot, isAssigned: boolean) => {
+    if (!selectedUser) return;
+    try {
+      if (isAssigned) {
+        // Fetch full bot details first because system_prompt is excluded from list
+        let fullBot;
+        try {
+          fullBot = await api.getBot(bot.id);
+        } catch (e) {
+          console.error("Failed to fetch full bot details", e);
+          fullBot = bot; // Fallback
+        }
+
+        // Create a unique clone for this user
+        const clone = await api.createBot({
+          ...fullBot,
+          id: undefined,
+          owner_user_id: selectedUser.id,
+          // name: `${bot.name} (Clone)` // Optional: help identify clones
+        });
+
+        const bots = await api.getBots();
+        setPersonas(bots);
+      } else {
+        // Only allow unassigning (deleting) if this IS the user's instance
+        if (bot.owner_user_id === selectedUser.id) {
+          await api.deleteBot(bot.id);
+          setPersonas(prev => prev.filter(p => p.id !== bot.id));
+        }
+      }
+    } catch (err) {
+      alert('Neural link replication failed');
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col ">
       <Header
-        title="Bot Factory"
-        subtitle="Bot Personas"
+        title={debug ? "Neural Permission Matrix" : "Bot Factory"}
+        subtitle={debug ? "Debug Configuration & User Assignments" : "Bot Personas"}
         actions={
-
           <div className="w-full flex justify-between items-center">
-            {personas?.length > 0 && (
+            {debug ? (
+              <div className="flex items-center gap-4">
+                 <Link to="/personas" className="px-4 py-2 rounded-xl bg-surface-low text-outline text-xs font-bold hover:bg-surface-high transition-all">
+                   Back to Factory
+                 </Link>
+              </div>
+            ) : personas?.length > 0 && (
               <>
                 <div className="relative w-full md:w-96">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline" />
@@ -188,7 +256,7 @@ export default function Personas() {
 
 
 
-        {!botStatsLoading && !error && (
+        {!botStatsLoading && !error && !debug && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredPersonas.map((persona, i) => (
               <div
@@ -220,23 +288,6 @@ export default function Personas() {
                       </div>
                     </div>
                   </div>
-
-                  {/* <div className="flex gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                    <Link
-                      to={`/personas/create?clone=${persona.id}`}
-                      className="p-2 rounded-lg bg-surface-low hover:bg-primary/10 text-outline hover:text-primary transition-all border border-outline-variant/10"
-                      title="Duplicate Bot"
-                    >
-                      <Copy className="size-3.5" />
-                    </Link>
-                    <button
-                      onClick={() => setDeletingId(persona.id)}
-                      className="p-2 rounded-lg bg-surface-low hover:bg-rose-500/10 text-outline hover:text-rose-500 transition-all border border-outline-variant/10"
-                      title="Purge Bot"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div> */}
                 </div>
 
                 {/* Body Content */}
@@ -245,9 +296,6 @@ export default function Personas() {
                     <p className="text-primary text-[10px] font-black uppercase tracking-[0.3em]">
                       {persona.role || 'Neural Assistant'}
                     </p>
-                    {/* <p className="text-[11px] text-outline mt-2 leading-relaxed line-clamp-2 font-medium">
-                      {persona.description || 'No system descriptor provided for this neural identity.'}
-                    </p> */}
                   </div>
 
                   <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors italic">
@@ -350,6 +398,128 @@ export default function Personas() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {debug && (
+          <div className="flex flex-col lg:flex-row gap-10">
+            {/* User Sidebar */}
+            <div className="w-full lg:w-96 flex flex-col gap-6">
+              <h3 className="text-sm font-black uppercase tracking-widest text-primary px-1 flex items-center gap-2">
+                <UserRound className="size-4" /> Select Identity
+              </h3>
+              <div className="flex flex-col gap-3">
+                {users.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => setSelectedUser(u)}
+                    className={cn(
+                      "p-4 rounded-3xl border text-left transition-all flex flex-col gap-1 group relative overflow-hidden",
+                      selectedUser?.id === u.id 
+                        ? "bg-primary border-primary shadow-lg text-on-primary-fixed" 
+                        : "bg-surface-low border-outline-variant/10 hover:bg-surface-high text-on-surface"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm tracking-tight">{u.username}</span>
+                      <span className={cn(
+                        "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                        selectedUser?.id === u.id ? "bg-white/10 border-white/20" : "bg-primary/5 border-primary/20 text-primary"
+                      )}>
+                        {u.role}
+                      </span>
+                    </div>
+                    <span className={cn("text-[9px] font-medium opacity-60", selectedUser?.id === u.id ? "text-white" : "text-outline")}>
+                      {personas.filter(p => p.owner_user_id === u.id).length} Neural Assets Assigned
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Assignment Panel */}
+            <div className="flex-1 space-y-8">
+              {selectedUser ? (
+                <>
+                  <div className="glass-panel p-8 rounded-4xl border border-primary/20 bg-primary/5 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xl font-headline font-black tracking-tight">{selectedUser.username} Permissions</h4>
+                      <p className="text-xs text-outline font-medium mt-1">Managing neural link access protocols for this identity.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="px-4 py-2 rounded-xl bg-surface-high border border-outline-variant/10 text-[9px] font-black uppercase tracking-widest text-primary">ID: {selectedUser.id.substring(0,8)}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-10">
+                    {/* Unique Fleet Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between px-1">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-emerald-500">Unique Identity Fleet</h3>
+                        <span className="text-[10px] font-bold text-outline uppercase">{personas.filter(p => p.owner_user_id === selectedUser.id).length} Active Links</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {personas.filter(p => p.owner_user_id === selectedUser.id).map(p => (
+                          <div key={p.id} className="p-5 rounded-3xl border bg-emerald-500/5 border-emerald-500/20 shadow-inner flex items-center justify-between transition-all">
+                            <div className="flex items-center gap-4">
+                              <PersonaTileAvatar bot={p} />
+                              <div>
+                                <h5 className="font-bold text-sm text-emerald-500">{p.name}</h5>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-outline">{p.role}</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => handleToggleAssignment(p, false)}
+                              className="px-4 py-2 rounded-xl bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
+                            >
+                              Revoke
+                            </button>
+                          </div>
+                        ))}
+                        {personas.filter(p => p.owner_user_id === selectedUser.id).length === 0 && (
+                          <div className="md:col-span-2 p-10 rounded-4xl border border-dashed border-outline-variant/20 flex flex-col items-center justify-center text-center opacity-40">
+                             <p className="text-xs font-bold uppercase tracking-widest">No active neural links</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Templates Section */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-black uppercase tracking-widest text-primary px-1">Neural Blueprints (Source)</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {personas.filter(p => !p.owner_user_id).map(p => (
+                          <div key={p.id} className="p-5 rounded-3xl border bg-surface-low border-outline-variant/10 hover:bg-surface-high flex items-center justify-between transition-all">
+                            <div className="flex items-center gap-4">
+                              <PersonaTileAvatar bot={p} />
+                              <div>
+                                <h5 className="font-bold text-sm text-on-surface">{p.name}</h5>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-outline">Base Blueprint</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => handleToggleAssignment(p, true)}
+                              className="px-4 py-2 rounded-xl bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-on-primary transition-all flex items-center gap-2"
+                            >
+                              <PlusCircle className="size-3" />
+                              Clone
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center opacity-30">
+                  <div className="size-24 rounded-full bg-white/5 flex items-center justify-center mb-8 border border-white/10 shadow-inner">
+                    <UserRound className="size-10" />
+                  </div>
+                  <h4 className="text-sm font-black uppercase tracking-[0.3em] mb-2 font-headline">Select Identity Protocol</h4>
+                  <p className="text-[10px] font-bold text-outline uppercase tracking-widest max-w-[200px] mx-auto">Choose a user identity to configure and assign neural assets</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

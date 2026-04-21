@@ -38,7 +38,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { api, Bot, GuardrailMetadata, SandboxStageResult } from '../lib/api';
+import { api, Bot, GuardrailMetadata, SandboxStageResult, AuthUser } from '../lib/api';
 
 const AGENT_TASK_OUTBOUND_EXAMPLE = `{
   "spec_version": 1,
@@ -218,6 +218,8 @@ export default function BotConfig() {
   const [models, setModels] = React.useState<{ id: string, name: string, provider: string }[]>([]);
   const [voices, setVoices] = React.useState<{ id: string, name: string, provider: string }[]>([]);
   const [workflows, setWorkflows] = React.useState<{ id: string, name: string }[]>([]);
+  const [users, setUsers] = React.useState<AuthUser[]>([]);
+  const [roles, setRoles] = React.useState<{ id: string; permissions: string[] }[]>([]);
 
   const [formData, setFormData] = React.useState<Partial<Bot>>({
     name: '',
@@ -247,6 +249,9 @@ export default function BotConfig() {
     default_language: 'en',
     variable_mappings: {},
     metadata_defaults: {},
+    show_on_dashboard: true,
+    required_role: '',
+    owner_user_id: '',
   });
 
   const [policyDraft, setPolicyDraft] = React.useState({
@@ -421,14 +426,31 @@ export default function BotConfig() {
     async function loadData() {
       try {
         setLoadError(null);
+        // CORE: Always fetch these basics
         const [modelsData, voicesData, workflowData] = await Promise.all([
           api.getModels(),
           api.getVoices(),
           api.getWorkflows()
         ]);
+        
         setModels(modelsData);
         setVoices(voicesData);
         setWorkflows(workflowData);
+
+        // ADMIN: Only fetch users/roles in debug/assignment mode
+        if (isDebug) {
+          try {
+            const [usersData, rolesData] = await Promise.all([
+              api.listUsers(),
+              api.listRoles()
+            ]);
+            setUsers(usersData);
+            setRoles(rolesData.roles);
+          } catch (adminErr) {
+            console.error('Failed to load administrative identity data:', adminErr);
+            // Non-blocking failure
+          }
+        }
 
         const effectiveId = id || cloneId;
         if (effectiveId) {
@@ -1316,6 +1338,47 @@ export default function BotConfig() {
                     type="checkbox"
                   />
                 </label>
+
+                <label className="flex items-center justify-between p-4 rounded-2xl bg-primary/5 border border-primary/20 cursor-pointer hover:bg-primary/10 transition-colors h-14 group">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-primary group-hover:underline">Show on Dashboard</span>
+                    <span className="text-[10px] text-on-surface-variant font-medium">Visible in top performers / explorer</span>
+                  </div>
+                  <input
+                    checked={formData.show_on_dashboard !== false}
+                    onChange={e => setFormData(prev => ({ ...prev, show_on_dashboard: e.target.checked }))}
+                    className="rounded border-primary/30 bg-white text-primary focus:ring-primary/20 size-6 cursor-pointer"
+                    type="checkbox"
+                  />
+                </label>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Assign to Identity (Owner)</label>
+                  <select
+                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                    value={formData.owner_user_id || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, owner_user_id: e.target.value }))}
+                  >
+                    <option value="">Public / System Managed</option>
+                    {users.map(u => (
+                      <option key={u.id} value={u.id}>{u.username} ({u.role})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-1">Restricted to Protocol (Role)</label>
+                  <select
+                    className="w-full bg-surface-container-highest border border-outline-variant/10 rounded-2xl p-4 font-medium text-primary h-14 cursor-pointer focus:ring-1 focus:ring-primary/30 transition-all hover:bg-surface-container-high"
+                    value={formData.required_role || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, required_role: e.target.value }))}
+                  >
+                    <option value="">Universal Access — all authenticated users</option>
+                    {roles.map(r => (
+                      <option key={r.id} value={r.id}>{r.id.charAt(0).toUpperCase() + r.id.slice(1).replace(/_/g, ' ')} Tier</option>
+                    ))}
+                  </select>
+                </div>
               </div>}
             </div>
           </section>

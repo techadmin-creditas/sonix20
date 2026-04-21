@@ -7,10 +7,11 @@ import {
 } from 'recharts';
 import { Header } from '../components/Header';
 import { SESSIONS } from '../constants';
-import { Users, Bot, Calendar, Timer, Activity, ArrowUpRight, PlusCircle, Sparkles, BarChart3, TrendingUp, Smile, Clock, Loader2 } from 'lucide-react';
+import { Users, Bot, Calendar, Timer, Activity, ArrowUpRight, PlusCircle, Sparkles, BarChart3, TrendingUp, Smile, Clock, Loader2, Globe, Volume2, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NeuralBackground } from '../components/NeuralBackground';
-import { api, DashboardStats, SessionRecord } from '../lib/api';
+import { api, DashboardStats, SessionRecord, Bot as BotType } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const CHART_DATA = [
   { name: 'Oct 01', value: 400 },
@@ -60,19 +61,23 @@ const PEAK_HOURS_DATA = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [loading, setLoading] = React.useState(true);
   const [stats, setStats] = React.useState<DashboardStats | null>(null);
   const [recentSessions, setRecentSessions] = React.useState<SessionRecord[]>([]);
+  const [allBots, setAllBots] = React.useState<BotType[]>([]);
 
   React.useEffect(() => {
     async function loadData() {
       try {
-        const [s, rs] = await Promise.all([
+        const [s, rs, bots] = await Promise.all([
           api.getDashboardStats(),
-          api.getSessions(5)
+          api.getSessions(5),
+          api.getBots()
         ]);
         setStats(s);
         setRecentSessions(rs);
+        setAllBots(bots);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       } finally {
@@ -92,13 +97,27 @@ export default function Dashboard() {
       </div>
     );
   }
-
   const totalSessionsValue = stats?.metrics.totalSessions || 0;
-  const pieData = stats?.botUsage.map((b, i) => ({
-    ...b,
-    percentage: totalSessionsValue > 0 ? Math.round((b.value / totalSessionsValue) * 100) : 0,
-    color: ['#ffb77b', '#ffb68e', '#8f4e00', '#fb8c00', '#06b6d4'][i % 5]
-  })) || [];
+  const pieData = stats?.botUsage
+    .filter(b => {
+      const meta = allBots.find(bot => bot.name === b.name);
+      if (!meta) return true;
+      // Show only bots assigned to this user
+      return (meta as any).owner_user_id === currentUser?.id;
+    })
+    .map((b, i) => {
+      const meta = allBots.find(bot => bot.name === b.name);
+      return {
+        ...b,
+        description: meta?.description || 'Autonomous Intelligence Unit',
+        language: meta?.default_language || 'en',
+        voice: meta?.voice_id || 'Default Neural',
+        role: meta?.role || 'System Agent',
+        tools: (meta as any)?.tools_enabled || [],
+        percentage: totalSessionsValue > 0 ? Math.round((b.value / totalSessionsValue) * 100) : 0,
+        color: ['#ffb77b', '#ffb68e', '#8f4e00', '#fb8c00', '#06b6d4'][i % 5]
+      };
+    }) || [];
 
   const sentimentData = stats ? [
     { name: 'Positive', value: stats.sentiment.positive, color: '#10b981' },
@@ -116,6 +135,97 @@ export default function Dashboard() {
       />
 
       <div className="relative z-10 p-10 flex flex-col gap-10">
+        {/* TOP PERFORMERS SECTION */}
+        {pieData.length > 0 && (
+          <motion.div
+             variants={{
+              hidden: { opacity: 0, scale: 0.98 },
+              visible: { opacity: 1, scale: 1 }
+             }}
+             className="bg-surface-lowest rounded-4xl premium-forge-border p-8 relative overflow-hidden group shadow-sm hover:shadow-2xl dark:hover:shadow-primary/5 transition-all duration-700"
+          >
+            <div className="flex items-center justify-between mb-8 relative z-10">
+               <div>
+                  <h3 className="text-2xl font-headline font-extrabold text-on-surface tracking-tight">Your Assigned Scenarios</h3>
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em]">Featured Use Cases</p>
+               </div>
+               <button 
+                  onClick={() => navigate('/personas')} 
+                  className="text-[10px] font-black text-outline uppercase tracking-[widest] hover:text-primary transition-colors flex items-center gap-2"
+               >
+                  Global Fleet
+                  <ArrowUpRight className="size-3" />
+               </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 relative z-10">
+              {pieData?.slice(0, 5).map((bot, idx) => (
+                <motion.div
+                  key={bot.name}
+                  whileHover={{ y: -8, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => navigate('/sessions/live', { state: { initialBotName: bot.name } })}
+                  className="relative group/bot cursor-pointer"
+                >
+                  <div className="flex flex-col items-center p-6 rounded-4xl bg-surface-low/30 border border-outline-variant/10 group-hover/bot:border-primary/30 group-hover/bot:bg-primary/5 transition-all text-center h-full">
+                     <div className="relative mb-5">
+                        <div className="size-16 rounded-[1.25rem] flex items-center justify-center shadow-2xl transition-all duration-500 group-hover/bot:scale-110 group-hover/bot:rotate-6 group-hover/bot:shadow-primary/20" style={{ backgroundColor: `${bot.color}15`, border: `1px solid ${bot.color}30` }}>
+                           <Bot className="size-8" style={{ color: bot.color }} />
+                        </div>
+                        <div className="absolute -top-2 -right-2 size-7 rounded-full bg-primary flex items-center justify-center text-[10px] font-black text-on-primary-fixed border-4 border-surface-lowest shadow-lg">
+                           #{idx + 1}
+                        </div>
+                     </div>
+                     
+                     <h4 className="text-sm font-black text-on-surface uppercase tracking-tight truncate w-full mb-1">{bot.name}</h4>
+                     <p className="text-[9px] font-bold text-outline uppercase tracking-widest mb-4 line-clamp-1">{bot.description}</p>
+                     
+                     <div className="flex flex-wrap justify-center gap-1.5 mb-5">
+                        <div className="px-2 py-0.5 rounded-full bg-surface-low border border-outline-variant/10 flex items-center gap-1">
+                           <Globe className="size-2.5 text-primary" />
+                           <span className="text-[8px] font-black uppercase text-on-surface/70">{bot.language}</span>
+                        </div>
+                        <div className="px-2 py-0.5 rounded-full bg-surface-low border border-outline-variant/10 flex items-center gap-1">
+                           <Volume2 className="size-2.5 text-primary" />
+                           <span className="text-[8px] font-black uppercase text-on-surface/70 truncate max-w-[40px]">Voice</span>
+                        </div>
+                     </div>
+
+                     <div className="mt-auto w-full">
+                        <div className="flex items-center justify-between mb-2 px-1">
+                           <span className="text-[9px] font-black text-outline uppercase tracking-tighter">Performance</span>
+                           <span className="text-[10px] font-mono font-bold text-primary">{bot.percentage}%</span>
+                        </div>
+                        <div className="h-1.5 bg-outline-variant/10 rounded-full overflow-hidden">
+                           <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${bot.percentage}%` }}
+                              transition={{ duration: 1.5, delay: idx * 0.1, ease: "circOut" }}
+                              className="h-full bg-primary shadow-[0_0_12px_var(--primary)]" 
+                           />
+                        </div>
+                     </div>
+
+                     {/* Capabilities Hover Hint */}
+                     <div className="absolute inset-x-4 bottom-4 translate-y-4 opacity-0 group-hover/bot:translate-y-0 group-hover/bot:opacity-100 transition-all duration-300 pointer-events-none">
+                        <div className="flex justify-center gap-1">
+                          {bot.tools.slice(0, 3).map((t: string) => (
+                             <div key={t} className="size-5 rounded-md bg-primary/20 flex items-center justify-center">
+                                <Zap className="size-3 text-primary" />
+                             </div>
+                          ))}
+                        </div>
+                     </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Decorative Elements */}
+            <div className="absolute -bottom-20 -right-20 size-80 bg-primary/5 blur-[120px] rounded-full group-hover:bg-primary/10 transition-colors" />
+          </motion.div>
+        )}
+
         {/* KPI Row */}
         <motion.div
           initial="hidden"
@@ -163,36 +273,7 @@ export default function Dashboard() {
           />
         </motion.div>
 
-        {/* Quick Actions / Featured Section */}
-        <motion.div
-          variants={{
-            hidden: { opacity: 0, scale: 0.95 },
-            visible: { opacity: 1, scale: 1 }
-          }}
-          className="bg-surface-lowest rounded-4xl premium-forge-border p-8 flex flex-col md:flex-row items-center justify-between gap-8 relative overflow-hidden group cursor-pointer shadow-sm hover:shadow-2xl dark:hover:shadow-primary/5 transition-all duration-700"
-          onClick={() => navigate('/personas/create')}
-        >
-          <div className="absolute inset-0  opacity-20 group-hover:opacity-30 transition-opacity duration-1000" />
-          <div className="relative z-10 flex flex-col gap-3">
-            <div className="flex items-center gap-4">
-              <div className="size-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shadow-inner group-hover:bg-primary group-hover:text-on-primary-fixed transition-all duration-500">
-                <Sparkles className="size-6" />
-              </div>
-              <div>
-                <h3 className="text-2xl font-headline font-extrabold text-on-surface tracking-tight">Ready to expand?</h3>
-                <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em]">Scalable Autonomous Agents</p>
-              </div>
-            </div>
-            <p className="text-outline text-sm max-w-lg leading-relaxed mt-2 font-medium">Deploy a new specialized AI agent to handle customer inquiries, bookings, or technical support in minutes.</p>
-          </div>
-          <div className="relative z-10 flex items-center gap-3 px-10 py-5 rounded-2xl bg-primary text-on-primary-fixed font-bold tracking-tight shadow-xl studio-glow-amber active:scale-95 transition-all hover:scale-105 hover:brightness-110">
-            <PlusCircle className="size-6" />
-            <span className="text-lg">Create New Bot</span>
-          </div>
 
-          {/* Decorative Elements */}
-          <div className="absolute -bottom-10 -right-10 size-48 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-colors" />
-        </motion.div>
 
         {/* Charts Row 1 */}
         <motion.div

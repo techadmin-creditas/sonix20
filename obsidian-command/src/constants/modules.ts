@@ -57,6 +57,13 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     description: 'Define multi-step interaction logic.'
   },
   { 
+    id: 'persona', 
+    label: 'Persona', 
+    icon: User, 
+    path: '/persona',
+    description: 'Customize agent personality and behavior.'
+  },
+  { 
     id: 'knowledge', 
     label: 'Knowledge Base', 
     icon: Database, 

@@ -34,6 +34,7 @@ import { ThemeSynchronizer } from './components/ThemeSynchronizer';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import HomeNewV1 from './pages/HomeNewV1';
+import HomeOld from './pages/HomeOld';
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
@@ -47,14 +48,21 @@ function AppContent() {
       <Router>
         <Routes>
           <Route path="/" element={<HomeNewV1 />} />
-          <Route path="/home" element={<HomeNew />} />
+          <Route path="/home" element={<HomeNewV1 />} />
+          <Route path="/old" element={<HomeOld />} />
+          <Route path="/v2" element={<HomeNew />} />
           <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
           <Route
             path="/login"
             element={
               <Login
-                onLoggedIn={(user) => {
-                  setCurrentUser(user);
+                onLoggedIn={async () => {
+                  try {
+                    const fullUser = await api.me();
+                    setCurrentUser(fullUser);
+                  } catch (err) {
+                    console.error('Failed to fetch full profile after login:', err);
+                  }
                 }}
               />
             }
@@ -138,6 +146,12 @@ function AppContent() {
               </ProtectedRoute>
             } />
             
+            <Route path="/personas/debug" element={
+              <ProtectedRoute moduleId="personas" adminOnly>
+                <Personas debug />
+              </ProtectedRoute>
+            } />
+            
             <Route path="/knowledge" element={
               <ProtectedRoute moduleId="knowledge">
                 <KnowledgeBase />
@@ -185,6 +199,14 @@ function AppContent() {
               <Route path="agents" element={<StudioPersonas />} />
               <Route path="library" element={<StudioLibrary />} />
               <Route path="test" element={<StudioTest />} />
+            </Route>
+
+            <Route path="/persona" element={
+              <ProtectedRoute moduleId="persona">
+                <StudioLayout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<StudioPersonas />} />
             </Route>
 
             <Route path="/settings" element={

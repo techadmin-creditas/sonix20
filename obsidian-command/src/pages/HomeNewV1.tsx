@@ -87,48 +87,48 @@ export default function HomeNewV1() {
     setIsDemoMode(true);
   };
 
+  const gotoSection = (index: number) => {
+    if (animatingRef.current || index < 0 || index >= totalSections) return;
+
+    const prevIndex = currentIndexRef.current;
+    animatingRef.current = true;
+    setAnimating(true);
+    setCurrentIndex(index);
+    currentIndexRef.current = index;
+
+    const incoming = sectionsRef.current[index];
+    const outgoing = sectionsRef.current[prevIndex];
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        animatingRef.current = false;
+        setAnimating(false);
+      }
+    });
+
+    gsap.set(incoming, { zIndex: 20, visibility: 'visible', opacity: 0, pointerEvents: 'auto' });
+    
+    if (outgoing && prevIndex !== index) {
+      gsap.set(outgoing, { zIndex: 10, pointerEvents: 'none' });
+      tl.to(outgoing, {
+        y: index > prevIndex ? -150 : 150,
+        scale: 0.85,
+        opacity: 0,
+        duration: 0.5,
+        ease: "power4.inOut"
+      }, 0);
+      tl.set(outgoing, { visibility: 'hidden' });
+    }
+
+    tl.fromTo(incoming, 
+      { y: index > prevIndex ? 150 : -150, scale: 1.15, opacity: 0 },
+      { y: 0, scale: 1, opacity: 1, duration: 0.5, ease: "power4.inOut" }, 0);
+  };
+
   useEffect(() => {
     if (isDemoMode) return; 
 
     const ctx = gsap.context((self) => {
-      const gotoSection = (index: number) => {
-        if (animatingRef.current || index < 0 || index >= totalSections) return;
-
-        const prevIndex = currentIndexRef.current;
-        animatingRef.current = true;
-        setAnimating(true);
-        setCurrentIndex(index);
-        currentIndexRef.current = index;
-
-        const incoming = sectionsRef.current[index];
-        const outgoing = sectionsRef.current[prevIndex];
-
-        const tl = gsap.timeline({
-          onComplete: () => {
-            animatingRef.current = false;
-            setAnimating(false);
-          }
-        });
-
-        gsap.set(incoming, { zIndex: 20, visibility: 'visible', opacity: 0, pointerEvents: 'auto' });
-        
-        if (outgoing && prevIndex !== index) {
-          gsap.set(outgoing, { zIndex: 10, pointerEvents: 'none' });
-          tl.to(outgoing, {
-            y: index > prevIndex ? -150 : 150,
-            scale: 0.85,
-            opacity: 0,
-            duration: 0.5,
-            ease: "power4.inOut"
-          }, 0);
-          tl.set(outgoing, { visibility: 'hidden' });
-        }
-
-        tl.fromTo(incoming, 
-          { y: index > prevIndex ? 150 : -150, scale: 1.15, opacity: 0 },
-          { y: 0, scale: 1, opacity: 1, duration: 0.5, ease: "power4.inOut" }, 0);
-      };
-
       sectionsRef.current.forEach((section, i) => {
         if (i !== currentIndexRef.current) {
           gsap.set(section, { opacity: 0, visibility: 'hidden', y: 100, pointerEvents: 'none' });
@@ -279,6 +279,26 @@ export default function HomeNewV1() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* FLOAT SCROLL INDICATOR */}
+      {!isDemoMode && currentIndex < totalSections - 1 && (
+        <motion.div
+           initial={{ opacity: 0, y: -20 }}
+           animate={{ opacity: 1, y: 0 }}
+           exit={{ opacity: 0, y: 20 }}
+           className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 cursor-pointer group"
+           onClick={() => gotoSection(currentIndex + 1)}
+        >
+          <span className="text-[10px] font-black uppercase tracking-[0.4em] text-on-surface-variant group-hover:text-primary transition-colors">Scroll</span>
+          <motion.div 
+            animate={{ y: [0, 8, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+            className="size-10 rounded-full border border-outline flex items-center justify-center bg-background/20 backdrop-blur-md group-hover:border-primary/50 group-hover:bg-primary/5 transition-all"
+          >
+             <ChevronDown className="size-5 text-on-surface-variant group-hover:text-primary" />
+          </motion.div>
+        </motion.div>
+      )}
 
       <style>{`
         section { 

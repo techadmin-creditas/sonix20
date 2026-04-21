@@ -157,15 +157,14 @@ export const HomeHero = forwardRef<HTMLElement, {}>(({}, ref) => {
             Agentic voice + realtime stack
           </motion.div>
 
-          <h1 className="hero-reveal font-headline text-6xl font-black leading-[1.1] tracking-tight md:text-8xl lg:text-9xl text-on-surface">
-            Voice Agents <br />
+          <h1 className="hero-reveal font-headline text-6xl font-black leading-[1.1] tracking-tight md:text-8xl lg:text-7xl text-on-surface">
+            Build voice agents that <br />
             <span className="bg-linear-to-r from-primary via-tertiary to-primary bg-clip-text text-transparent">
-              That Reason.
+              think and speak.
             </span>
           </h1>
           <p className="hero-reveal max-w-2xl text-lg leading-relaxed text-on-surface-variant md:text-xl">
-            The first sovereign voice core built for complex logic. 
-            Zero form-fills. Pure conversation.
+            Deploy low-latency voice bots with expressive TTS and reliable workflows. One platform, every provider, zero configuration.
           </p>
           <div className="hero-reveal flex flex-wrap gap-4 pt-4">
             <Link to="/login" className="inline-flex items-center gap-2 rounded-full bg-on-surface px-10 py-5 text-sm font-black uppercase tracking-widest text-background transition-all hover:bg-primary hover:text-on-primary-fixed shadow-2xl shadow-primary/20">

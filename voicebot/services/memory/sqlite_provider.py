@@ -244,6 +244,8 @@ class SQLiteProvider:
             ("variable_mappings", "TEXT DEFAULT '{}'"),
             ("metadata_defaults", "TEXT DEFAULT '{}'"),
             ("tts_model", "TEXT DEFAULT ''"),
+            ("show_on_dashboard", "INTEGER DEFAULT 1"),
+            ("required_role", "TEXT DEFAULT NULL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE bots ADD COLUMN {col_name} {col_type}")
@@ -1122,7 +1124,7 @@ class SQLiteProvider:
         """List active bots, optionally filtered by owner."""
         def _do():
             conn = self._get_conn()
-            sql = "SELECT id, name, description, persona, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1"
+            sql = "SELECT id, name, description, persona, system_prompt, greeting, role, icon, color, tools_enabled, llm_model, voice_id, temperature, max_tokens, is_active, created_at, topic_restriction, refuse_off_topic, min_stt_confidence, owner_user_id FROM bots WHERE is_active = 1"
             if owner_user_id:
                 rows = conn.execute(sql + " AND owner_user_id = ? ORDER BY created_at DESC", (owner_user_id,)).fetchall()
             else:
@@ -1151,6 +1153,7 @@ class SQLiteProvider:
                 "audio_frame_normalize", "proactive_prompts",
                 "topic_restriction", "refuse_off_topic", "min_stt_confidence",
                 "is_landing_page_default", "variable_mappings", "metadata_defaults", "tts_model",
+                "show_on_dashboard", "required_role", "owner_user_id",
             }
             updates = {k: v for k, v in fields.items() if k in allowed}
             

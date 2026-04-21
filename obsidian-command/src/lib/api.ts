@@ -118,6 +118,9 @@ export interface Bot {
   topic_restriction?: string;
   refuse_off_topic?: boolean;
   is_landing_page_default?: boolean;
+  owner_user_id?: string;
+  show_on_dashboard?: boolean;
+  required_role?: string;
 }
 
 export type DiyPersonaDraft = {
@@ -978,7 +981,6 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, role, persona, current_prompt: currentPrompt }),
     });
-    if (!res.ok) throw new Error('Failed to get prompt suggestions');
     return res.json();
   },
 };
