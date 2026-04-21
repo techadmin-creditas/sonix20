@@ -84,7 +84,7 @@ export function StudioLayout() {
             <div className="absolute bottom-0 left-0 w-[30%] h-[30%] bg-primary/1 blur-[80px] rounded-full animate-pulse-subtle" style={{ animationDelay: '1s' }} />
           </div>
 
-          <div className="relative p-6 lg:p-8 max-w-7xl mx-auto w-full flex-1 flex flex-col">
+          <div className="relative p-6 lg:p-8  w-full flex-1 flex flex-col">
             <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}

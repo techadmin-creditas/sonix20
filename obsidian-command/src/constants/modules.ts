@@ -35,13 +35,13 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     path: '/sessions',
     description: 'Live monitoring and session history.'
   },
-  {
-    id: 'studio',
-    label: 'Voice Library',
-    icon: Mic2,
-    path: '/studio',
-    description: 'Manage cloned voices and synthesis profiles.'
-  },
+  // {
+  //   id: 'studio',
+  //   label: 'Voice Library',
+  //   icon: Mic2,
+  //   path: '/studio',
+  //   description: 'Manage cloned voices and synthesis profiles.'
+  // },
   {
     id: 'personas',
     label: 'Bot Factory',
@@ -50,19 +50,19 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     description: 'Design and configure autonomous agents.'
   },
   {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: GitBranch,
-    path: '/workflows',
-    description: 'Define multi-step interaction logic.'
-  },
-  {
     id: 'persona',
     label: 'Persona',
     icon: User,
     path: '/persona',
     description: 'Customize agent personality and behavior.'
   },
+  // {
+  //   id: 'workflows',
+  //   label: 'Workflows',
+  //   icon: GitBranch,
+  //   path: '/workflows',
+  //   description: 'Define multi-step interaction logic.'
+  // },
   // { 
   //   id: 'knowledge', 
   //   label: 'Knowledge Base', 
@@ -77,13 +77,13 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
   //   path: '/analytics',
   //   description: 'Performance reports and interaction trends.'
   // },
-  {
-    id: 'profile',
-    label: 'Profile',
-    icon: User,
-    path: '/profile',
-    description: 'Personal account settings and preferences.'
-  },
+  // {
+  //   id: 'profile',
+  //   label: 'Profile',
+  //   icon: User,
+  //   path: '/profile',
+  //   description: 'Personal account settings and preferences.'
+  // },
   {
     id: 'users',
     label: 'Users',
