@@ -1,0 +1,22 @@
+{
+    "builds": [
+        {
+            "src": "voicebot/main.py",
+            "use": "@vercel/python"
+        },
+        {
+            "src": "obsidian-command/package.json",
+            "use": "@vercel/static-build"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/(.*)",
+            "dest": "voicebot/main.py"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "obsidian-command/$1"
+        }
+    ]
+}

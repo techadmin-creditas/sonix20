@@ -33,7 +33,7 @@ logger = setup_logger("memory-sqlite", level="INFO")
 settings = get_settings()
 
 # Default DB path — can be overridden by env var
-DEFAULT_DB_PATH = Path(__file__).parent.parent.parent.parent / "data" / "voicebot.db"
+DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "voicebot.db"
 
 
 class SQLiteProvider:
