@@ -1,6 +1,6 @@
 {
     "version": 2,
-    "outputDirectory": "obsidian-command/dist",
+    "outputDirectory": "deploy_dist",
     "rewrites": [
         {
             "source": "/api/(.*)",
