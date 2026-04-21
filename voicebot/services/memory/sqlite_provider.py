@@ -546,9 +546,9 @@ class SQLiteProvider:
             INSERT INTO bots (
                 id, name, description, persona, system_prompt, greeting, tools_enabled,
                 llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
-                 default_language
+                 default_language, is_landing_page_default
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
             """,
             (
                 bot_id,
@@ -570,6 +570,7 @@ class SQLiteProvider:
             ),
         )
         conn.commit()
+
         
         # Add test_meta_data for persistent simulator overrides if it doesn't exist
         try:

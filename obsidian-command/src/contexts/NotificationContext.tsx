@@ -66,6 +66,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }, []);
 
     const poll = useCallback(async () => {
+        const path = window.location.pathname;
+        if (path === '/' || path === '/home' || path === '/v2' || path === '/old') {
+            return;
+        }
+
         try {
             const [sessions, bots, workflows]: [SessionRecord[], Bot[], Workflow[]] = await Promise.all([
                 api.getSessions(100),

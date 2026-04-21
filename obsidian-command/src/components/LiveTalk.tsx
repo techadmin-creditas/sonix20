@@ -106,7 +106,7 @@ const VoiceParticles = ({ activity }: { activity: number }) => {
   );
 };
 
-export default function LiveTalk({ className }: { className?: string }) {
+export default function LiveTalk({ className, botId }: { className?: string; botId?: string }) {
   const [status, setStatus] = useState<'standby' | 'connecting' | 'active' | 'error'>('standby');
   const [micActivity, setMicActivity] = useState(0);
   const [lastUserTranscript, setLastUserTranscript] = useState('');
@@ -268,7 +268,7 @@ export default function LiveTalk({ className }: { className?: string }) {
     try {
       initAudio();
       // 1. Get session (no bot_id -> pick default)
-      const res = await api.createSession(undefined as any, 'websocket');
+      const res = await api.createSession(botId || 'bolt', 'websocket', undefined, true);
       const { session_id, websocket_url } = res;
 
       // 2. Start Microphone

@@ -137,7 +137,7 @@ const BackgroundWaves = () => (
 );
 
 
-export const HomeHero = forwardRef<HTMLElement, {}>(({}, ref) => {
+export const HomeHero = forwardRef<HTMLElement, { landingBotId?: string | null }>(({ landingBotId }, ref) => {
   const reduce = useReducedMotion();
 
   return (
@@ -184,7 +184,7 @@ export const HomeHero = forwardRef<HTMLElement, {}>(({}, ref) => {
             <div className="glass-panel relative overflow-hidden rounded-[3rem] p-4 sm:p-6 shadow-2xl shadow-primary/10 border-primary/20 bg-surface-low/40 backdrop-blur-md">
               <BackgroundWaves />
               <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-              <LiveTalk />
+              <LiveTalk botId={landingBotId || undefined} />
             </div>
           </PerspectiveCard>
           

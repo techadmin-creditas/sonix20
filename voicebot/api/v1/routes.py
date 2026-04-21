@@ -389,7 +389,10 @@ async def create_session(
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         if not _can_access_owner(bot.get("owner_user_id"), actor_user_id, actor_role):
-            raise HTTPException(status_code=404, detail="Bot not found")
+            # Allow landing page guests to access the default bot
+            if not (owner_user_id == "guest" and bot.get("is_landing_page_default")):
+                raise HTTPException(status_code=404, detail="Bot not found")
+
         bot_lang = str((bot or {}).get("default_language") or "").strip().lower()
         if bot_lang:
             session_language = bot_lang
@@ -898,6 +901,26 @@ async def diy_generate_persona(request: Request, data: Optional[dict] = None):
 
 
 # ─── Bot Registry CRUD ────────────────────────────────────────────────────────
+
+@router.get("/bots/landing-default", tags=["bots"])
+async def get_landing_bot():
+    """Returns the bot ID configured for the landing page without auth."""
+    db = await get_db()
+    bot = await db.get_landing_page_default_bot()
+    if not bot:
+        # Try finding 'bolt' as fallback
+        bot = await db.get_bot("bolt")
+    
+    if not bot:
+        # Final fallback: just the first active bot
+        bots = await db.list_bots(limit=1)
+        if bots:
+            bot = bots[0]
+
+    if not bot:
+        raise HTTPException(status_code=404, detail="No landing bot available")
+        
+    return {"bot_id": bot["id"], "name": bot.get("name", "Default")}
 
 @router.get("/bots", tags=["bots"])
 async def list_bots(request: Request):

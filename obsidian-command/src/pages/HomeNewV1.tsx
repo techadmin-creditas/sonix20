@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, ChevronDown, X, Shield, Zap, MessageSquare, Brain, Target, User, ChevronRight, Activity, Play, Layout, Globe, Star, Users } from 'lucide-react';
 import { AgentAvatar } from '../components/AgentFlipCard';
@@ -79,6 +80,13 @@ export default function HomeNewV1() {
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(AGENTS[0]);
   const [activeStep, setActiveStep] = useState(0);
+  const [landingBotId, setLandingBotId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getLandingPageBot()
+      .then(res => setLandingBotId(res.bot_id))
+      .catch(err => console.error('Failed to fetch landing bot:', err));
+  }, []);
 
   const totalSections = 4; 
 
@@ -177,7 +185,7 @@ export default function HomeNewV1() {
       </header>
 
       <div id="smooth-content" ref={contentRef} className="relative z-10 w-full h-full">
-        <HomeHero ref={el => { sectionsRef.current[0] = el; }} />
+        <HomeHero ref={el => { sectionsRef.current[0] = el; }} landingBotId={landingBotId} />
         {/* <HomeTeam 
           ref={el => { sectionsRef.current[1] = el; }} 
           isDemoMode={isDemoMode}

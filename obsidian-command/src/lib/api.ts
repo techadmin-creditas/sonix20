@@ -368,6 +368,12 @@ export const api = {
     return res.json();
   },
 
+  async getLandingPageBot(): Promise<{ bot_id: string }> {
+    const res = await nativeFetch(`${BASE_URL}/bots/landing-default`);
+    if (!res.ok) throw new Error('Failed to fetch landing page bot');
+    return res.json();
+  },
+
   async getBots(): Promise<Bot[]> {
     const res = await authedFetch(`${BASE_URL}/bots`);
     if (!res.ok) throw new Error('Failed to fetch bots');
@@ -429,7 +435,8 @@ export const api = {
   async createSession(
     botId?: string,
     transport: 'websocket' | 'webrtc' | 'livekit' = 'websocket',
-    userId?: string
+    userId?: string,
+    noAuth = false
   ): Promise<{
     session_id: string;
     websocket_url: string;
@@ -441,7 +448,10 @@ export const api = {
     if (botId) url.searchParams.append('bot_id', botId);
     url.searchParams.append('transport', transport);
     if (userId) url.searchParams.append('user_id', userId);
-    const res = await fetch(url.toString(), { method: 'POST' });
+    
+    // Choose between authed fetch and native fetch
+    const fetchFn = noAuth ? nativeFetch : fetch;
+    const res = await fetchFn(url.toString(), { method: 'POST' });
     if (!res.ok) throw new Error('Failed to create session');
     return res.json();
   },

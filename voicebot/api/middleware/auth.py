@@ -29,6 +29,8 @@ SKIP_AUTH_PATHS = {
     "/redoc",
     "/openapi.json",
     "/api/v1/auth/login",
+    "/api/v1/bots/landing-default",
+    "/api/v1/sessions",
 }
 
 
