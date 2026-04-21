@@ -202,7 +202,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col relative min-h-screen bg-background text-on-surface">
+    <div className="flex-1 flex flex-col relative h-full overflow-y-auto thin-scrollbar bg-background text-on-surface">
       <NeuralBackground opacity={0.3} />
 
       <Header

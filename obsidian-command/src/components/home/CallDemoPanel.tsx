@@ -782,8 +782,11 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
 
   // Auto-scroll logic
   useEffect(() => {
-    if (!userHasScrolled && isRunning) {
-      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    if (!userHasScrolled && isRunning && transcriptContainerRef.current) {
+      transcriptContainerRef.current.scrollTo({
+        top: transcriptContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [transcript.length, userHasScrolled, isRunning]);
 
@@ -851,6 +854,7 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
   return (
     <div 
       onWheel={(e) => e.stopPropagation()}
+      data-lenis-prevent
       className={`flex flex-col h-full ${className}`}
     >
 
@@ -868,12 +872,14 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
             </span>
           </div>
           <span className="text-outline/50">·</span>
-          <span className="text-label-sm font-bold text-on-surface">{sc.agent} — {sc.label}</span>
+          <span className="text-label-sm font-bold text-on-surface">
+            {selectedAgent?.name || sc.agent} — {selectedAgent?.role || sc.label}
+          </span>
           <span className="text-outline/50">·</span>
           <span className="text-label-sm font-mono tabular-nums text-on-surface-variant">{durationStr}</span>
           <span className="text-outline/50">·</span>
           <span className="text-label-xs font-bold text-on-surface-variant bg-surface-high px-3 py-1 rounded-full border border-outline-variant">
-            {sc.langLabel}
+            {selectedAgent?.languages || sc.langLabel}
           </span>
         </div>
         <button
@@ -1004,7 +1010,8 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                   ref={transcriptContainerRef}
                   onScroll={handleScroll}
                   onWheel={(e) => e.stopPropagation()}
-                  className={`${cardCls} flex-1 overflow-y-auto thin-scrollbar p-5 relative min-h-0`}
+                  data-lenis-prevent
+                  className={`${cardCls} flex-1 overflow-y-auto no-scrollbar p-5 relative min-h-[350px] max-h-[350px]`}
                 >
                   <AnimatePresence mode="wait">
                     {!isRunning && transcript.length === 0 ? (
