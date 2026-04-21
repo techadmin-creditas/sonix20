@@ -33,6 +33,7 @@ import StudioPersonasNew from './pages/StudioPersonasNew';
 import { ThemeSynchronizer } from './components/ThemeSynchronizer';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import HomeNewV1 from './pages/HomeNewV1';
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
@@ -45,7 +46,7 @@ function AppContent() {
     return (
       <Router>
         <Routes>
-          <Route path="/" element={<HomeNew />} />
+          <Route path="/" element={<HomeNewV1 />} />
           <Route path="/home" element={<HomeNew />} />
           <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
           <Route
