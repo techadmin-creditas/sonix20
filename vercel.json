@@ -4,7 +4,7 @@
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "backend/api/index.py"
+            "destination": "/api/index.py"
         },
         {
             "source": "/(.*)",
@@ -12,8 +12,8 @@
         }
     ],
     "functions": {
-        "backend/api/index.py": {
-            "includeFiles": "backend/**"
+        "api/index.py": {
+            "includeFiles": "voicebot/**"
         }
     }
 }
