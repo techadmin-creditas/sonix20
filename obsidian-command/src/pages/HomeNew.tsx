@@ -5,6 +5,7 @@ import {
   X, ArrowRight, Settings, Zap, BarChart2,
   Globe, Mic, CheckCircle2, Play, Layers,
 } from 'lucide-react';
+import { api } from '../lib/api';
 import { AgentAvatar } from '../components/AgentFlipCard';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { NeuralBackground2D } from '../components/NeuralBackground2D';
@@ -22,6 +23,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Observer } from 'gsap/Observer';
 import Lenis from 'lenis';
+import { useLiveTalk } from '../hooks/useLiveTalk';
 
 gsap.registerPlugin(ScrollTrigger, Observer);
 
@@ -88,6 +90,16 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
   // Agent filter state
   const [agentFilter, setAgentFilter] = useState<'all' | 'fintech' | 'banking'>('all');
+  const [landingBotId, setLandingBotId] = useState<string | null>(null);
+
+  // Live Talk Hook
+  const {
+    status: liveStatus,
+    startSession,
+    endSession,
+    lastUserTranscript,
+    lastBotTranscript
+  } = useLiveTalk(landingBotId || 'bolt');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleTryDemo = (agent: any) => {
@@ -200,9 +212,22 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
     };
   }, []);
 
+  // ── Fetch Landing Bot ────────────────────────────────────────────────────────
+  useEffect(() => {
+    api.getLandingPageBot()
+      .then(res => {
+        setLandingBotId(res.bot_id);
+        const matchingAgent = AGENTS.find(a => a.id === res.bot_id);
+        if (matchingAgent) {
+          setSelectedAgent(matchingAgent);
+        }
+      })
+      .catch(err => console.error('Failed to fetch landing bot:', err));
+  }, []);
+
   // ── Live call snippet typewriter ─────────────────────────────────────────────
   useEffect(() => {
-    if (currentSection !== 0) return;
+    if (currentSection !== 0 || liveStatus !== 'standby') return;
     setCallCharIdx(0);
     const snippet = LIVE_CALL_SNIPPETS[callSnippetIdx];
     const fullText = snippet.bot;
@@ -216,12 +241,12 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
   }, [callSnippetIdx, currentSection]);
 
   useEffect(() => {
-    if (currentSection !== 0) return;
+    if (currentSection !== 0 || liveStatus !== 'standby') return;
     const iv = setInterval(() => {
       setCallSnippetIdx(prev => (prev + 1) % LIVE_CALL_SNIPPETS.length);
     }, 4000);
     return () => clearInterval(iv);
-  }, [currentSection]);
+  }, [currentSection, liveStatus]);
 
   const currentTabData = config.sections.hero.industryTabs.find(t => t.key === industryTab)
     ?? config.sections.hero.industryTabs[0];
@@ -367,7 +392,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
                 className="flex items-center gap-4 flex-wrap">
                 <button
-                  onClick={() => handleTryDemo(AGENTS[0])}
+                  onClick={() => handleTryDemo(selectedAgent)}
                   className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-primary text-on-primary-fixed text-body-base font-bold shadow-xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all">
                   <Play className="size-4" fill="currentColor" />
                   {config.sections.hero.primaryCta.text}
@@ -415,10 +440,16 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               <div className="relative flex items-center justify-center w-full">
                 <div className="size-[320px] lg:size-[440px] flex items-center justify-center transition-all duration-700">
                   <GradientOrb 
-                    isActive={false} 
-                    isConnecting={false} 
+                    isActive={liveStatus === 'active'} 
+                    isConnecting={liveStatus === 'connecting'} 
                     isDark={isDark} 
-                    onClick={() => handleTryDemo(AGENTS[0])} 
+                    onClick={() => {
+                      if (liveStatus === 'active') {
+                        endSession();
+                      } else if (liveStatus === 'standby' || liveStatus === 'error') {
+                        startSession();
+                      }
+                    }} 
                     size={400} 
                   />
                 </div>
@@ -494,25 +525,44 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-                    <span className="text-[9px] font-semibold text-emerald-400 uppercase tracking-wider">Live</span>
-                    <span className="text-[9px] text-on-surface-variant ml-1">{LIVE_CALL_SNIPPETS[callSnippetIdx].label}</span>
+                    <span className={`size-1.5 rounded-full ${liveStatus === 'active' ? 'bg-primary' : 'bg-emerald-400'} animate-pulse inline-block`} />
+                    <span className={`text-[9px] font-semibold uppercase tracking-wider ${liveStatus === 'active' ? 'text-primary' : 'text-emerald-400'}`}>
+                      {liveStatus === 'active' ? 'Neural Link Active' : 'Live'}
+                    </span>
+                    <span className="text-[9px] text-on-surface-variant ml-1">
+                      {liveStatus === 'active' ? 'Voice Processing...' : LIVE_CALL_SNIPPETS[callSnippetIdx].label}
+                    </span>
                   </div>
                 </div>
                 <div className="space-y-1 min-h-[40px]">
-                  <p className="text-[10px] text-on-surface-variant">
-                    <span className="text-primary mr-1">🤖</span>
-                    {LIVE_CALL_SNIPPETS[callSnippetIdx].bot.slice(0, callCharIdx)}
-                    {callCharIdx < LIVE_CALL_SNIPPETS[callSnippetIdx].bot.length && (
-                      <span className="inline-block w-px h-3 bg-primary ml-0.5 animate-pulse" />
-                    )}
-                  </p>
-                  {callCharIdx >= LIVE_CALL_SNIPPETS[callSnippetIdx].bot.length && (
-                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
-                      className="text-[10px] text-on-surface-variant">
-                      <span className="text-secondary mr-1">👤</span>
-                      {LIVE_CALL_SNIPPETS[callSnippetIdx].user}
-                    </motion.p>
+                  {liveStatus === 'active' ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-on-surface-variant flex items-start gap-2">
+                        <span className="text-primary shrink-0">🤖</span>
+                        <span>{lastBotTranscript || '...'}</span>
+                      </p>
+                      <p className="text-[10px] text-on-surface-variant flex items-start gap-2">
+                        <span className="text-secondary shrink-0">👤</span>
+                        <span>{lastUserTranscript || 'Listening...'}</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[10px] text-on-surface-variant">
+                        <span className="text-primary mr-1">🤖</span>
+                        {LIVE_CALL_SNIPPETS[callSnippetIdx].bot.slice(0, callCharIdx)}
+                        {callCharIdx < LIVE_CALL_SNIPPETS[callSnippetIdx].bot.length && (
+                          <span className="inline-block w-px h-3 bg-primary ml-0.5 animate-pulse" />
+                        )}
+                      </p>
+                      {callCharIdx >= LIVE_CALL_SNIPPETS[callSnippetIdx].bot.length && (
+                        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+                          className="text-[10px] text-on-surface-variant">
+                          <span className="text-secondary mr-1">👤</span>
+                          {LIVE_CALL_SNIPPETS[callSnippetIdx].user}
+                        </motion.p>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 w-fit">

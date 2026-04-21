@@ -137,16 +137,22 @@ export const GradientOrb: React.FC<OrbProps> = ({ isActive, isConnecting, isDark
     : 'bg-gradient-to-br from-indigo-400 via-violet-500 to-purple-600';
   const ringStyle = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.55)';
 
+  // Animation intensity multipliers
+  const speedMutliplier = isActive ? 0.6 : 1; 
+
   return (
     <div
-      className="relative flex items-center justify-center cursor-pointer select-none"
+      className="relative flex items-center justify-center cursor-pointer select-none group"
       onClick={onClick}
     >
       {/* Glow halo */}
       <motion.div
         className="absolute rounded-full bg-primary/20 blur-2xl"
-        animate={{ scale: isActive ? [1, 1.18, 1] : 1, opacity: isActive ? 0.7 : 0.3 }}
-        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ 
+          scale: isActive ? [1, 1.35, 1] : 1, 
+          opacity: isActive ? [0.6, 0.9, 0.6] : 0.3 
+        }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         style={{ width: size * 1.2, height: size * 1.2 }}
       />
 
@@ -157,8 +163,8 @@ export const GradientOrb: React.FC<OrbProps> = ({ isActive, isConnecting, isDark
             key={i}
             className="absolute rounded-full border border-primary/25"
             initial={{ scale: 1, opacity: 0.6 }}
-            animate={{ scale: [1, 2.4, 2.4], opacity: [0.6, 0, 0] }}
-            transition={{ duration: 2.8, delay: i * 0.9, repeat: Infinity, ease: 'easeOut' }}
+            animate={{ scale: [1, 2.6, 2.6], opacity: [0.6, 0, 0] }}
+            transition={{ duration: 2.2, delay: i * 0.7, repeat: Infinity, ease: 'easeOut' }}
             style={{ width: size, height: size }}
           />
         ))}
@@ -167,26 +173,32 @@ export const GradientOrb: React.FC<OrbProps> = ({ isActive, isConnecting, isDark
       {/* Main orb */}
       <motion.div
         className={`relative rounded-full overflow-hidden shadow-xl ${isDark ? 'shadow-primary/30' : 'shadow-indigo-300/40'}`}
-        animate={{ scale: isActive ? [1, 1.035, 1] : isConnecting ? 0.93 : 1 }}
-        transition={{ duration: 3, repeat: isActive ? Infinity : 0, ease: 'easeInOut' }}
+        animate={{ 
+          scale: isActive ? [1, 1.05, 1] : isConnecting ? 0.93 : 1,
+          rotate: isActive ? 360 : 0
+        }}
+        transition={{ 
+          scale: { duration: 2.5, repeat: isActive ? Infinity : 0, ease: 'easeInOut' },
+          rotate: { duration: 20, repeat: Infinity, ease: 'linear' }
+        }}
         style={{ width: size, height: size, boxShadow: `0 0 0 4px ${ringStyle}, 0 20px 60px rgba(99,102,241,0.25)` }}
       >
         <div className={`absolute inset-0 ${base}`} />
 
         {/* Animated blobs */}
         <motion.div className={`absolute w-3/4 h-3/4 rounded-full ${blob1} blur-xl opacity-55`}
-          animate={{ x: [-16, 18, -16], y: [-10, 24, -10] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+          animate={{ x: [-20, 22, -20], y: [-15, 30, -15] }}
+          transition={{ duration: 7 * speedMutliplier, repeat: Infinity, ease: 'easeInOut' }}
           style={{ top: '5%', left: '5%' }}
         />
         <motion.div className={`absolute w-2/3 h-2/3 rounded-full ${blob2} blur-xl opacity-50`}
-          animate={{ x: [16, -20, 16], y: [18, -14, 18] }}
-          transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+          animate={{ x: [20, -25, 20], y: [24, -18, 24] }}
+          transition={{ duration: 9 * speedMutliplier, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
           style={{ bottom: '5%', right: '5%' }}
         />
         <motion.div className={`absolute w-1/2 h-1/2 rounded-full ${blob3} blur-lg opacity-60`}
-          animate={{ x: [-8, 14, -8], y: [14, -14, 14] }}
-          transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
+          animate={{ x: [-12, 18, -12], y: [18, -18, 18] }}
+          transition={{ duration: 5 * speedMutliplier, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
           style={{ top: '26%', left: '26%' }}
         />
 
@@ -200,16 +212,26 @@ export const GradientOrb: React.FC<OrbProps> = ({ isActive, isConnecting, isDark
         {isConnecting ? (
           <motion.div key="spin" className="absolute" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
-              <RefreshCw className="size-9 text-white drop-shadow-lg" />
+              <RefreshCw className="size-12 text-white drop-shadow-2xl" />
             </motion.div>
           </motion.div>
-        ) : !isActive ? (
-          <motion.div key="start" className="absolute flex flex-col items-center gap-1 pointer-events-none"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Phone className="size-8 text-white drop-shadow-md" />
-            <span className="text-[11px] font-semibold text-white/80 tracking-widest drop-shadow">START</span>
+        ) : isActive ? (
+          <motion.div key="end" className="absolute flex flex-col items-center gap-2 pointer-events-none"
+            initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}>
+            <div className="p-5 rounded-full bg-black/10 backdrop-blur-sm border border-white/20 group-hover:bg-black/20 transition-all duration-300 shadow-2xl">
+              <PhoneOff className="size-10 text-white drop-shadow-2xl" />
+            </div>
+            <span className="text-[13px] font-black text-white tracking-[0.3em] drop-shadow-2xl uppercase">End Call</span>
           </motion.div>
-        ) : null}
+        ) : (
+          <motion.div key="start" className="absolute flex flex-col items-center gap-2 pointer-events-none"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="p-5 rounded-full bg-white/10 backdrop-blur-sm border border-white/30 group-hover:bg-white/20 transition-all duration-300 shadow-2xl">
+              <Phone className="size-10 text-white drop-shadow-2xl" />
+            </div>
+            <span className="text-[13px] font-black text-white tracking-[0.3em] drop-shadow-2xl uppercase">Start Call</span>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
