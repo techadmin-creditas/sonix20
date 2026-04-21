@@ -92,12 +92,12 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     description: 'Manage system identities and permissions.',
     isAdminOnly: true
   },
-  {
-    id: 'settings',
-    label: 'Settings',
-    icon: Settings,
-    path: '/settings',
-    description: 'Global system configuration.',
-    isAdminOnly: true
-  }
+  // {
+  //   id: 'settings',
+  //   label: 'Settings',
+  //   icon: Settings,
+  //   path: '/settings',
+  //   description: 'Global system configuration.',
+  //   isAdminOnly: true
+  // }
 ];
