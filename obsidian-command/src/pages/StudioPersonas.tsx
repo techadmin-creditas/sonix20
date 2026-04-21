@@ -976,7 +976,7 @@ export default function StudioPersonas() {
             </div>
          </div>
 
-         <div className="flex gap-2 scrollbar-hide overflow-x-auto py-2">
+         {/* <div className="flex gap-2 scrollbar-hide overflow-x-auto py-2">
             {RECOMMENDATIONS.map((rec, i) => (
                <button
                   key={i}
@@ -998,7 +998,7 @@ export default function StudioPersonas() {
                   </div>
                </button>
             ))}
-         </div>
+         </div> */}
 
          {personas.length > 0 && (
             <div className="grid grid-cols-3 gap-4">
