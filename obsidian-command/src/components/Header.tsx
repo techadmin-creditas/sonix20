@@ -284,7 +284,7 @@ export function Header({ title, subtitle, actions, className, hideGlass }: Heade
 
             {/* Popover */}
             {bellOpen && (
-              <div className="absolute right-0 top-[calc(100%+10px)] bg-white w-80 glass-panel rounded-2xl border border-outline-variant/10 shadow-2xl shadow-black/30 z-100 overflow-hidden">
+              <div className="absolute right-0 top-[calc(100%+10px)] bg-surface-lowest w-80 glass-panel rounded-2xl border border-outline-variant/10 shadow-2xl shadow-black/30 z-100 overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
                   <div className="flex items-center gap-2">
