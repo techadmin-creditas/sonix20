@@ -754,9 +754,9 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RECOMMENDATIONS = [
-   { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'Rachel', emotion: 'Empathetic', language: 'English', urgency: 20, empathy: 95, stability: 90, clarity: 85 },
-   { name: 'Early Bird', trigger: 'DPD -5', voice: 'Marcus', emotion: 'Firm', language: 'Hindi', urgency: 85, empathy: 30, stability: 70, clarity: 95 },
-   { name: 'Casual Reminder', trigger: 'Standard', voice: 'Saira', emotion: 'Casual', language: 'English', urgency: 45, empathy: 75, stability: 80, clarity: 60 },
+   // { name: 'Hardship Advisor', trigger: 'DPD 120+', voice: 'Rachel', emotion: 'Empathetic', language: 'English', urgency: 20, empathy: 95, stability: 90, clarity: 85 },
+   // { name: 'Early Bird', trigger: 'DPD -5', voice: 'Marcus', emotion: 'Firm', language: 'Hindi', urgency: 85, empathy: 30, stability: 70, clarity: 95 },
+   // { name: 'Casual Reminder', trigger: 'Standard', voice: 'Saira', emotion: 'Casual', language: 'English', urgency: 45, empathy: 75, stability: 80, clarity: 60 },
 ];
 
 export default function StudioPersonas() {
