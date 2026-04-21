@@ -1,32 +1,20 @@
-# EXTREME PRUNING for 500MB Limit
-
-# Exclude massive unused folders (TOTAL ~1GB)
-/voicebot-ui/
-/venv/
-/.venv/
-/backend/
-/deploy_dist/
-
-# Exclude local binaries and DBs
+# FINAL PRUNING
+venv/
+.venv/
+node_modules/
+obsidian-command/node_modules/
+voicebot-ui/
+deploy_dist/
 /livekit-server
 /voicebot.sqlite
 /data/
-
-# Exclude other source-only/doc folders
-/docs/
-/scripts/
-/tests/
-/infra/
-/gemini code/
-
-# Exclude media files
 *.wav
 *.mp3
 *.png
 *.jpg
 *.jpeg
 *.gif
-
-# Note: obsidian-command is NOT ignored because we need to build it.
-# Its node_modules will be created during build and should ideally not 
-# be included in the Python bundle via vercel.json's includeFiles/excludeFiles.
+/docs/
+/scripts/
+/tests/
+/infra/
