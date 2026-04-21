@@ -1,19 +1,19 @@
-# Exclude local binary and large data files
-livekit-server
-voicebot.sqlite
-data/
-tests/
-voicebot/tests/
+# Exclude local binary and large data files (Anchored to root)
+/livekit-server
+/voicebot.sqlite
+/data/
+/tests/
+/voicebot/tests/
 
 # Exclude venv
-venv/
-.venv/
+/venv/
+/.venv/
 
 # Exclude other unused folders
-docs/
-scripts/
-gemini code/
-infra/
+/docs/
+/scripts/
+/gemini code/
+/infra/
 
 # Exclude specific large files
 mic_test.wav
