@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
    Plus,
    Search,
@@ -48,6 +48,8 @@ import { cn } from '../lib/utils';
 import { api, type AiPersona } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
+import { useTheme } from '../lib/theme';
+import { Header } from '../components/Header';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Premium Components
@@ -368,8 +370,8 @@ const NeuralIdentityForge = ({
             initial={{ x: '100%', opacity: 0.5 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0.5 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-            className="relative w-full max-w-[1100px] h-full bg-surface-low border-l border-outline-variant/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
+            transition={{ type: 'spring', damping: 35, stiffness: 250 }}
+            className="relative w-full max-w-[80%] h-full bg-surface-low border-l border-outline-variant/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col pointer-events-auto rounded-l-[3rem]"
          >
             {/* Header */}
             <div className="px-10 py-6 flex items-center justify-between border-b border-outline-variant/10 shrink-0 z-10 bg-surface/80 backdrop-blur-md">
@@ -393,37 +395,37 @@ const NeuralIdentityForge = ({
                {/* Left Column */}
                <div className="flex-1 overflow-y-auto p-10 scrollbar-none space-y-8">
                   <div className="space-y-8">
-                     <div className="p-8 bg-surface-lowest border border-outline-variant/10 rounded-[2.5rem] space-y-8 shadow-sm relative overflow-hidden group/forge">
+                     <div className="p-10 bg-surface-lowest border border-outline-variant/10 rounded-6xl space-y-10 shadow-sm relative overflow-hidden group/forge">
                         <div className="absolute -right-12 -top-12 size-48 bg-primary/5 blur-[80px] group-hover/forge:bg-primary/10 transition-all" />
-                        <div className="flex items-center gap-8">
-                           <div className="size-20 shrink-0 rounded-[2rem] bg-surface-low flex items-center justify-center border border-outline-variant/5 shadow-inner">
-                              <Fingerprint className="size-12 text-primary" />
+                        <div className="flex items-center gap-10">
+                           <div className="size-24 shrink-0 rounded-4xl bg-surface-low flex items-center justify-center border border-outline-variant/5 shadow-inner">
+                              <Fingerprint className="size-14 text-primary" />
                            </div>
                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                 <div className="size-1.5 rounded-full bg-primary/50" />
-                                 <label className="text-[10px] font-black text-outline uppercase tracking-[0.2em]">Neural Identity Label</label>
+                              <div className="flex items-center gap-2 mb-3 px-1">
+                                 <div className="size-1.5 rounded-full bg-primary" />
+                                 <label className="text-[10px] font-black text-primary uppercase tracking-[0.3em]">Identity Node Protocol</label>
                               </div>
                               <input
                                  placeholder="e.g. Maya, Elite Concierge"
-                                 className="w-full bg-surface-low border border-outline-variant/5 rounded-2xl px-6 py-4 text-lg font-black text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20"
+                                 className="w-full bg-surface-low border border-outline-variant/10 rounded-3xl px-8 py-5 text-xl font-black text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20"
                                  value={formData.name || ''}
                                  onChange={e => patch({ name: e.target.value })}
                               />
                            </div>
                         </div>
-                        <div className="space-y-3">
-                           <div className="flex items-center gap-2 mb-1">
-                              <div className="size-1.5 rounded-full bg-primary/50" />
-                              <label className="text-[10px] font-black text-outline uppercase tracking-[0.2em]">Primary Logic</label>
+                        <div className="space-y-4">
+                           <div className="flex items-center gap-2 mb-1 px-1">
+                              <div className="size-1.5 rounded-full bg-primary opacity-60" />
+                              <label className="text-[10px] font-black text-outline uppercase tracking-[0.2em]">Primary Neural Logic</label>
                            </div>
                            <div className="relative group/input">
-                              <div className="absolute top-1/2 -translate-y-1/2 left-6 text-outline/30 group-focus-within/input:text-primary transition-colors">
-                                 <BrainCircuit className="size-4" />
+                              <div className="absolute top-1/2 -translate-y-1/2 left-8 text-outline/30 group-focus-within/input:text-primary transition-colors">
+                                 <BrainCircuit className="size-5" />
                               </div>
                               <input
-                                 placeholder="Primary Logic..."
-                                 className="w-full bg-surface-low border border-outline-variant/5 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20 shadow-inner"
+                                 placeholder="Neural Logic Description..."
+                                 className="w-full bg-surface-low border border-outline-variant/10 rounded-3xl pl-16 pr-8 py-6 text-sm font-bold text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20 shadow-inner"
                                  value={formData.psychology || ''}
                                  onChange={e => patch({ psychology: e.target.value })}
                               />
@@ -468,7 +470,7 @@ const NeuralIdentityForge = ({
                         </div>
                      </div>
 
-                     <div className="bg-surface-lowest border border-outline-variant/10 rounded-[2.5rem] p-8 space-y-6 shadow-sm">
+                     <div className="bg-surface-lowest border border-outline-variant/10 rounded-5xl p-8 space-y-6 shadow-sm">
                         <div className="flex items-center justify-between">
                            <h4 className="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2">
                               <CloudLightning className="size-3 text-primary" /> Acoustic Tuning
@@ -505,7 +507,7 @@ const NeuralIdentityForge = ({
                      </h3>
 
                      <div className={cn(
-                        "relative group rounded-[3rem] overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-2xl transition-all",
+                        "relative group rounded-6xl overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-2xl transition-all",
                         !isComplete && "opacity-50 grayscale blur-[2px] pointer-events-none"
                      )}>
                         {!isComplete && (
@@ -638,118 +640,186 @@ const PersonaCard: React.FC<PersonaCardProps> = ({
    isToggling,
    onQuickPreview,
    activePreviewId,
-}) => (
-   <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04 }}
-      className="bg-surface-lowest rounded-4xl p-6 group relative overflow-hidden transition-all border border-outline-variant/10 hover:border-primary/30 shadow-sm hover:shadow-xl"
-   >
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6 relative z-10 border-b border-outline-variant/5 pb-4">
-         <div className="flex items-center gap-4">
-            <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary/5 transition-colors">
-               <UserRound className="size-7" />
-            </div>
-            <div className="flex-1 min-w-0">
-               <h3 className="text-lg font-headline font-extrabold text-on-surface truncate">{persona.name}</h3>
-               <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <p className="text-[9px] font-bold text-primary uppercase tracking-widest">{persona.language}</p>
-                  {persona.isDeployed && (
-                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                        <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[7px] font-bold text-emerald-500 uppercase tracking-widest">Active</span>
+}) => {
+   const { theme } = useTheme();
+   const isDark = theme === 'dark';
+
+   return (
+      <motion.div
+         layout
+         initial={{ opacity: 0 }}
+         animate={{ opacity: 1 }}
+         exit={{ opacity: 0 }}
+         transition={{ 
+            layout: { type: 'spring', stiffness: 500, damping: 35, mass: 0.5 },
+            opacity: { duration: 0.2 }
+         }}
+         className={cn(
+            "group relative flex flex-col p-7 rounded-[10px] border",
+            isDark 
+               ? "bg-surface/40 border-outline-variant/10 hover:border-primary/40 hover:bg-surface/60 shadow-[0_0_20px_rgba(0,0,0,0.1)]" 
+               : "bg-surface border-outline-variant/10 shadow-sm hover:shadow-2xl hover:shadow-primary/5 hover:border-primary/30",
+            isDeleting && "border-red-500/50 bg-red-500/5"
+         )}
+      >
+         {/* Header */}
+         <div className="flex justify-between items-start mb-6 relative z-10 border-b border-outline-variant/5 pb-5">
+            <div className="flex items-center gap-5">
+               <div className={cn(
+                  "size-14 rounded-2xl flex items-center justify-center transition-all duration-300",
+                  isDark 
+                    ? "bg-primary/5 border border-primary/20 text-primary shadow-[0_0_15px_rgba(56,189,248,0.05)]" 
+                    : "bg-primary/10 border border-primary/30 text-primary shadow-sm"
+               )}>
+                  <UserRound className="size-7" />
+               </div>
+               <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                     <h3 className="text-xl font-headline font-black text-on-surface truncate group-hover:text-primary transition-colors duration-300">
+                        {persona.name}
+                     </h3>
+                     {persona.isDeployed && (
+                        <div className="relative">
+                           <div className="size-2 rounded-full bg-emerald-500" />
+                           <div className="absolute inset-0 size-2 rounded-full bg-emerald-500 animate-ping opacity-40" />
+                        </div>
+                     )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                     <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">{persona.language}</p>
+                     <div className={cn(
+                        "flex items-center gap-1.5 px-2 py-0.5 rounded-full border",
+                        isDark ? "bg-surface-low border-outline-variant/10" : "bg-primary/5 border-primary/10"
+                     )}>
+                        <Clock className="size-2.5 text-outline" />
+                        <span className={cn(
+                           "text-[8px] font-bold uppercase tracking-tighter",
+                           isDark ? "text-outline" : "text-on-surface/60"
+                        )}>
+                           {new Date(persona.createdAt * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </span>
                      </div>
-                  )}
-                  {!persona.isActive && (
-                     <span className="text-[8px] font-bold text-outline uppercase bg-outline/10 px-1.5 py-0.5 rounded">Inactive</span>
-                  )}
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-low border border-outline-variant/10">
-                     <Clock className="size-2.5 text-outline" />
-                     <span className="text-[7px] font-bold text-outline uppercase tracking-tighter">
-                        {new Date(persona.createdAt * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · {new Date(persona.createdAt * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                     </span>
                   </div>
                </div>
             </div>
+
+            <div className="flex gap-2">
+               <button
+                  onClick={() => onQuickPreview(persona)}
+                  className={cn(
+                     "p-2.5 rounded-xl transition-all border",
+                     activePreviewId === persona.id 
+                        ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" 
+                        : "bg-surface-high border-outline-variant/10 text-outline hover:text-primary hover:bg-surface-highest"
+                  )}
+               >
+                  {activePreviewId === persona.id ? <Loader2 className="size-4 animate-spin" /> : <Volume2 className="size-4" />}
+               </button>
+               <button
+                  onClick={() => onEdit(persona)}
+                  className="p-2.5 rounded-xl bg-surface-high border border-outline-variant/10 text-outline hover:text-primary hover:bg-surface-highest transition-all"
+               >
+                  <Edit2 className="size-4" />
+               </button>
+               <button
+                  onClick={() => onDelete(persona)}
+                  disabled={isDeleting}
+                  className="p-2.5 rounded-xl bg-red-500/5 border border-red-500/10 text-red-500/60 hover:text-red-500 hover:bg-red-500/10 transition-all disabled:opacity-50"
+               >
+                  {isDeleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+               </button>
+            </div>
          </div>
 
-         <div className="flex gap-1.5">
-            <button
-               onClick={() => onQuickPreview(persona)}
-               className={cn(
-                  "p-2.5 rounded-lg transition-all border border-outline-variant/10 shadow-sm",
-                  activePreviewId === persona.id ? "bg-primary text-white" : "bg-surface-low hover:bg-surface-high text-outline hover:text-primary"
-               )}
-               title="Quick Preview"
-            >
-               {activePreviewId === persona.id ? <Loader2 className="size-3.5 animate-spin" /> : <Volume2 className="size-3.5" />}
-            </button>
-            <button
-               onClick={() => onEdit(persona)}
-               className="p-2.5 rounded-lg bg-surface-low hover:bg-surface-high text-outline hover:text-primary transition-all border border-outline-variant/10 shadow-sm"
-               title="Edit Persona"
-            >
-               <Edit2 className="size-3.5" />
-            </button>
-            <button
-               onClick={() => onDelete(persona)}
-               disabled={isDeleting}
-               className="p-2.5 rounded-lg bg-surface-low hover:bg-error/10 text-outline hover:text-error transition-all border border-outline-variant/10 shadow-sm disabled:opacity-50"
-               title="Delete Persona"
-            >
-               {isDeleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-            </button>
-         </div>
-      </div>
-
-      <div className="space-y-4 relative z-10">
-         <p className="text-[11px] font-medium leading-relaxed line-clamp-2 text-outline/80">{persona.tone} · {persona.useCase}</p>
-
-         <div className="p-4 rounded-2xl bg-surface-low/50 border border-outline-variant/5 group-hover:bg-surface-low transition-colors">
-            <p className="text-[10px] leading-relaxed italic text-on-surface-variant line-clamp-2">
-               &ldquo;{persona.psychology || 'Neural persona profile loaded.'}&rdquo;
+         <div className="space-y-6 relative z-10 flex-1 flex flex-col">
+            <p className={cn(
+               "text-xs font-bold uppercase tracking-widest",
+               isDark ? "text-outline/80" : "text-on-surface/60"
+            )}>
+               {persona.tone} · {persona.useCase}
             </p>
-         </div>
 
-         <div className="grid grid-cols-2 gap-2">
-            <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
-               <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1"><Activity className="size-2.5" /> Urgency</p>
-               <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${persona.urgency ?? 45}%` }} />
+            <div className={cn(
+               "p-5 rounded-3xl border italic group-hover:bg-surface-high transition-colors flex-1",
+               isDark ? "bg-surface-low/50 border-outline-variant/5" : "bg-primary/5 border-primary/10"
+            )}>
+               <p className={cn(
+                  "text-sm leading-relaxed line-clamp-3",
+                  isDark ? "text-on-surface-variant opacity-80" : "text-on-surface font-medium"
+               )}>
+                  &ldquo;{persona.psychology || 'Neural persona profile loaded.'}&rdquo;
+               </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 pt-2">
+               <div className="space-y-2">
+                  <div className={cn(
+                     "flex justify-between text-[10px] font-black uppercase tracking-widest",
+                     isDark ? "text-on-surface/80" : "text-on-surface"
+                  )}>
+                     <span className="flex items-center gap-1.5"><Activity className="size-3" /> Logic</span>
+                     <span className="text-primary font-bold">{persona.urgency ?? 45}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-surface-highest/20 rounded-full overflow-hidden border border-outline-variant/10">
+                     <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${persona.urgency ?? 45}%` }}
+                        transition={{ 
+                           duration: 1.2, 
+                           ease: [0.34, 1.56, 0.64, 1], 
+                           delay: 0.15 + (index * 0.03) 
+                        }}
+                        className="h-full bg-primary" 
+                     />
+                  </div>
+               </div>
+               <div className="space-y-2">
+                  <div className={cn(
+                     "flex justify-between text-[10px] font-black uppercase tracking-widest",
+                     isDark ? "text-on-surface/80" : "text-on-surface"
+                  )}>
+                     <span className="flex items-center gap-1.5"><Sparkles className="size-3" /> Empathy</span>
+                     <span className="text-emerald-500 font-bold">{persona.empathy ?? 75}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-surface-highest/20 rounded-full overflow-hidden border border-outline-variant/10">
+                     <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${persona.empathy ?? 75}%` }}
+                        transition={{ 
+                           duration: 1.2, 
+                           ease: [0.34, 1.56, 0.64, 1], 
+                           delay: 0.2 + (index * 0.03) 
+                        }}
+                        className="h-full bg-emerald-500" 
+                     />
+                  </div>
                </div>
             </div>
-            <div className="p-2.5 rounded-xl bg-surface-low/50 border border-outline-variant/5">
-               <p className="text-[7px] font-bold text-outline uppercase mb-1.5 flex items-center gap-1"><Sparkles className="size-2.5" /> Empathy</p>
-               <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 transition-all" style={{ width: `${persona.empathy ?? 75}%` }} />
-               </div>
-            </div>
-         </div>
 
-         <button
-            onClick={() => onToggleDeploy(persona)}
-            disabled={isToggling}
-            className={cn(
-               "w-full flex items-center justify-between p-3.5 rounded-xl transition-all group/btn border disabled:opacity-60",
-               persona.isDeployed
-                  ? "bg-primary/10 border-primary/20 text-primary"
-                  : "bg-surface-low hover:bg-primary text-outline hover:text-on-primary-fixed border-outline-variant/5"
-            )}
-         >
-            <span className="text-[9px] font-bold uppercase tracking-[0.2em]">
-               {persona.isDeployed ? 'Decommission Node' : 'Activate Persona'}
-            </span>
-            {isToggling
-               ? <Loader2 className="size-3.5 animate-spin" />
-               : persona.isDeployed
-                  ? <Check className="size-3.5" />
-                  : <ChevronRight className="size-3.5 group-hover/btn:translate-x-1 transition-transform" />
-            }
-         </button>
-      </div>
-   </motion.div>
-);
+            <button
+               onClick={() => onToggleDeploy(persona)}
+               disabled={isToggling}
+               className={cn(
+                  "w-full flex items-center justify-between p-4 rounded-2xl transition-all group/btn border disabled:opacity-60",
+                  persona.isDeployed
+                     ? "bg-primary/10 border-primary/20 text-primary shadow-inner"
+                     : "bg-surface-high hover:bg-primary text-outline hover:text-on-primary-fixed border-outline-variant/10 shadow-sm"
+               )}
+            >
+               <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+                  {persona.isDeployed ? 'Decommission Node' : 'Activate Persona'}
+               </span>
+               {isToggling
+                  ? <Loader2 className="size-4 animate-spin" />
+                  : persona.isDeployed
+                     ? <CheckCircle2 className="size-4" />
+                     : <ChevronRight className="size-4 group-hover/btn:translate-x-1 transition-transform" />
+               }
+            </button>
+         </div>
+      </motion.div>
+   );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Page
@@ -1029,7 +1099,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                            key={u.id}
                            onClick={() => setSelectedUser(u)}
                            className={cn(
-                              "p-5 rounded-[2.5rem] border text-left transition-all flex flex-col gap-1 group relative overflow-hidden",
+                              "p-5 rounded-4xl border text-left transition-all flex flex-col gap-1 group relative overflow-hidden",
                               selectedUser?.id === u.id
                                  ? "bg-primary border-primary shadow-2xl text-on-primary-fixed"
                                  : "bg-surface-lowest border-outline-variant/10 hover:border-primary/30 text-on-surface"
@@ -1056,7 +1126,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                <div className="flex-1 space-y-8">
                   {selectedUser ? (
                      <>
-                        <div className="bg-surface-low p-8 rounded-[3rem] border border-primary/20 shadow-xl flex items-center justify-between">
+                        <div className="bg-surface-low p-8 rounded-6xl border border-primary/20 shadow-xl flex items-center justify-between">
                            <div>
                               <h4 className="text-xl font-headline font-black tracking-tight uppercase">{selectedUser.username} Permissions</h4>
                               <p className="text-[10px] text-outline font-bold uppercase tracking-[0.2em] mt-2">Managing neural link access protocols for this identity.</p>
@@ -1077,7 +1147,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                  {personas.filter(p => p.owner_user_id === selectedUser.id).map(p => (
-                                    <div key={p.id} className="p-6 rounded-[2.5rem] border bg-emerald-500/5 border-emerald-500/20 shadow-sm flex items-center justify-between transition-all hover:bg-emerald-500/10">
+                                    <div key={p.id} className="p-6 rounded-4xl border bg-emerald-500/5 border-emerald-500/20 shadow-sm flex items-center justify-between transition-all hover:bg-emerald-500/10">
                                        <div className="flex items-center gap-4">
                                           <div className="size-12 rounded-2xl bg-surface-lowest flex items-center justify-center text-emerald-500 border border-emerald-500/10">
                                              <UserRound className="size-6" />
@@ -1096,7 +1166,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                                     </div>
                                  ))}
                                  {personas.filter(p => p.owner_user_id === selectedUser.id).length === 0 && (
-                                    <div className="md:col-span-2 p-14 rounded-[3rem] border-2 border-dashed border-outline-variant/10 flex flex-col items-center justify-center text-center opacity-40">
+                                    <div className="md:col-span-2 p-14 rounded-6xl border-2 border-dashed border-outline-variant/10 flex flex-col items-center justify-center text-center opacity-40">
                                        <p className="text-[10px] font-black uppercase tracking-[0.3em]">No active neural links</p>
                                     </div>
                                  )}
@@ -1110,7 +1180,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                               </h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                  {personas.filter(p => p.owner_user_id!=selectedUser.id).map(p => (
-                                    <div key={p.id} className="p-6 rounded-[2.5rem] border bg-surface-lowest border-outline-variant/5 hover:border-primary/20 hover:bg-surface-low flex items-center justify-between transition-all group">
+                                    <div key={p.id} className="p-6 rounded-5xl border bg-surface-lowest border-outline-variant/5 hover:border-primary/20 hover:bg-surface-low flex items-center justify-between transition-all group">
                                        <div className="flex items-center gap-4">
                                           <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                                              <UserRound className="size-6" />
@@ -1190,44 +1260,61 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                )}
 
                {filtered.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-4">
-                     <div className="size-20 rounded-3xl bg-surface-low border border-outline-variant/10 flex items-center justify-center">
-                        <UserRound className="size-9 text-outline/40" />
+                  <div className="flex flex-col items-center justify-center py-32 gap-6">
+                     <div className="size-24 rounded-4xl bg-surface-low border border-outline-variant/10 flex items-center justify-center group">
+                        <UserRound className="size-10 text-outline/40 group-hover:scale-110 transition-transform" />
                      </div>
                      <div className="text-center">
-                        <p className="text-base font-bold text-on-surface">
+                        <p className="text-lg font-bold text-on-surface">
                            {search ? `No personas match "${search}"` : 'No personas yet'}
                         </p>
-                        <p className="text-[11px] text-outline mt-1">
-                           {search ? 'Try a different search term' : 'Create your first AI persona to get started'}
+                        <p className="text-sm text-outline mt-2 uppercase tracking-widest font-medium">
+                           {search ? 'Try a different neural search term' : 'Create your first AI persona to get started'}
                         </p>
                      </div>
                      {!search && (
                         <button
                            onClick={() => setIsForgeOpen(true)}
-                           className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
+                           className="flex items-center gap-3 px-8 py-4 bg-primary text-on-primary-fixed rounded-2xl text-[10px] font-black uppercase tracking-[0.4em] hover:scale-105 transition-all mt-4 shadow-xl shadow-primary/20"
                         >
-                           <Plus className="size-4" /> Create First Persona
+                           <Plus className="size-5" /> Initialize Persona
                         </button>
                      )}
                   </div>
                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                     {filtered.map((persona, i) => (
-                        <PersonaCard
-                           key={persona.id}
-                           persona={persona}
-                           index={i}
-                           onEdit={p => { setEditingPersona(p); setIsForgeOpen(true); }}
-                           onDelete={handleDelete}
-                           onToggleDeploy={handleToggleDeploy}
-                           isDeleting={deletingId === persona.id}
-                           isToggling={togglingId === persona.id}
-                           onQuickPreview={handleQuickPreview}
-                           activePreviewId={activePreviewId}
-                        />
-                     ))}
-                  </div>
+                  <motion.div 
+                     layout
+                     initial="hidden"
+                     animate="visible"
+                     variants={{
+                        hidden: { opacity: 0 },
+                        visible: {
+                           opacity: 1,
+                           transition: { 
+                              staggerChildren: 0.03,
+                              delayChildren: 0.1
+                           }
+                        }
+                     }}
+                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20"
+                  >
+                     <AnimatePresence mode="popLayout">
+                        {filtered.map((persona, i) => (
+                           <PersonaCard
+                              key={persona.id}
+                              persona={persona}
+                              index={i}
+                              onEdit={p => { setEditingPersona(p); setIsForgeOpen(true); }}
+                              onDelete={handleDelete}
+                              onToggleDeploy={handleToggleDeploy}
+                              isDeleting={deletingId === persona.id}
+                              isToggling={togglingId === persona.id}
+                              onQuickPreview={handleQuickPreview}
+                              activePreviewId={activePreviewId}
+                           />
+                        ))}
+                     </AnimatePresence>
+                  </motion.div>
                )}
             </>
          )}

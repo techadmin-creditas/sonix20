@@ -35,6 +35,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import HomeNewV1 from './pages/HomeNewV1';
 import HomeOld from './pages/HomeOld';
+import Session2 from './pages/Session2';
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
@@ -107,6 +108,12 @@ function AppContent() {
             <Route path="/sessions/:id" element={
               <ProtectedRoute moduleId="sessions">
                 <SessionDetail />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/session2" element={
+              <ProtectedRoute moduleId="sessions">
+                <Session2 />
               </ProtectedRoute>
             } />
             
