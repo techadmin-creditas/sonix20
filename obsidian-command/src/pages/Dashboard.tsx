@@ -6,10 +6,10 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, CartesianGrid
 } from 'recharts';
 import { Header } from '../components/Header';
-import { 
-  Users, Bot, Activity, BarChart3, TrendingUp, 
-  Smile, Clock, Loader2, Zap, ExternalLink, 
-  ShieldCheck, Cpu, ArrowUpRight, ArrowDownRight 
+import {
+  Users, Bot, Activity, BarChart3, TrendingUp,
+  Smile, Clock, Loader2, Zap, ExternalLink,
+  ShieldCheck, Cpu, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { NeuralBackground } from '../components/NeuralBackground';
@@ -211,16 +211,16 @@ export default function Dashboard() {
       />
 
       <div className="relative z-10 p-6 lg:p-10 flex flex-col gap-10 max-w-[1600px] mx-auto w-full">
-        
-          {/* Fleet Performance Grid */}
+
+        {/* Fleet Performance Grid */}
         {pieData.length > 0 && (
-          <DashboardCard 
-            title="Persona performance" 
+          <DashboardCard
+            title="Top Case Scenarios"
             subtitle="Efficiency benchmarks across active modules"
             icon={ShieldCheck}
             action={
-              <button 
-                onClick={() => navigate('/personas')} 
+              <button
+                onClick={() => navigate('/personas')}
                 className="flex items-center gap-2 text-[10px] font-black text-outline hover:text-primary uppercase tracking-widest px-3 py-1.5 rounded-lg bg-surface-low border border-outline-variant/5 transition-all"
               >
                 Persona Manager <ExternalLink className="size-3" />
@@ -229,13 +229,13 @@ export default function Dashboard() {
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {pieData.slice(0, 5).map((bot, idx) => (
-                <div 
+                <div
                   key={bot.name}
                   onClick={() => navigate('/sessions/live', { state: { initialBotName: bot.name } })}
                   className="p-5 rounded-xl bg-surface-low/80 border border-outline-variant/10 hover:border-primary/40 hover:bg-surface hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col group/card"
                 >
                   <div className="flex items-center justify-between mb-5">
-                    <div 
+                    <div
                       className="size-10 rounded-lg flex items-center justify-center text-white shadow-lg shadow-black/10 group-hover/card:scale-110 transition-transform"
                       style={{ backgroundColor: bot.color }}
                     >
@@ -247,14 +247,14 @@ export default function Dashboard() {
                   <p className="text-[9px] text-on-surface/50 font-medium leading-relaxed mb-6 line-clamp-2 min-h-[2.5em]">
                     {allBots.find(b => b.name === bot.name)?.description || 'Neural core initializing...'}
                   </p>
-                  
+
                   <div className="mt-auto">
                     <div className="flex justify-between items-end mb-2">
-                       <span className="text-xl font-headline font-black tabular-nums text-gradient-display">{bot.percentage}%</span>
-                       <span className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">{bot.trend}</span>
+                      <span className="text-xl font-headline font-black tabular-nums text-gradient-display">{bot.percentage}%</span>
+                      <span className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">{bot.trend}</span>
                     </div>
                     <div className="h-1.5 w-full bg-surface-high rounded-full overflow-hidden">
-                      <motion.div 
+                      <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${bot.percentage}%` }}
                         transition={{ duration: 1, delay: idx * 0.1 }}
@@ -307,7 +307,7 @@ export default function Dashboard() {
 
         {/* Analytical Row */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <DashboardCard 
+          <DashboardCard
             className="lg:col-span-8"
             title="Session Throughput"
             subtitle="Aggregated volume telemetry (30D)"
@@ -319,27 +319,27 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" opacity={0.1} />
                   <defs>
                     <linearGradient id="colorWave" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
                     tick={{ fontSize: 10, fill: 'var(--outline)', fontWeight: 600 }}
                   />
                   <YAxis hide />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--outline-variant)', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#4f46e5" 
-                    strokeWidth={3} 
-                    fillOpacity={1} 
-                    fill="url(#colorWave)" 
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#4f46e5"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorWave)"
                     animationDuration={1500}
                   />
                 </AreaChart>
@@ -347,7 +347,7 @@ export default function Dashboard() {
             </div>
           </DashboardCard>
 
-          <DashboardCard 
+          <DashboardCard
             className="lg:col-span-4"
             title="Resource allocation"
             subtitle="Workload distribution matrix"
@@ -391,7 +391,7 @@ export default function Dashboard() {
 
         {/* Sentiment & Engagement */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <DashboardCard 
+          <DashboardCard
             className="lg:col-span-6"
             title="Vocal Sentiment spectrum"
             subtitle="Aggregated emotional feedback analysis"
@@ -403,7 +403,7 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--outline-variant)" opacity={0.1} />
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={85} tick={{ fontSize: 10, fill: 'var(--outline)', fontWeight: 700 }} />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'var(--surface-low)', opacity: 0.5 }}
                     contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--outline-variant)', borderRadius: '12px' }}
                   />
@@ -423,7 +423,7 @@ export default function Dashboard() {
             </div>
           </DashboardCard>
 
-          <DashboardCard 
+          <DashboardCard
             className="lg:col-span-6"
             title="Session tenure distribution"
             subtitle="Aggregated user engagement depth"
@@ -432,16 +432,16 @@ export default function Dashboard() {
             <div className="h-[280px] mt-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats?.durationDistribution?.length ? stats.durationDistribution : [
-                   { range: '0-1m', count: 120 }, { range: '1-3m', count: 450 }, { range: '3-5m', count: 320 }, { range: '5-10m', count: 180 }, { range: '10m+', count: 95 }
+                  { range: '0-1m', count: 120 }, { range: '1-3m', count: 450 }, { range: '3-5m', count: 320 }, { range: '5-10m', count: 180 }, { range: '10m+', count: 95 }
                 ]}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--outline-variant)" opacity={0.1} />
                   <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: 'var(--outline)', fontWeight: 700 }} />
                   <YAxis hide />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--outline-variant)', borderRadius: '12px' }}
                   />
                   <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={40}>
-                    {[1,2,3,4,5].map((_, idx) => <Cell key={idx} fill={idx === 1 ? '#4f46e5' : '#e2e8f0'} />)}
+                    {[1, 2, 3, 4, 5].map((_, idx) => <Cell key={idx} fill={idx === 1 ? '#4f46e5' : '#e2e8f0'} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -450,13 +450,13 @@ export default function Dashboard() {
         </div>
 
         {/* Global Activity Stream */}
-        <DashboardCard 
+        <DashboardCard
           className="lg:col-span-12"
           title="Global Event Log"
           subtitle="Real-time operational session stream"
           icon={Zap}
           action={
-            <button 
+            <button
               onClick={() => navigate('/sessions')}
               className="px-4 py-2 rounded-xl bg-surface-low border border-outline-variant/10 text-on-surface font-black text-[10px] uppercase tracking-widest hover:bg-surface-high transition-all"
             >
@@ -476,7 +476,7 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {recentSessions.map((session) => (
-                  <tr 
+                  <tr
                     key={session.id}
                     onClick={() => navigate(`/sessions/${session.id}`)}
                     className="group bg-surface-low/20 hover:bg-surface-high/30 transition-all cursor-pointer"
@@ -486,17 +486,17 @@ export default function Dashboard() {
                     </td>
                     <td className="py-4 px-6 border-y border-outline-variant/5">
                       <div className="flex items-center gap-3">
-                         <div className="size-7 rounded bg-primary/5 flex items-center justify-center text-primary/60 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                            <Bot className="size-3.5" />
-                         </div>
-                         <span className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{session.bot_name || 'System Core'}</span>
+                        <div className="size-7 rounded bg-primary/5 flex items-center justify-center text-primary/60 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                          <Bot className="size-3.5" />
+                        </div>
+                        <span className="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">{session.bot_name || 'System Core'}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6 border-y border-outline-variant/5">
                       <div className={cn(
                         "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-wider",
-                        !session.ended_at 
-                          ? "bg-emerald-500/10 text-emerald-600" 
+                        !session.ended_at
+                          ? "bg-emerald-500/10 text-emerald-600"
                           : "bg-surface-low text-outline opacity-60"
                       )}>
                         <div className={cn("size-1 rounded-full", !session.ended_at ? "bg-emerald-500 animate-pulse" : "bg-outline/50")} />
@@ -515,7 +515,7 @@ export default function Dashboard() {
           </div>
         </DashboardCard>
       </div>
-      
+
       {/* Structural Grain */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.015] bg-[url('https://grainy-gradients.vercel.app/noise.svg')] z-50" />
     </div>
