@@ -27,7 +27,6 @@ ENV/
 
 # 📦 Dependency managers
 node_modules/
-package-lock.json
 
 # 📥 Node/NPM caches & temp artifacts
 .npm/
