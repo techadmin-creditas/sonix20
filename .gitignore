@@ -48,6 +48,9 @@ package-lock.json
 *.db
 *.db-shm
 *.db-wal
+!voicebot/data/*.db
+!voicebot/data/*.db-shm
+!voicebot/data/*.db-wal
 *.sqlite3
 postgres_data/
 redis_data/
