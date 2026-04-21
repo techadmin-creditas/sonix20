@@ -82,6 +82,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
   const [hoveredAgentIdx,  setHoveredAgentIdx]  = useState<number | null>(null);
   const [showExplorer,     setShowExplorer]     = useState(false);
   const [currentSection,   setCurrentSection]   = useState(0);
+  const [isVideoPlaying,   setIsVideoPlaying]   = useState(false);
 
   // Hero state
   const [industryTab,    setIndustryTab]    = useState(config.sections.hero.defaultIndustryTab);
@@ -798,8 +799,47 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
           </div>
         </section>
 
-        {/* ─── SECTION 4: CTA ─────────────────────────────────────────────── */}
+        {/* ─── SECTION 4: VIDEO SHOWCASE ─────────────────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[3] = el; }} className={sectionBase}>
+          <div className="relative z-10 w-full max-w-screen-2xl mx-auto space-y-12">
+            
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/25">
+                <span className="text-label-sm text-primary uppercase tracking-widest">Visual Experience</span>
+              </div>
+              <h2 className="text-display-section text-on-surface">Experience the Future of Talk</h2>
+              <p className="text-body-xl text-on-surface-variant max-w-2xl mx-auto">Watch how our neural voice engine seamlessly integrates into your workflow.</p>
+            </div>
+
+            <div className="relative w-full max-w-5xl mx-auto aspect-video rounded-[3rem] overflow-hidden bg-surface-lowest border border-outline-variant shadow-2xl group cursor-pointer" onClick={() => setIsVideoPlaying(!isVideoPlaying)}>
+               {!isVideoPlaying ? (
+                 <>
+                  {/* Poster or placeholder */}
+                  <img src="https://images.unsplash.com/photo-1633409361618-c73427e4e206?auto=format&fit=crop&q=80&w=2000" alt="Video Placeholder" className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity duration-700" />
+                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors duration-700" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="size-24 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center group-hover:scale-110 group-hover:bg-white/20 transition-all duration-500 shadow-2xl">
+                        <Play className="size-10 text-white fill-white ml-2" />
+                    </div>
+                  </div>
+                 </>
+               ) : (
+                 <div className="w-full h-full bg-black flex flex-col items-center justify-center relative">
+                    <div className="absolute top-6 right-6">
+                        <button onClick={(e) => { e.stopPropagation(); setIsVideoPlaying(false); }} className="p-3 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur text-white transition-all">
+                            <X className="size-6" />
+                        </button>
+                    </div>
+                    <span className="text-white/50 text-xl font-bold uppercase tracking-widest">Video Player Placeholder</span>
+                 </div>
+               )}
+            </div>
+
+          </div>
+        </section>
+
+        {/* ─── SECTION 5: CTA ─────────────────────────────────────────────── */}
+        <section ref={el => { sectionsRef.current[4] = el; }} className={sectionBase}>
           {/* <BackgroundMesh /> */}
           <div className="relative z-10 w-full max-w-screen-2xl mx-auto space-y-4">
 
