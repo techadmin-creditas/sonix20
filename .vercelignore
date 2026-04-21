@@ -1,0 +1,26 @@
+# Exclude frontend source and node_modules from backend bundle
+obsidian-command/
+node_modules/
+
+# Exclude local binary and large data files
+livekit-server
+voicebot.sqlite
+data/
+tests/
+voicebot/tests/
+
+# Exclude venv
+venv/
+.venv/
+
+# Exclude other unused folders
+docs/
+scripts/
+gemini code/
+infra/
+
+# Exclude specific large files
+mic_test.wav
+test_result.wav
+verify_deepgram.wav
+verify_eleven.mp3

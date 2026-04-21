@@ -1,17 +1,16 @@
 # =============================================================================
-# Agentic Voice Bot — Backend Dependencies
+# Agentic Voice Bot — Backend Dependencies (Vercel Pruned)
 # Python 3.10+
-# Install: pip install -r requirements.txt
 # =============================================================================
 
-# Python 3.13+ removed stdlib audioop; deepgram / openai_realtime use it
+# Audio handling
 audioop-lts>=0.2.1; python_version >= "3.13"
 
 # --- Web Framework & Server ---
 fastapi==0.135.2
 uvicorn[standard]==0.42.0
 starlette==1.0.0
-python-multipart>=0.0.9  # File uploads / multipart (e.g. STT sandbox)
+python-multipart>=0.0.9
 
 # --- WebSocket & HTTP Client ---
 websockets==16.0
@@ -30,22 +29,17 @@ python-dotenv==1.2.2
 PyYAML==6.0.3
 
 # --- Database & Cache ---
-redis==7.4.0               # Session cache + TTS audio cache
+redis==7.4.0
 
 # --- LLM Providers ---
-openai==2.30.0             # OpenAI GPT models
-groq==1.1.2                # Groq ultra-fast inference (LLaMA, Mixtral)
-google-generativeai==0.8.6 # Google Gemini models
-google-genai              # Gemini Live API SDK (for realtime STS)
+openai==2.30.0
+groq==1.1.2
+google-generativeai==0.8.6
+google-genai
 
 # --- Async Utilities ---
 async-timeout==5.0.1
 anyio==4.13.0
-# asyncio-timeout is a typo for async-timeout (already on line 36) or should be removed for Python 3.10+
-
-
-# --- Observability & Logging ---
-tqdm==4.67.3
 
 # --- Auth & Security ---
 PyJWT==2.12.1
@@ -58,33 +52,10 @@ httpcore==1.0.9
 httptools==0.7.1
 urllib3==2.6.3
 
-# --- Testing ---
-pytest==9.0.2
-pytest-asyncio>=0.23.0
-httpx[asyncio]>=0.28.0    # for TestClient with async routes
-
-# =============================================================================
-# Optional — install only what your deployment needs
-# =============================================================================
-
-# WebRTC Transport (for aiortc-based browser audio)
-# aiortc==1.14.0
-
-# LiveKit Integration (for sub-500ms WebRTC voice sessions)
+# --- LiveKit Integration ---
 livekit==1.1.3
 livekit-api==1.1.0
 
-# Anthropic Claude LLM Provider
-# anthropic>=0.40.0
-
-# Vector Memory / RAG (ChromaDB)
-chromadb>=0.5.0
-
-# Local Whisper STT (CPU transcription, no API key needed)
-# faster-whisper>=1.0.0
-
-# Kafka Event Streaming
-# confluent-kafka>=2.3.0
-
-# Audio Device Testing (local scripts only, not server)
-# PyAudio==0.2.14
+# Pruned heavy/unused dependencies:
+# - chromadb (Removed to save ~200MB)
+# - pytest/pytest-asyncio (Removed from production bundle)
