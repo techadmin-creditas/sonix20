@@ -1015,6 +1015,7 @@ export interface AiPersona {
   themeColor: string;
   isActive: boolean;
   isDeployed: boolean;
+  owner_user_id?: string;
   createdAt: number;
   updatedAt: number;
 }

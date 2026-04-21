@@ -2675,6 +2675,7 @@ def _persona_row_to_dict(row) -> dict:
         "themeColor":       d.get("theme_color", "blue"),
         "isActive":         bool(d.get("is_active", 1)),
         "isDeployed":       bool(d.get("is_deployed", 0)),
+        "owner_user_id":    d.get("owner_user_id"),
         "createdAt":        d.get("created_at"),
         "updatedAt":        d.get("updated_at"),
     }

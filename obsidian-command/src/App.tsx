@@ -207,6 +207,7 @@ function AppContent() {
               </ProtectedRoute>
             }>
               <Route index element={<StudioPersonas />} />
+              <Route path="debug" element={<StudioPersonas debug />} />
             </Route>
 
             <Route path="/settings" element={

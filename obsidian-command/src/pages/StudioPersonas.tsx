@@ -46,6 +46,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, type AiPersona } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import { Link, useLocation } from 'react-router-dom';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Premium Components
@@ -759,8 +761,13 @@ const RECOMMENDATIONS = [
    // { name: 'Casual Reminder', trigger: 'Standard', voice: 'Saira', emotion: 'Casual', language: 'English', urgency: 45, empathy: 75, stability: 80, clarity: 60 },
 ];
 
-export default function StudioPersonas() {
+export default function StudioPersonas({ debug }: { debug?: boolean }) {
+   const { currentUser, canUpdate } = useAuth();
+   const location = useLocation();
    const [personas, setPersonas] = React.useState<AiPersona[]>([]);
+   const [users, setUsers] = React.useState<any[]>([]);
+   const [selectedUser, setSelectedUser] = React.useState<any | null>(null);
+   const [roles, setRoles] = React.useState<any[]>([]);
    const [isLoading, setIsLoading] = React.useState(true);
    const [loadError, setLoadError] = React.useState<string | null>(null);
    const [isForgeOpen, setIsForgeOpen] = React.useState(false);
@@ -776,12 +783,34 @@ export default function StudioPersonas() {
       try {
          const data = await api.listAiPersonas();
          setPersonas(data);
+
+         if (debug) {
+            try {
+               const [userData, rolesData] = await Promise.all([
+                  api.listUsers(),
+                  api.listRoles()
+               ]);
+               setUsers(userData);
+               setRoles(rolesData.roles);
+
+               // Handle preselection
+               const state = location.state as { initialUserId?: string };
+               if (state?.initialUserId) {
+                  const target = userData.find(u => u.id === state.initialUserId);
+                  if (target) setSelectedUser(target);
+               } else if (userData.length > 0) {
+                  setSelectedUser(userData[0]);
+               }
+            } catch (adminErr) {
+               console.error('Administrative link failed:', adminErr);
+            }
+         }
       } catch (e: any) {
          setLoadError(e?.message || 'Failed to load personas');
       } finally {
          setIsLoading(false);
       }
-   }, []);
+   }, [debug]);
 
    React.useEffect(() => { loadPersonas(); }, [loadPersonas]);
 
@@ -826,6 +855,29 @@ export default function StudioPersonas() {
          alert(e?.message || 'Failed to toggle persona');
       } finally {
          setTogglingId(null);
+      }
+   };
+
+   const handleToggleAssignment = async (persona: AiPersona, isAssigned: boolean) => {
+      if (!selectedUser) return;
+      try {
+         if (isAssigned) {
+            // Create a unique clone for this user
+            const clone = await api.createAiPersona({
+               ...persona,
+               id: undefined,
+               owner_user_id: selectedUser.id,
+            });
+            setPersonas(prev => [clone, ...prev]);
+         } else {
+            // Only allow unassigning (deleting) if this IS the user's instance
+            if (persona.owner_user_id === selectedUser.id) {
+               await api.deleteAiPersona(persona.id);
+               setPersonas(prev => prev.filter(p => p.id !== persona.id));
+            }
+         }
+      } catch (err) {
+         alert('Neural link replication failed');
       }
    };
 
@@ -925,140 +977,259 @@ export default function StudioPersonas() {
 
    return (
       <div className="space-y-10">
-         <div className="flex justify-between items-start border-b border-outline-variant/10">
+         <div className="flex justify-between items-start border-b border-outline-variant/10 pb-6">
             <div className="space-y-1">
-               <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">Neural Registry</p>
+               <p className="text-[9px] font-bold text-primary uppercase tracking-[0.4em]">
+                  {debug ? "Neural Permission Matrix" : "Neural Registry"}
+               </p>
                <h1 className="text-3xl font-headline font-extrabold text-on-surface uppercase tracking-tight">
-                  {personas.length} Voice Agents Deployed
+                  {debug ? "Debug Configuration" : `${personas.length} Voice Agents Deployed`}
                </h1>
                <p className="text-[10px] text-outline font-medium max-w-md uppercase tracking-widest leading-relaxed">
-                  Manage and create your AI voice agents. <span className="text-primary">Active capacity: {personas.length}/500</span>
+                  {debug ? "Manage user identity assignments and neural link protocols." : "Manage and create your AI voice agents."}
+                  <span className="text-primary ml-2">Active capacity: {personas.length}/500</span>
                </p>
             </div>
             <div className="flex items-center gap-3">
-               <button
-                  onClick={loadPersonas}
-                  className="p-2.5 rounded-xl bg-surface-low border border-outline-variant/10 text-outline hover:text-primary transition-all"
-                  title="Refresh"
-               >
-                  <RefreshCw className="size-4" />
-               </button>
-               <button
-                  onClick={() => { setEditingPersona(null); setIsForgeOpen(true); }}
-                  className="flex items-center gap-2.5 bg-primary text-on-primary-fixed px-8 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/10 hover:scale-105 active:scale-95 transition-all"
-               >
-                  <Plus className="size-4" />
-                  Create New Persona
-               </button>
+               {debug ? (
+                  <Link to="/persona" className="px-6 py-3.5 rounded-xl bg-surface-low text-outline text-[10px] font-bold uppercase tracking-widest hover:bg-surface-high transition-all">
+                     Back to Registry
+                  </Link>
+               ) : (
+                  <>
+                     <button
+                        onClick={loadPersonas}
+                        className="p-2.5 rounded-xl bg-surface-low border border-outline-variant/10 text-outline hover:text-primary transition-all"
+                        title="Refresh"
+                     >
+                        <RefreshCw className="size-4" />
+                     </button>
+                     <button
+                        onClick={() => { setEditingPersona(null); setIsForgeOpen(true); }}
+                        className="flex items-center gap-2.5 bg-primary text-on-primary-fixed px-8 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/10 hover:scale-105 active:scale-95 transition-all"
+                     >
+                        <Plus className="size-4" />
+                        Create New Persona
+                     </button>
+                  </>
+               )}
             </div>
          </div>
 
-         <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 flex gap-3 p-1.5 bg-surface-low rounded-2xl border border-outline-variant/10 shadow-sm">
-               <div className="flex-1 flex items-center gap-2 px-3">
-                  <Search className="size-3.5 text-outline" />
-                  <input
-                     type="text"
-                     placeholder="Search personas by name or use case..."
-                     className="bg-transparent border-none focus:ring-0 text-xs flex-1 shadow-none outline-none"
-                     value={search}
-                     onChange={e => setSearch(e.target.value)}
-                  />
-               </div>
-               {search && (
-                  <button onClick={() => setSearch('')} className="p-2 text-outline hover:text-on-surface">
-                     <X className="size-3.5" />
-                  </button>
-               )}
-               <button className="p-2.5 bg-surface-lowest rounded-xl text-outline hover:text-on-surface border border-outline-variant/5 transition-all">
-                  <Filter className="size-3.5" />
-               </button>
-            </div>
-         </div>
-
-         {/* <div className="flex gap-2 scrollbar-hide overflow-x-auto py-2">
-            {RECOMMENDATIONS.map((rec, i) => (
-               <button
-                  key={i}
-                  onClick={() => handleSuggest(rec)}
-                  className="flex items-center gap-4 px-5 py-3 rounded-2xl bg-surface-lowest border border-outline-variant/10 whitespace-nowrap group hover:border-primary hover:shadow-xl transition-all cursor-pointer"
-               >
-                  <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-sm border border-primary/20 group-hover:bg-primary group-hover:text-white transition-all">
-                     <Sparkles className="size-4" />
+         {debug ? (
+            <div className="flex flex-col lg:flex-row gap-10">
+               {/* User Sidebar */}
+               <div className="w-full lg:w-96 flex flex-col gap-6">
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary px-1 flex items-center gap-2">
+                     <UserRound className="size-4" /> Select Identity
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                     {users.map(u => (
+                        <button
+                           key={u.id}
+                           onClick={() => setSelectedUser(u)}
+                           className={cn(
+                              "p-5 rounded-[2.5rem] border text-left transition-all flex flex-col gap-1 group relative overflow-hidden",
+                              selectedUser?.id === u.id
+                                 ? "bg-primary border-primary shadow-2xl text-on-primary-fixed"
+                                 : "bg-surface-lowest border-outline-variant/10 hover:border-primary/30 text-on-surface"
+                           )}
+                        >
+                           <div className="flex items-center justify-between">
+                              <span className="font-headline font-black text-sm tracking-tight">{u.username}</span>
+                              <span className={cn(
+                                 "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                                 selectedUser?.id === u.id ? "bg-white/10 border-white/20" : "bg-primary/5 border-primary/20 text-primary"
+                              )}>
+                                 {u.role}
+                              </span>
+                           </div>
+                           <span className={cn("text-[9px] font-bold uppercase tracking-widest mt-1 opacity-60", selectedUser?.id === u.id ? "text-white" : "text-outline")}>
+                              {personas.filter(p => p.owner_user_id === u.id).length} Neural Assets Assigned
+                           </span>
+                        </button>
+                     ))}
                   </div>
-                  <div className="text-left">
-                     <p className="text-[10px] font-black group-hover:text-primary transition-colors uppercase tracking-tight">{rec.name}</p>
-                     <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.voice}</span>
-                        <div className="size-1 rounded-full bg-surface-highest" />
-                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.emotion}</span>
-                        <div className="size-1 rounded-full bg-surface-highest" />
-                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.language}</span>
-                     </div>
-                  </div>
-               </button>
-            ))}
-         </div> */}
-
-         {personas.length > 0 && (
-            <div className="grid grid-cols-3 gap-4">
-               {[
-                  { label: 'Total Personas', value: personas.length, icon: UserRound },
-                  { label: 'Deployed', value: personas.filter(p => p.isDeployed).length, icon: Activity },
-                  { label: 'Active', value: personas.filter(p => p.isActive).length, icon: Cpu },
-               ].map(({ label, value, icon: Icon }) => (
-                  <div key={label} className="bg-surface-lowest rounded-2xl p-4 border border-outline-variant/10 flex items-center gap-4">
-                     <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Icon className="size-4 text-primary" />
-                     </div>
-                     <div>
-                        <p className="text-[8px] font-bold text-outline uppercase tracking-widest">{label}</p>
-                        <p className="text-2xl font-headline font-extrabold text-on-surface">{value}</p>
-                     </div>
-                  </div>
-               ))}
-            </div>
-         )}
-
-         {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-               <div className="size-20 rounded-3xl bg-surface-low border border-outline-variant/10 flex items-center justify-center">
-                  <UserRound className="size-9 text-outline/40" />
                </div>
-               <div className="text-center">
-                  <p className="text-base font-bold text-on-surface">
-                     {search ? `No personas match "${search}"` : 'No personas yet'}
-                  </p>
-                  <p className="text-[11px] text-outline mt-1">
-                     {search ? 'Try a different search term' : 'Create your first AI persona to get started'}
-                  </p>
+
+               {/* Assignment Panel */}
+               <div className="flex-1 space-y-8">
+                  {selectedUser ? (
+                     <>
+                        <div className="bg-surface-low p-8 rounded-[3rem] border border-primary/20 shadow-xl flex items-center justify-between">
+                           <div>
+                              <h4 className="text-xl font-headline font-black tracking-tight uppercase">{selectedUser.username} Permissions</h4>
+                              <p className="text-[10px] text-outline font-bold uppercase tracking-[0.2em] mt-2">Managing neural link access protocols for this identity.</p>
+                           </div>
+                           <div className="flex gap-2">
+                              <span className="px-4 py-2 rounded-xl bg-surface-lowest border border-outline-variant/10 text-[9px] font-black uppercase tracking-[0.2em] text-primary">ID: {selectedUser.id.substring(0, 8)}</span>
+                           </div>
+                        </div>
+
+                        <div className="space-y-12">
+                           {/* Unique Fleet Section */}
+                           <div className="space-y-6">
+                              <div className="flex items-center justify-between px-1">
+                                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-500 flex items-center gap-2">
+                                    <Zap className="size-4" /> Unique Identity Fleet
+                                 </h3>
+                                 <span className="text-[10px] font-bold text-outline uppercase tracking-widest">{personas.filter(p => p.owner_user_id === selectedUser.id).length} Active Links</span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 {personas.filter(p => p.owner_user_id === selectedUser.id).map(p => (
+                                    <div key={p.id} className="p-6 rounded-[2.5rem] border bg-emerald-500/5 border-emerald-500/20 shadow-sm flex items-center justify-between transition-all hover:bg-emerald-500/10">
+                                       <div className="flex items-center gap-4">
+                                          <div className="size-12 rounded-2xl bg-surface-lowest flex items-center justify-center text-emerald-500 border border-emerald-500/10">
+                                             <UserRound className="size-6" />
+                                          </div>
+                                          <div>
+                                             <h5 className="font-headline font-black text-sm text-emerald-500 uppercase">{p.name}</h5>
+                                             <p className="text-[9px] font-bold uppercase tracking-widest text-outline mt-0.5">{p.language} · {p.emotion}</p>
+                                          </div>
+                                       </div>
+                                       <button
+                                          onClick={() => handleToggleAssignment(p, false)}
+                                          className="px-5 py-2.5 rounded-xl bg-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                       >
+                                          Revoke
+                                       </button>
+                                    </div>
+                                 ))}
+                                 {personas.filter(p => p.owner_user_id === selectedUser.id).length === 0 && (
+                                    <div className="md:col-span-2 p-14 rounded-[3rem] border-2 border-dashed border-outline-variant/10 flex flex-col items-center justify-center text-center opacity-40">
+                                       <p className="text-[10px] font-black uppercase tracking-[0.3em]">No active neural links</p>
+                                    </div>
+                                 )}
+                              </div>
+                           </div>
+
+                           {/* Templates Section */}
+                           <div className="space-y-6">
+                              <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary px-1 flex items-center gap-2">
+                                 <Brain className="size-4" /> Neural Blueprints (Source)
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 {personas.filter(p => p.owner_user_id!=selectedUser.id).map(p => (
+                                    <div key={p.id} className="p-6 rounded-[2.5rem] border bg-surface-lowest border-outline-variant/5 hover:border-primary/20 hover:bg-surface-low flex items-center justify-between transition-all group">
+                                       <div className="flex items-center gap-4">
+                                          <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                                             <UserRound className="size-6" />
+                                          </div>
+                                          <div>
+                                             <h5 className="font-headline font-black text-sm text-on-surface uppercase group-hover:text-primary transition-colors">{p.name}</h5>
+                                             <p className="text-[9px] font-bold uppercase tracking-widest text-outline mt-0.5">Base Blueprint · {p.language}</p>
+                                          </div>
+                                       </div>
+                                       <button
+                                          onClick={() => handleToggleAssignment(p, true)}
+                                          className="px-5 py-2.5 rounded-xl bg-primary/10 text-primary text-[9px] font-black uppercase tracking-[0.2em] hover:bg-primary hover:text-on-primary-fixed transition-all flex items-center gap-2 shadow-sm"
+                                       >
+                                          <Plus className="size-3" />
+                                          Clone
+                                       </button>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        </div>
+                     </>
+                  ) : (
+                     <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center opacity-30 mt-10">
+                        <div className="size-28 rounded-full bg-surface-low flex items-center justify-center mb-10 border border-outline-variant/10 shadow-inner">
+                           <UserRound className="size-12 text-outline/40" />
+                        </div>
+                        <h4 className="text-sm font-black uppercase tracking-[0.4em] mb-3 font-headline">Select Identity Protocol</h4>
+                        <p className="text-[10px] font-bold text-outline uppercase tracking-widest max-w-[240px] mx-auto leading-relaxed">Choose a user identity to configure and assign neural assets from the sidebar.</p>
+                     </div>
+                  )}
                </div>
-               {!search && (
-                  <button
-                     onClick={() => setIsForgeOpen(true)}
-                     className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
-                  >
-                     <Plus className="size-4" /> Create First Persona
-                  </button>
-               )}
             </div>
          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-               {filtered.map((persona, i) => (
-                  <PersonaCard
-                     key={persona.id}
-                     persona={persona}
-                     index={i}
-                     onEdit={p => { setEditingPersona(p); setIsForgeOpen(true); }}
-                     onDelete={handleDelete}
-                     onToggleDeploy={handleToggleDeploy}
-                     isDeleting={deletingId === persona.id}
-                     isToggling={togglingId === persona.id}
-                     onQuickPreview={handleQuickPreview}
-                     activePreviewId={activePreviewId}
-                  />
-               ))}
-            </div>
+            <>
+               <div className="flex flex-col lg:flex-row gap-4">
+                  <div className="flex-1 flex gap-3 p-1.5 bg-surface-low rounded-2xl border border-outline-variant/10 shadow-sm">
+                     <div className="flex-1 flex items-center gap-2 px-3">
+                        <Search className="size-3.5 text-outline" />
+                        <input
+                           type="text"
+                           placeholder="Search personas by name or use case..."
+                           className="bg-transparent border-none focus:ring-0 text-xs flex-1 shadow-none outline-none"
+                           value={search}
+                           onChange={e => setSearch(e.target.value)}
+                        />
+                     </div>
+                     {search && (
+                        <button onClick={() => setSearch('')} className="p-2 text-outline hover:text-on-surface">
+                           <X className="size-3.5" />
+                        </button>
+                     )}
+                     <button className="p-2.5 bg-surface-lowest rounded-xl text-outline hover:text-on-surface border border-outline-variant/5 transition-all">
+                        <Filter className="size-3.5" />
+                     </button>
+                  </div>
+               </div>
+
+               {personas.length > 0 && (
+                  <div className="grid grid-cols-3 gap-4">
+                     {[
+                        { label: 'Total Personas', value: personas.length, icon: UserRound },
+                        { label: 'Deployed', value: personas.filter(p => p.isDeployed).length, icon: Activity },
+                        { label: 'Active', value: personas.filter(p => p.isActive).length, icon: Cpu },
+                     ].map(({ label, value, icon: Icon }) => (
+                        <div key={label} className="bg-surface-lowest rounded-2xl p-4 border border-outline-variant/10 flex items-center gap-4">
+                           <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                              <Icon className="size-4 text-primary" />
+                           </div>
+                           <div>
+                              <p className="text-[8px] font-bold text-outline uppercase tracking-widest">{label}</p>
+                              <p className="text-2xl font-headline font-extrabold text-on-surface">{value}</p>
+                           </div>
+                        </div>
+                     ))}
+                  </div>
+               )}
+
+               {filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                     <div className="size-20 rounded-3xl bg-surface-low border border-outline-variant/10 flex items-center justify-center">
+                        <UserRound className="size-9 text-outline/40" />
+                     </div>
+                     <div className="text-center">
+                        <p className="text-base font-bold text-on-surface">
+                           {search ? `No personas match "${search}"` : 'No personas yet'}
+                        </p>
+                        <p className="text-[11px] text-outline mt-1">
+                           {search ? 'Try a different search term' : 'Create your first AI persona to get started'}
+                        </p>
+                     </div>
+                     {!search && (
+                        <button
+                           onClick={() => setIsForgeOpen(true)}
+                           className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
+                        >
+                           <Plus className="size-4" /> Create First Persona
+                        </button>
+                     )}
+                  </div>
+               ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                     {filtered.map((persona, i) => (
+                        <PersonaCard
+                           key={persona.id}
+                           persona={persona}
+                           index={i}
+                           onEdit={p => { setEditingPersona(p); setIsForgeOpen(true); }}
+                           onDelete={handleDelete}
+                           onToggleDeploy={handleToggleDeploy}
+                           isDeleting={deletingId === persona.id}
+                           isToggling={togglingId === persona.id}
+                           onQuickPreview={handleQuickPreview}
+                           activePreviewId={activePreviewId}
+                        />
+                     ))}
+                  </div>
+               )}
+            </>
          )}
 
          <AnimatePresence>
