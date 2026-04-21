@@ -10,7 +10,7 @@ export function NeuralBackground2D() {
   // --- LOGIC GRAPH CONFIG ---
   const CONFIG = {
     HUB_COUNT: 8,
-    NODE_COUNT: 70,
+    NODE_COUNT: 45,
     HUB_DIST: 350,
     NODE_DIST: 120,
     VISIBILITY: isDark ? 0.9 : 0.7, // Increased from 0.4 to 0.7 for light mode clarity
@@ -183,7 +183,7 @@ export function NeuralBackground2D() {
   }, [theme, isDark]);
 
   // Secondary atmospheric particles (slow moving)
-  const ATMOSPHERIC_PARTICLES = Array.from({ length: 15 }, (_, i) => ({
+  const ATMOSPHERIC_PARTICLES = Array.from({ length: 7 }, (_, i) => ({
     id: i,
     left: `${(i * 23 + 7) % 100}%`,
     top:  `${(i * 17 + 11) % 100}%`,
@@ -199,21 +199,21 @@ export function NeuralBackground2D() {
       {/* ── Atmospheric Glows (Merged from BackgroundMesh) ── */}
       <div className={`absolute inset-0 pointer-events-none ${isDark ? 'opacity-90' : 'opacity-100'} overflow-hidden`}>
         {/* Hub 1: Top-Left (Primary) */}
-        <motion.div className={`absolute rounded-full ${isDark ? 'bg-primary/40' : 'bg-primary/50'} blur-[160px]`}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-primary/40' : 'bg-primary/50'} blur-[100px]`}
           animate={{ x: [0, 80, 0], y: [0, -50, 0], scale: [1, 1.25, 1] }}
           transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ width: 800, height: 800, top: '-15%', left: '-10%' }}
+          style={{ width: 600, height: 600, top: '-15%', left: '-10%' }}
         />
         
         {/* Hub 2: Bottom-Right (Secondary) */}
-        <motion.div className={`absolute rounded-full ${isDark ? 'bg-secondary/30' : 'bg-secondary/40'} blur-[140px]`}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-secondary/30' : 'bg-secondary/40'} blur-[80px]`}
           animate={{ x: [0, -90, 0], y: [0, 60, 0], scale: [1, 1.4, 1] }}
           transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          style={{ width: 750, height: 750, bottom: '-10%', right: '-10%' }}
+          style={{ width: 550, height: 550, bottom: '-10%', right: '-10%' }}
         />
 
         {/* Hub 3: Center-Right (Tertiary) */}
-        <motion.div className={`absolute rounded-full ${isDark ? 'bg-tertiary/20' : 'bg-tertiary/30'} blur-[120px]`}
+        <motion.div className={`absolute rounded-full ${isDark ? 'bg-tertiary/20' : 'bg-tertiary/30'} blur-[60px]`}
           animate={{ x: [0, 40, -40, 0], y: [0, -40, 40, 0] }}
           transition={{ duration: 25, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
           style={{ width: 600, height: 600, top: '30%', right: '10%' }}

@@ -196,7 +196,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         wheelSpeed: -1,
         onDown: () => !animatingRef.current && gotoSection(currentIndexRef.current - 1),
         onUp:   () => !animatingRef.current && gotoSection(currentIndexRef.current + 1),
-        tolerance: 10, // Refined tolerance for intentional swipes
+        tolerance: 80, // Refined tolerance for intentional swipes (prevents jitter)
         preventDefault: false // Keep the browser 'alive' while auto-snapping
       });
 
