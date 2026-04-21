@@ -1,7 +1,3 @@
-# Exclude frontend source and node_modules from backend bundle
-obsidian-command/
-node_modules/
-
 # Exclude local binary and large data files
 livekit-server
 voicebot.sqlite
