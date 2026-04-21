@@ -1,11 +1,10 @@
 {
     "name": "sonix20-monorepo",
-    "version": "1.0.0",
     "private": true,
     "workspaces": [
         "obsidian-command"
     ],
     "scripts": {
-        "build": "npm run build --workspace=obsidian-command && mkdir -p deploy_dist && cp -r obsidian-command/dist/* deploy_dist/ && rm -rf obsidian-command node_modules package-lock.json"
+        "build": "npm run build -w obsidian-command && rm -rf dist && cp -r obsidian-command/dist ./dist"
     }
 }
