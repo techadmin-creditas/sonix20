@@ -35,6 +35,7 @@
 
 @utility no-scrollbar {
   scrollbar-width: none;
+
   &::-webkit-scrollbar {
     display: none;
   }
@@ -56,16 +57,16 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-
-
   /* CUSTOM PREMIUM SCROLLBAR */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
   ::-webkit-scrollbar-thumb {
     @apply bg-surface-highest rounded-full hover:bg-primary transition-colors;
   }
@@ -73,33 +74,7 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
 
-:root {
-  html {
-    scroll-behavior: smooth;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  /* CUSTOM PREMIUM SCROLLBAR */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-surface-highest rounded-full hover:bg-primary transition-colors;
-  }
-
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -114,11 +89,18 @@
   body {
     @apply bg-background text-on-surface font-body min-h-screen selection:bg-primary selection:text-on-primary-fixed overflow-x-hidden;
     scrollbar-gutter: stable;
-    background-image:
-      radial-gradient(at 0% 0%, color-mix(in srgb, var(--primary) 15%, transparent) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, color-mix(in srgb, var(--primary) 10%, transparent) 0px, transparent 50%),
-      radial-gradient(at 0% 100%, color-mix(in srgb, var(--primary) 5%, transparent) 0px, transparent 50%);
+    background-image: radial-gradient(at 0% 0%,
+        color-mix(in srgb, var(--primary) 15%, transparent) 0px,
+        transparent 50%),
+      radial-gradient(at 100% 0%,
+        color-mix(in srgb, var(--primary) 5%, transparent) 0px,
+        transparent 50%),
+      radial-gradient(at 100% 100%,
+        color-mix(in srgb, var(--primary) 10%, transparent) 0px,
+        transparent 50%),
+      radial-gradient(at 0% 100%,
+        color-mix(in srgb, var(--primary) 5%, transparent) 0px,
+        transparent 50%);
     background-attachment: fixed;
   }
 
@@ -220,7 +202,8 @@
   }
 
   .premium-forge-border {
-    @apply border-2 border-outline-variant/20 shadow-[0_0_0_1px_rgba(255,255,255,0.05)];
+    @apply border-2 border-outline-variant/20;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
     background-clip: padding-box;
   }
 
@@ -278,21 +261,49 @@
 }
 
 @keyframes shimmer-luminous {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
 }
 
 @keyframes scanning-line {
-  0% { transform: translateX(-100%); opacity: 0; }
-  20% { opacity: 0.5; }
-  80% { opacity: 0.5; }
-  100% { transform: translateX(100%); opacity: 0; }
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.5;
+  }
+
+  80% {
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
 }
 
 @keyframes float-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -50px) scale(1.1); }
-  66% { transform: translate(-20px, 40px) scale(0.9); }
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(-20px, 40px) scale(0.9);
+  }
 }
 
 .animate-pulse-subtle {
