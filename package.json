@@ -3,6 +3,6 @@
     "private": true,
     "scripts": {
         "build": "cd obsidian-command && npm install && npm run build",
-        "install": "npm install && cd obsidian-command && npm install"
+        "install": "cd obsidian-command && npm install"
     }
 }
