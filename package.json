@@ -1,8 +1,11 @@
 {
     "name": "sonix20-monorepo",
+    "version": "1.0.0",
     "private": true,
+    "workspaces": [
+        "obsidian-command"
+    ],
     "scripts": {
-        "build": "cd obsidian-command && npm install && npm run build",
-        "install": "cd obsidian-command && npm install"
+        "build": "npm run build --workspace=obsidian-command"
     }
 }
