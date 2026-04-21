@@ -7,6 +7,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { HomeHero } from '../components/home/HomeHero';
 import { HomeTeam } from '../components/home/HomeTeam';
 import { HomeCreationLab } from '../components/home/HomeCreationLab';
+import { HomeVideoShowcase } from '../components/home/HomeVideoShowcase';
 import { HomeCta } from '../components/home/HomeCta';
 import { AGENTS } from '../data/agents';
 import gsap from 'gsap';
@@ -177,17 +178,18 @@ export default function HomeNewV1() {
 
       <div id="smooth-content" ref={contentRef} className="relative z-10 w-full h-full">
         <HomeHero ref={el => { sectionsRef.current[0] = el; }} />
-        <HomeTeam 
+        {/* <HomeTeam 
           ref={el => { sectionsRef.current[1] = el; }} 
           isDemoMode={isDemoMode}
           selectedAgentId={selectedAgent?.id}
           onTryDemo={handleTryDemo}
-        />
+        /> */}
         <HomeCreationLab 
-          ref={el => { sectionsRef.current[2] = el; }}
+          ref={el => { sectionsRef.current[1] = el; }}
           activeStep={activeStep}
           setActiveStep={setActiveStep}
         />
+        <HomeVideoShowcase ref={el => { sectionsRef.current[2] = el; }} />
         <HomeCta ref={el => { sectionsRef.current[3] = el; }} />
       </div>
 
