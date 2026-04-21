@@ -1,6 +1,6 @@
 {
     "version": 2,
-    "outputDirectory": "deploy_dist",
+    "outputDirectory": "obsidian-command/dist",
     "rewrites": [
         {
             "source": "/api/(.*)",
@@ -10,5 +10,10 @@
             "source": "/(.*)",
             "destination": "/index.html"
         }
-    ]
+    ],
+    "functions": {
+        "backend/api/index.py": {
+            "includeFiles": "backend/**"
+        }
+    }
 }
