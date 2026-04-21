@@ -68,7 +68,7 @@ const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { lab
             placeholder={placeholder}
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-white focus:border-indigo-500 outline-none transition-all placeholder:text-outline/20 shadow-inner"
+            className="w-full bg-surface-low border border-outline-variant/10 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20 shadow-inner"
          />
       </div>
    </div>
@@ -77,16 +77,15 @@ const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { lab
 const PremiumSlider = ({ label, value, onChange, description }: { label: string, value: number, onChange: (v: number) => void, description?: string }) => (
    <div className="space-y-2">
       <div className="flex justify-between items-end mb-1">
-         <div className="flex flex-col">
-            <span className="text-[11px] font-black text-on-surface uppercase tracking-tight">{label}</span>
-            {description && <span className="text-[9px] text-outline/60 font-medium italic">{description}</span>}
+         <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black text-on-surface uppercase tracking-widest">{label}</span>
+            <span className="text-xs font-bold text-primary">{value}%</span>
          </div>
-         <span className="text-xs font-bold text-indigo-500">{value}%</span>
       </div>
       <div className="relative h-6 flex items-center group">
-         <div className="absolute inset-0 h-1.5 top-1/2 -translate-y-1/2 bg-slate-100 rounded-full" />
+         <div className="absolute inset-0 h-1.5 top-1/2 -translate-y-1/2 bg-surface-highest rounded-full" />
          <motion.div
-            className="absolute inset-y-0 left-0 h-1.5 top-1/2 -translate-y-1/2 bg-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+            className="absolute inset-y-0 left-0 h-1.5 top-1/2 -translate-y-1/2 bg-primary rounded-full shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]"
             style={{ width: `${value}%` }}
          />
          <input
@@ -98,7 +97,7 @@ const PremiumSlider = ({ label, value, onChange, description }: { label: string,
             className="absolute inset-0 w-full opacity-0 cursor-pointer z-10"
          />
          <motion.div
-            className="absolute size-4 bg-white rounded-full shadow-lg border-2 border-indigo-500 pointer-events-none"
+            className="absolute size-4 bg-surface-lowest rounded-full shadow-lg border-2 border-primary pointer-events-none"
             animate={{ left: `calc(${value}% - 8px)` }}
             transition={{ type: 'spring', bounce: 0, duration: 0.1 }}
          />
@@ -171,7 +170,7 @@ const NeuralIdentityForge = ({
    };
    const [availableVoices, setAvailableVoices] = React.useState<{ id: string, name: string, provider: string }[]>([]);
    const [isFetchingVoices, setIsFetchingVoices] = React.useState(false);
-   
+
    // Metadata state
    const [metadata, setMetadata] = React.useState<{ languages: any[], tones: any[], stress_corpus: any[] }>({
       languages: [],
@@ -203,7 +202,7 @@ const NeuralIdentityForge = ({
 
    const handlePlayPreview = async () => {
       if (!formData.selectedVoice || !formData.language || !formData.emotion) return;
-      
+
       if (isPlaying) {
          setIsPlaying(false);
          return;
@@ -223,7 +222,7 @@ const NeuralIdentityForge = ({
       // Rotate through items in the category based on index
       const phraseIndex = Math.floor(selectedStressIndex / metadata.stress_corpus.length) % (currentCategory?.items?.length || 1);
       const testPhrase = currentCategory ? currentCategory.items[phraseIndex] : null;
-      
+
       const text = testPhrase || `Hello! I am ${formData.name || voice.name}. My tone is ${formData.emotion} and I am speaking in ${formData.language}. How do I sound?`;
 
       try {
@@ -241,15 +240,15 @@ const NeuralIdentityForge = ({
          const blob = await response.blob();
          const url = URL.createObjectURL(blob);
          const audio = new Audio(url);
-         
+
          audio.onended = () => {
             setIsPlaying(false);
             URL.revokeObjectURL(url);
          };
 
          audio.onerror = () => {
-             setIsPlaying(false);
-             URL.revokeObjectURL(url);
+            setIsPlaying(false);
+            URL.revokeObjectURL(url);
          };
 
          await audio.play();
@@ -287,7 +286,7 @@ const NeuralIdentityForge = ({
          case 'Voice':
             if (isFetchingVoices) {
                return (
-                  <div className="flex items-center gap-2 p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <div className="flex items-center gap-2 p-4 text-[10px] font-bold text-outline uppercase tracking-widest">
                      <Loader2 className="size-4 animate-spin" /> Fetching Neural Assets...
                   </div>
                );
@@ -295,21 +294,21 @@ const NeuralIdentityForge = ({
             return availableVoices.map((av, i) => (
                <button
                   key={i}
-                  onClick={() => patch({ 
-                     gender: av.name.toLowerCase().includes('female') || av.name === 'Rachel' || av.name === 'Saira' ? 'Female' : 'Male', 
-                     selectedVoice: av.id 
+                  onClick={() => patch({
+                     gender: av.name.toLowerCase().includes('female') || av.name === 'Rachel' || av.name === 'Saira' ? 'Female' : 'Male',
+                     selectedVoice: av.id
                   })}
                   className={cn(
                      "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
-                     formData.selectedVoice === av.id ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                     formData.selectedVoice === av.id ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
                   )}
                >
-                  <div className="size-10 rounded-full bg-slate-50 overflow-hidden border border-slate-200 flex items-center justify-center">
-                     <Bot className="size-6 text-indigo-500/40" />
+                  <div className="size-10 rounded-full bg-surface-low overflow-hidden border border-outline-variant/5 flex items-center justify-center">
+                     <Bot className="size-6 text-primary/40" />
                   </div>
                   <div className="text-left">
-                     <div className="text-[11px] font-bold text-slate-900 line-clamp-1 max-w-[120px]">{av.name}</div>
-                     <div className="text-[8px] font-medium text-slate-400 uppercase tracking-tighter">{av.provider}</div>
+                     <div className="text-[11px] font-bold text-on-surface line-clamp-1 max-w-[120px]">{av.name}</div>
+                     <div className="text-[8px] font-medium text-outline uppercase tracking-tighter">{av.provider}</div>
                   </div>
                </button>
             ));
@@ -320,12 +319,12 @@ const NeuralIdentityForge = ({
                   onClick={() => patch({ language: lang.name })}
                   className={cn(
                      "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
-                     formData.language === lang.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                     formData.language === lang.name ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
                   )}
                >
                   <div className="text-left">
-                     <div className="text-[11px] font-bold text-slate-900">{lang.name}</div>
-                     <div className="text-[8px] font-medium text-slate-400">{lang.sub}</div>
+                     <div className="text-[11px] font-bold text-on-surface">{lang.name}</div>
+                     <div className="text-[8px] font-medium text-outline">{lang.sub}</div>
                   </div>
                </button>
             ));
@@ -339,13 +338,13 @@ const NeuralIdentityForge = ({
                      onClick={() => patch({ emotion: tone.name })}
                      className={cn(
                         "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
-                        formData.emotion === tone.name ? "bg-indigo-50 border-indigo-200 shadow-lg" : "bg-white border-slate-100 hover:border-slate-300"
+                        formData.emotion === tone.name ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
                      )}
                   >
-                     <Icon className={cn("size-4", formData.emotion === tone.name ? "text-indigo-500" : "text-slate-400")} />
+                     <Icon className={cn("size-4", formData.emotion === tone.name ? "text-primary" : "text-outline")} />
                      <div className="text-left">
-                        <div className="text-[11px] font-bold text-slate-900">{tone.name}</div>
-                        <div className="text-[8px] font-medium text-slate-400">{tone.label}</div>
+                        <div className="text-[11px] font-bold text-on-surface">{tone.name}</div>
+                        <div className="text-[8px] font-medium text-outline">{tone.label}</div>
                      </div>
                   </button>
                );
@@ -359,7 +358,7 @@ const NeuralIdentityForge = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-slate-900/5 backdrop-blur-[2px] pointer-events-auto"
+            className="absolute inset-0 bg-background/5 backdrop-blur-[2px] pointer-events-auto"
             onClick={onClose}
          />
 
@@ -368,21 +367,21 @@ const NeuralIdentityForge = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0.5 }}
             transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-            className="relative w-full max-w-[1100px] h-full bg-slate-50 border-l border-slate-200 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
+            className="relative w-full max-w-[1100px] h-full bg-surface-low border-l border-outline-variant/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
          >
             {/* Header */}
-            <div className="px-10 py-6 flex items-center justify-between border-b border-slate-200 shrink-0 z-10 bg-white/80 backdrop-blur-md">
+            <div className="px-10 py-6 flex items-center justify-between border-b border-outline-variant/10 shrink-0 z-10 bg-surface/80 backdrop-blur-md">
                <div className="flex items-center gap-4">
-                  <div className="size-10 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
-                     <Brain className="size-6 text-indigo-500" />
+                  <div className="size-10 rounded-2xl bg-primary/5 flex items-center justify-center border border-primary/10">
+                     <Brain className="size-6 text-primary" />
                   </div>
                   <div>
-                     <h2 className="text-xl font-bold text-slate-900 tracking-tight">NEURALIDENTITY</h2>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Persona Forge</p>
+                     <h2 className="text-xl font-bold text-on-surface tracking-tight">NEURALIDENTITY</h2>
+                     <p className="text-[10px] font-black text-outline uppercase tracking-widest">Persona Forge</p>
                   </div>
                </div>
                <div className="flex items-center gap-4">
-                  <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 transition-all">
+                  <button onClick={onClose} className="p-2 rounded-full hover:bg-surface-high transition-all">
                      <X className="size-5" />
                   </button>
                </div>
@@ -392,48 +391,54 @@ const NeuralIdentityForge = ({
                {/* Left Column */}
                <div className="flex-1 overflow-y-auto p-10 scrollbar-none space-y-8">
                   <div className="space-y-8">
-                     <div className="p-8 bg-white border border-slate-100 rounded-[2.5rem] space-y-8 shadow-sm relative overflow-hidden group/forge">
-                        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover/forge:opacity-10 transition-opacity">
-                           <Fingerprint className="size-24 text-indigo-500" />
+                     <div className="p-8 bg-surface-lowest border border-outline-variant/10 rounded-[2.5rem] space-y-8 shadow-sm relative overflow-hidden group/forge">
+                        <div className="absolute -right-12 -top-12 size-48 bg-primary/5 blur-[80px] group-hover/forge:bg-primary/10 transition-all" />
+                        <div className="flex items-center gap-8">
+                           <div className="size-20 shrink-0 rounded-[2rem] bg-surface-low flex items-center justify-center border border-outline-variant/5 shadow-inner">
+                              <Fingerprint className="size-12 text-primary" />
+                           </div>
+                           <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                 <div className="size-1.5 rounded-full bg-primary/50" />
+                                 <label className="text-[10px] font-black text-outline uppercase tracking-[0.2em]">Neural Identity Label</label>
+                              </div>
+                              <input
+                                 placeholder="e.g. Maya, Elite Concierge"
+                                 className="w-full bg-surface-low border border-outline-variant/5 rounded-2xl px-6 py-4 text-lg font-black text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20"
+                                 value={formData.name || ''}
+                                 onChange={e => patch({ name: e.target.value })}
+                              />
+                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           <PremiumInput
-                              label="Name"
-                              placeholder="e.g. Athena-7"
-                              value={formData.name || ''}
-                              onChange={v => patch({ name: v })}
-                              icon={Bot}
-                           />
-                           <div className="space-y-2 group/input">
-                              <div className="flex items-center gap-2 mb-1">
-                                 <div className="size-1.5 rounded-full bg-indigo-500/50" />
-                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Primary Logic</label>
+                        <div className="space-y-3">
+                           <div className="flex items-center gap-2 mb-1">
+                              <div className="size-1.5 rounded-full bg-primary/50" />
+                              <label className="text-[10px] font-black text-outline uppercase tracking-[0.2em]">Primary Logic</label>
+                           </div>
+                           <div className="relative group/input">
+                              <div className="absolute top-1/2 -translate-y-1/2 left-6 text-outline/30 group-focus-within/input:text-primary transition-colors">
+                                 <BrainCircuit className="size-4" />
                               </div>
-                              <div className="relative">
-                                 <div className="absolute top-1/2 -translate-y-1/2 left-6 text-slate-300 group-focus-within/input:text-indigo-500 transition-colors">
-                                    <BrainCircuit className="size-4" />
-                                 </div>
-                                 <input
-                                    placeholder="Primary Logic..."
-                                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-white focus:border-indigo-500 outline-none transition-all placeholder:text-outline/20 shadow-inner"
-                                    value={formData.psychology || ''}
-                                    onChange={e => patch({ psychology: e.target.value })}
-                                 />
-                              </div>
+                              <input
+                                 placeholder="Primary Logic..."
+                                 className="w-full bg-surface-low border border-outline-variant/5 rounded-2xl pl-14 pr-6 py-5 text-sm font-bold text-on-surface focus:bg-surface-lowest focus:border-primary outline-none transition-all placeholder:text-outline/20 shadow-inner"
+                                 value={formData.psychology || ''}
+                                 onChange={e => patch({ psychology: e.target.value })}
+                              />
                            </div>
                         </div>
                      </div>
 
                      <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                           <div className="inline-flex p-1 bg-white border border-slate-200 rounded-2xl">
+                           <div className="inline-flex p-1 bg-surface-lowest border border-outline-variant/10 rounded-2xl">
                               {['Voice', 'Language', 'Tone'].map(tab => (
                                  <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab as any)}
                                     className={cn(
                                        "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                                       activeTab === tab ? "bg-indigo-500 text-white shadow-md" : "text-slate-400 hover:text-slate-900"
+                                       activeTab === tab ? "bg-primary text-white shadow-md" : "text-outline hover:text-on-surface"
                                     )}
                                  >
                                     {tab}
@@ -448,7 +453,7 @@ const NeuralIdentityForge = ({
                                  disabled={isRecording || isCloning}
                                  className={cn(
                                     "flex flex-col items-center justify-center gap-2 p-2 px-6 rounded-2xl border border-dashed transition-all shrink-0",
-                                    isRecording ? "border-red-500 bg-red-50 text-red-500" : "border-slate-300 bg-slate-50 text-slate-400 hover:border-indigo-400 hover:bg-indigo-50"
+                                    isRecording ? "border-error bg-error/5 text-error" : "border-outline-variant/30 bg-surface-low text-outline hover:border-primary/40 hover:bg-primary/5"
                                  )}
                               >
                                  {isCloning ? <Loader2 className="size-5 animate-spin" /> : isRecording ? <Mic2 className="size-5 animate-pulse" /> : <Plus className="size-5" />}
@@ -461,17 +466,17 @@ const NeuralIdentityForge = ({
                         </div>
                      </div>
 
-                     <div className="bg-white border border-slate-100 rounded-[2.5rem] p-8 space-y-6 shadow-sm">
+                     <div className="bg-surface-lowest border border-outline-variant/10 rounded-[2.5rem] p-8 space-y-6 shadow-sm">
                         <div className="flex items-center justify-between">
-                           <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                              <CloudLightning className="size-3 text-indigo-500" /> Acoustic Tuning
+                           <h4 className="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2">
+                              <CloudLightning className="size-3 text-primary" /> Acoustic Tuning
                            </h4>
                            {metadata.stress_corpus.length > 0 && (
-                              <button 
+                              <button
                                  onClick={() => setSelectedStressIndex(i => i + 1)}
-                                 className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-[9px] font-bold text-indigo-600 hover:bg-indigo-500 hover:text-white transition-all shadow-sm"
+                                 className="flex items-center gap-2 px-3 py-1 rounded-full bg-primary/5 border border-primary/10 text-[9px] font-bold text-primary hover:bg-primary hover:text-white transition-all shadow-sm"
                               >
-                                 <RefreshCw className="size-2.5" /> 
+                                 <RefreshCw className="size-2.5" />
                                  Test: {metadata.stress_corpus[selectedStressIndex % metadata.stress_corpus.length]?.category}
                               </button>
                            )}
@@ -491,19 +496,19 @@ const NeuralIdentityForge = ({
                </div>
 
                {/* Right Column (Fixed Preview) */}
-               <div className="w-[440px] p-10 bg-slate-100 border-l border-slate-200 flex flex-col shrink-0">
+               <div className="w-[440px] p-10 bg-surface-low border-l border-outline-variant/10 flex flex-col shrink-0">
                   <div className="flex flex-col gap-8 sticky top-0">
-                     <h3 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                        <Activity className="size-5 text-indigo-500" /> Entity Preview
+                     <h3 className="text-xl font-bold text-on-surface flex items-center gap-3">
+                        <Activity className="size-5 text-primary" /> Entity Preview
                      </h3>
 
                      <div className={cn(
-                        "relative group rounded-[3rem] overflow-hidden bg-white border border-slate-200 shadow-2xl transition-all",
+                        "relative group rounded-[3rem] overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-2xl transition-all",
                         !isComplete && "opacity-50 grayscale blur-[2px] pointer-events-none"
                      )}>
                         {!isComplete && (
-                           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-md p-10 text-center">
-                              <div className="size-16 rounded-full bg-indigo-500/20 flex items-center justify-center mb-6 animate-pulse">
+                           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/40 backdrop-blur-md p-10 text-center">
+                              <div className="size-16 rounded-full bg-primary/20 flex items-center justify-center mb-6 animate-pulse">
                                  <Lock className="size-8 text-white" />
                               </div>
                               <h5 className="text-white font-bold text-lg mb-2 uppercase tracking-tighter">Acoustic Link Offline</h5>
@@ -518,30 +523,30 @@ const NeuralIdentityForge = ({
                               alt="Current Persona"
                               className="absolute inset-0 w-full h-full object-cover"
                            />
-                           <div className="absolute inset-0 bg-slate-900/40" />
-                           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-slate-900 to-transparent flex flex-col justify-end p-8 space-y-6 pb-2">
+                           <div className="absolute inset-0 bg-surface-low/40" />
+                           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-surface-low to-transparent flex flex-col justify-end p-8 space-y-6 pb-2">
                               <div className="flex flex-col">
                                  <div className="flex items-center gap-2 mb-2">
-                                    <div className={cn("size-2 rounded-full bg-indigo-400", isPlaying && "animate-ping")} />
-                                    <span className={cn("text-[10px] font-black uppercase tracking-[0.3em]", isPlaying ? "text-indigo-400" : "text-white/20")}>
+                                    <div className={cn("size-2 rounded-full bg-primary", isPlaying && "animate-ping")} />
+                                    <span className={cn("text-[10px] font-black uppercase tracking-[0.3em]", isPlaying ? "text-primary" : "text-outline/20")}>
                                        {isPlaying ? 'Audio Link Active' : 'System Standby'}
                                     </span>
                                  </div>
-                                 <h4 className="text-3xl font-bold text-white tracking-tighter">
+                                 <h4 className="text-3xl font-bold text-on-surface tracking-tighter">
                                     {availableVoices.find(v => v.id === formData.selectedVoice)?.name || 'Select Identity'}
                                  </h4>
                               </div>
 
                               <div className="flex gap-4">
-                                 <div className="flex items-center gap-1.5 text-[9px] text-white/80 font-black uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20">
+                                 <div className="flex items-center gap-1.5 text-[9px] text-outline font-black uppercase tracking-widest bg-surface-lowest px-3 py-1.5 rounded-full border border-outline-variant/20">
                                     <Languages className="size-3" /> {formData.language || 'English'}
                                  </div>
-                                 <div className="flex items-center gap-1.5 text-[9px] text-white/80 font-black uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20">
+                                 <div className="flex items-center gap-1.5 text-[9px] text-outline font-black uppercase tracking-widest bg-surface-lowest px-3 py-1.5 rounded-full border border-outline-variant/20">
                                     <ShieldCheck className="size-3" /> {formData.emotion || 'Empathetic'}
                                  </div>
                               </div>
 
-                              <div className="relative pt-4 border-t border-white/20">
+                              <div className="relative pt-4 border-t border-outline-variant/20">
                                  <div className="flex items-center gap-0.5 h-16">
                                     {[0.4, 0.7, 0.3, 0.9, 0.5, 0.8, 0.2, 0.6, 1, 0.4, 0.7, 0.3, 0.9, 0.5, 0.8, 0.2, 0.6, 1, 0.4, 0.7].map((h, i) => (
                                        <motion.div
@@ -550,7 +555,7 @@ const NeuralIdentityForge = ({
                                           transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.05 }}
                                           className={cn(
                                              "flex-1 rounded-full transition-colors duration-500",
-                                             isPlaying ? "bg-indigo-400 opacity-60" : "bg-white/20 opacity-20"
+                                             isPlaying ? "bg-primary opacity-60" : "bg-outline/20 opacity-20"
                                           )}
                                        />
                                     ))}
@@ -558,7 +563,7 @@ const NeuralIdentityForge = ({
                                  <button
                                     onClick={handlePlayPreview}
                                     disabled={!isComplete}
-                                    className="absolute right-0 bottom-6 size-16 rounded-full bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 transition-all z-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="absolute right-0 bottom-6 size-16 rounded-full bg-primary flex items-center justify-center text-white shadow-lg hover:scale-110 transition-all z-10 disabled:opacity-50 disabled:cursor-not-allowed"
                                  >
                                     {isPlaying ? <Pause className="size-8" /> : <Play className="size-7 fill-current" />}
                                  </button>
@@ -571,8 +576,8 @@ const NeuralIdentityForge = ({
             </div>
 
             {/* Bottom Action Bar */}
-            <div className="px-10 py-8 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
-               <div className="flex items-center gap-2 px-6 py-2 rounded-full bg-slate-50 border border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+            <div className="px-10 py-8 bg-surface-lowest border-t border-outline-variant/10 flex items-center justify-between shrink-0">
+               <div className="flex items-center gap-2 px-6 py-2 rounded-full bg-surface-low border border-outline-variant/10 text-outline text-[10px] font-black uppercase tracking-widest">
                   {isComplete ? (
                      <span className="text-emerald-500 flex items-center gap-2"><CheckCircle2 className="size-4" /> Persona Ready ✓</span>
                   ) : (
@@ -592,7 +597,7 @@ const NeuralIdentityForge = ({
                      }}
                      disabled={isSaving || !formData.name}
                      className={cn(
-                        "px-10 py-5 rounded-3xl bg-indigo-600 text-white font-black text-[12px] uppercase tracking-[0.3em] flex items-center gap-3 shadow-xl hover:bg-indigo-700 hover:scale-[1.02] transition-all",
+                        "px-10 py-5 rounded-3xl bg-primary text-on-primary-fixed font-black text-[12px] uppercase tracking-[0.3em] flex items-center gap-3 shadow-xl hover:bg-primary/90 hover:scale-[1.02] transition-all",
                         (!formData.name || isSaving) && "opacity-50 cursor-not-allowed"
                      )}
                   >
@@ -839,7 +844,6 @@ export default function StudioPersonas() {
       setIsForgeOpen(true);
    };
 
-
    // --- Registry Grid Logic ---
    const [activePreviewId, setActivePreviewId] = React.useState<string | null>(null);
 
@@ -852,7 +856,7 @@ export default function StudioPersonas() {
       setActivePreviewId(persona.id);
       try {
          const response = await api.testTts({
-            tts_provider: 'elevenlabs', 
+            tts_provider: 'elevenlabs',
             voice_id: persona.selectedVoice || 'Sarah',
             text: `Hello, I am ${persona.name}. My current role is ${persona.useCase}.`
          });
@@ -860,7 +864,7 @@ export default function StudioPersonas() {
          const blob = await response.blob();
          const url = URL.createObjectURL(blob);
          const audio = new Audio(url);
-         
+
          audio.onended = () => {
             setActivePreviewId(null);
             URL.revokeObjectURL(url);
@@ -970,30 +974,30 @@ export default function StudioPersonas() {
                   <Filter className="size-3.5" />
                </button>
             </div>
+         </div>
 
-            {/* <div className="flex gap-2 scrollbar-hide overflow-x-auto">
-               {RECOMMENDATIONS.map((rec, i) => (
-                  <button
-                     key={i}
-                     onClick={() => handleSuggest(rec)}
-                     className="flex items-center gap-4 px-5 py-3 rounded-2xl bg-white border border-slate-100 whitespace-nowrap group hover:bg-white hover:border-indigo-400 hover:shadow-xl transition-all cursor-pointer"
-                  >
-                     <div className="size-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500 shadow-sm border border-indigo-100 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                        <Sparkles className="size-4" />
+         <div className="flex gap-2 scrollbar-hide overflow-x-auto py-2">
+            {RECOMMENDATIONS.map((rec, i) => (
+               <button
+                  key={i}
+                  onClick={() => handleSuggest(rec)}
+                  className="flex items-center gap-4 px-5 py-3 rounded-2xl bg-surface-lowest border border-outline-variant/10 whitespace-nowrap group hover:border-primary hover:shadow-xl transition-all cursor-pointer"
+               >
+                  <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shadow-sm border border-primary/20 group-hover:bg-primary group-hover:text-white transition-all">
+                     <Sparkles className="size-4" />
+                  </div>
+                  <div className="text-left">
+                     <p className="text-[10px] font-black group-hover:text-primary transition-colors uppercase tracking-tight">{rec.name}</p>
+                     <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.voice}</span>
+                        <div className="size-1 rounded-full bg-surface-highest" />
+                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.emotion}</span>
+                        <div className="size-1 rounded-full bg-surface-highest" />
+                        <span className="text-[7px] font-black text-outline uppercase tracking-widest">{rec.language}</span>
                      </div>
-                     <div className="text-left">
-                        <p className="text-[10px] font-black group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{rec.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.voice}</span>
-                           <div className="size-1 rounded-full bg-slate-200" />
-                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.emotion}</span>
-                           <div className="size-1 rounded-full bg-slate-200" />
-                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{rec.language}</span>
-                        </div>
-                     </div>
-                  </button>
-               ))}
-            </div> */}
+                  </div>
+               </button>
+            ))}
          </div>
 
          {personas.length > 0 && (

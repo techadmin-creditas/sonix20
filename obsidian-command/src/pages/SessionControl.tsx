@@ -967,8 +967,8 @@ export default function SessionControl() {
       <Header
         title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'}
         subtitle={isLive ? 'Live Operations • Session Active' : 'Standby Mode'}
-        hideGlass={isPersonaSelectorOpen}
-        className={isPersonaSelectorOpen ? "bg-white" : ""}
+        hideGlass={isPersonaSelectorOpen || isBotSelectorOpen}
+        className={isPersonaSelectorOpen || isBotSelectorOpen ? "bg-surface-lowest" : ""}
         actions={
           <>
             {/* ── Bot Selector ────────────────────────────────── */}
@@ -996,7 +996,7 @@ export default function SessionControl() {
                       initial={{ opacity: 0, y: 10, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                      className="absolute top-full right-0 mt-4 max-w-[60vw] bg-white rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
+                      className="absolute top-full right-0 mt-4 max-w-[60vw] bg-surface-lowest rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
                     >
                       {/* Ambient Background Glows */}
                       <div className="absolute -top-24 -left-24 size-96 bg-primary/5 blur-[100px] pointer-events-none" />
@@ -1025,7 +1025,7 @@ export default function SessionControl() {
                               key={bot.id}
                               whileHover={{ y: -6 }}
                               className={cn(
-                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-white border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
+                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
                                 selectedBot?.id === bot.id && "ring-2 ring-primary/10"
                               )}
                             >
@@ -1088,8 +1088,8 @@ export default function SessionControl() {
                         </div>
 
                         {/* Slider Overlay Navigation Hints */}
-                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-white to-transparent pointer-events-none z-10" />
-                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-white to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-surface-lowest to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-surface-lowest to-transparent pointer-events-none z-10" />
                       </div>
 
                       <div className="mt-2 flex items-center justify-between px-2">
@@ -1112,7 +1112,8 @@ export default function SessionControl() {
             <div className="relative" ref={personaRef}>
               <button
                 onClick={() => setIsPersonaSelectorOpen(!isPersonaSelectorOpen)}
-                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm"
+                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] w-90 sm:max-w-none"
+
               >
                 <Users className="size-4 text-primary shrink-0" />
                 <span className="truncate hidden xs:inline sm:inline">
@@ -1134,7 +1135,7 @@ export default function SessionControl() {
                       initial={{ opacity: 0, y: 10, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                      className="absolute top-full right-0 mt-4 max-w-[70vw] bg-white rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
+                      className="absolute top-full right-0 mt-4 max-w-[70vw] bg-surface-lowest rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
                     >
                       {/* Ambient Background Glows */}
                       <div className="absolute -top-24 -left-24 size-96 bg-primary/5 blur-[100px] pointer-events-none" />
@@ -1163,7 +1164,7 @@ export default function SessionControl() {
                               key={p.id}
                               whileHover={{ y: -6 }}
                               className={cn(
-                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-white border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
+                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
                                 selectedPersona?.id === p.id && "ring-2 ring-primary/10"
                               )}
                             >
@@ -1256,8 +1257,8 @@ export default function SessionControl() {
                         </div>
 
                         {/* Slider Overlay Navigation Hints */}
-                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-white to-transparent pointer-events-none z-10" />
-                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-white to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-surface-lowest to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-surface-lowest to-transparent pointer-events-none z-10" />
                       </div>
 
                       <div className="mt-2 flex items-center justify-between px-2">
@@ -1392,14 +1393,14 @@ export default function SessionControl() {
             ) : (
               /* ── Live: session controls ──────────────────────── */
               <>
-                <button
+                {/* <button
                   onClick={() => setIsConfigOpen(true)}
                   title="Session Config"
                   className="bg-surface-high text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
                 >
                   <Settings2 className="size-4 shrink-0" />
                   <span className="hidden md:inline">Config</span>
-                </button>
+                </button> */}
                 <button
                   onClick={handleExportLogs}
                   disabled={isExporting}
