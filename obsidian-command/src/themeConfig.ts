@@ -25,6 +25,7 @@ export const themeConfig = {
       onSurfaceVariant: '#50453a',
       outline: '#827568',
       outlineVariant: '#d4c4b5',
+      displayGradient: 'linear-gradient(135deg, #5c3100 0%, #8f4e00 100%)',
       inputBg: '#f2f2f2',
     },
     dark: {
@@ -44,19 +45,20 @@ export const themeConfig = {
       onSurfaceVariant: '#dcc1ae',
       outline: '#a48c7a',
       outlineVariant: '#564334',
+      displayGradient: 'linear-gradient(135deg, #ffcc99 0%, #ffb77b 100%)',
       inputBg: '#262a31',
     }
   },
 
   nocturnal: {
     light: {
-      primary: '#7c87f3',
+      primary: '#6366F1',
       primaryContainer: '#bdc2ff',
       onPrimaryFixed: '#ffffff',
       secondary: '#bdc2ff',
       secondaryContainer: '#eff2f5',
       tertiary: '#4cd6ff',
-      background: '#f4f7fa',
+      background: '#f1f5f9',
       surface: '#ffffff',
       surfaceLow: '#eff2f5',
       surfaceHigh: '#e5e9ef',
@@ -66,6 +68,7 @@ export const themeConfig = {
       onSurfaceVariant: '#464554',
       outline: '#a4a9b3',
       outlineVariant: '#d7dce4',
+      displayGradient: 'linear-gradient(135deg, #0A0E27 0%, #344054 100%)',
       inputBg: '#eff2f5',
     },
     dark: {
@@ -85,6 +88,7 @@ export const themeConfig = {
       onSurfaceVariant: '#c7c4d7',
       outline: '#464554',
       outlineVariant: '#464554',
+      displayGradient: 'linear-gradient(135deg, #38bdf8 0%, #818cf8 100%)',
       inputBg: '#151b2d',
     }
   },
@@ -112,6 +116,7 @@ export const themeConfig = {
       onSurfaceVariant: '#4c4068',
       outline: '#a99ec4',
       outlineVariant: '#e8e4f7',
+      displayGradient: 'linear-gradient(135deg, #2e1065 0%, #7c3aed 100%)',
       inputBg: '#f5f3ff',
     },
     dark: {
@@ -131,6 +136,7 @@ export const themeConfig = {
       onSurfaceVariant: '#b0a4d4',
       outline: '#4c3a7e',
       outlineVariant: '#2d2154',
+      displayGradient: 'linear-gradient(135deg, #c4b5fd 0%, #22d3ee 100%)',
       inputBg: '#1e1540',
     },
   },
@@ -153,6 +159,7 @@ export const themeConfig = {
       onSurfaceVariant: '#475569',      // Slate-600
       outline: '#cbd5e1',               // Slate-300
       outlineVariant: '#e2e8f0',        // Slate-200
+      displayGradient: 'linear-gradient(135deg, #0f172a 0%, #4f46e5 100%)',
       inputBg: '#f8fafc',
     },
     dark: {
@@ -172,6 +179,7 @@ export const themeConfig = {
       onSurfaceVariant: '#94a3b8',
       outline: '#334155',
       outlineVariant: '#1e293b',
+      displayGradient: 'linear-gradient(135deg, #f1f5f9 0%, #38bdf8 100%)',
       inputBg: '#1e293b',
     }
   }

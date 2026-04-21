@@ -313,7 +313,7 @@ export default function Personas({ debug }: { debug?: boolean }) {
                   <div className="flex-1 mb-6">
                     <p className={cn(
                       "text-sm leading-relaxed italic group-hover:opacity-100 transition-opacity line-clamp-3",
-                      isDark ? "text-on-surface-variant opacity-80" : "text-on-surface font-medium"
+                      isDark ? "text-on-surface-variant opacity-80" : "text-on-surface font-normal"
                     )}>
                       &ldquo;{persona.description || 'Neural persona profile initializing...'}&rdquo;
                     </p>
