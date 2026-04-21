@@ -146,8 +146,8 @@ export default function Dashboard() {
           >
             <div className="flex items-center justify-between mb-8 relative z-10">
                <div>
-                  <h3 className="text-2xl font-headline font-extrabold text-on-surface tracking-tight">Your Assigned Scenarios</h3>
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em]">Featured Use Cases</p>
+                  <h3 className="text-2xl font-headline font-extrabold text-on-surface tracking-tight">Top Case Scenarios</h3>
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-[0.3em]">Highest Performing Agents</p>
                </div>
                <button 
                   onClick={() => navigate('/personas')} 
@@ -250,7 +250,7 @@ export default function Dashboard() {
           <StatCard
             icon={Bot}
             label="Active Bots"
-            value={stats?.metrics.activeBots.toString() || "0"}
+            value={allBots.filter(b => (b as any).owner_user_id === currentUser?.id).length.toString()}
             trend="Available now"
             trendColor="text-primary"
             onClick={() => navigate('/personas')}

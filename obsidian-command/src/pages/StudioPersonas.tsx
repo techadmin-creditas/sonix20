@@ -971,7 +971,7 @@ export default function StudioPersonas() {
                </button>
             </div>
 
-            <div className="flex gap-2 scrollbar-hide overflow-x-auto">
+            {/* <div className="flex gap-2 scrollbar-hide overflow-x-auto">
                {RECOMMENDATIONS.map((rec, i) => (
                   <button
                      key={i}
@@ -993,7 +993,7 @@ export default function StudioPersonas() {
                      </div>
                   </button>
                ))}
-            </div>
+            </div> */}
          </div>
 
          {personas.length > 0 && (

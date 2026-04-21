@@ -32,6 +32,7 @@ import { PermissionGuard } from '../components/PermissionGuard';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Personas({ debug }: { debug?: boolean }) {
+  const { currentUser, canUpdate } = useAuth();
   const [personas, setPersonas] = React.useState<Bot[]>([]);
   const [users, setUsers] = React.useState<any[]>([]);
   const [selectedUser, setSelectedUser] = React.useState<any | null>(null);
@@ -364,17 +365,17 @@ export default function Personas({ debug }: { debug?: boolean }) {
                   ) : (
                     <>
                   <div className="flex-1 flex items-center gap-3">
-                    <Link
-                      to={`/personas/${persona.id}/config`}
-                      className={cn(
-                        "flex-1 py-2.5 rounded-xl text-on-surface font-bold text-xs transition-all border border-outline-variant/10 text-center",
-                        useAuth().canUpdate('personas', (persona as any).owner_user_id)
-                          ? "bg-surface-high hover:bg-surface-highest"
-                          : "bg-surface-low opacity-60 cursor-not-allowed"
-                      )}
-                    >
-                      {useAuth().canUpdate('personas', (persona as any).owner_user_id) ? 'Configure' : 'View Config'}
-                    </Link>
+                      <Link
+                        to={`/personas/${persona.id}/config`}
+                        className={cn(
+                          "flex-1 py-2.5 rounded-xl text-on-surface font-bold text-xs transition-all border border-outline-variant/10 text-center",
+                          canUpdate('personas', (persona as any).owner_user_id)
+                            ? "bg-surface-high hover:bg-surface-highest"
+                            : "bg-surface-low opacity-60 cursor-not-allowed"
+                        )}
+                      >
+                        {canUpdate('personas', (persona as any).owner_user_id) ? 'Configure' : 'View Config'}
+                      </Link>
                     
                     <PermissionGuard require={{ module: 'personas', action: 'update', ownerId: (persona as any).owner_user_id }}>
                       <Link
