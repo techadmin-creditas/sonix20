@@ -62,7 +62,7 @@ const FloatingTooltip = ({ text }: { text: string }) => {
         ...pos,
         right: pos.left === 'auto' ? '0%' : 'auto',
       }}
-      className="absolute w-max max-w-[200px] p-2 bg-surface/95 backdrop-blur-xl border border-outline-variant rounded-lg shadow-xl text-[10px] text-on-surface-variant font-medium leading-relaxed whitespace-normal text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none"
+      className="absolute w-max max-w-[220px] p-2.5 bg-surface/95 backdrop-blur-xl border border-outline-variant rounded-lg shadow-xl text-label-xs text-on-surface-variant font-medium leading-relaxed whitespace-normal text-center opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none"
     >
       {text}
     </div>
@@ -412,12 +412,12 @@ const Dropdown = <T extends string>({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="group relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-outline-variant bg-surface-low text-[10px] font-semibold text-on-surface-variant hover:border-primary/50 hover:text-on-surface transition-all whitespace-nowrap"
+        className="group relative flex items-center gap-1.5 px-3 py-2 rounded-lg border border-outline-variant bg-surface-low text-label-sm font-semibold text-on-surface-variant hover:border-primary/50 hover:text-on-surface transition-all whitespace-nowrap"
       >
         {tooltip && <FloatingTooltip text={tooltip} />}
-        <span className="text-[8px] font-medium text-outline uppercase tracking-wide mr-0.5">{label}</span>
+        <span className="text-[9px] font-bold text-outline uppercase tracking-wider mr-0.5">{label}</span>
         {current?.label}
-        <ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <AnimatePresence>
         {open && (
@@ -426,13 +426,13 @@ const Dropdown = <T extends string>({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-[120px] rounded-xl border border-outline-variant bg-surface/95 backdrop-blur-xl shadow-xl overflow-hidden"
+            className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-[140px] rounded-xl border border-outline-variant bg-surface/95 backdrop-blur-xl shadow-xl overflow-hidden"
           >
             {options.map(opt => (
               <button
                 key={opt.value}
                 onClick={() => { onChange(opt.value); setOpen(false); }}
-                className={`w-full px-3 py-2 text-left text-[10px] font-medium hover:bg-primary/8 transition-colors ${
+                className={`w-full px-3.5 py-2.5 text-left text-label-sm font-medium hover:bg-primary/8 transition-colors ${
                   opt.value === value ? 'text-primary bg-primary/5' : 'text-on-surface-variant'
                 }`}
               >
@@ -457,15 +457,15 @@ const SegmentedControl = <T extends string | number>({
   label?: string;
   tooltip?: string;
 }) => (
-  <div className="group relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-outline-variant bg-surface-low cursor-pointer">
+  <div className="group relative flex items-center gap-1 px-3 py-2 rounded-lg border border-outline-variant bg-surface-low cursor-pointer">
     {tooltip && <FloatingTooltip text={tooltip} />}
-    {label && <span className="text-[8px] font-medium text-outline uppercase tracking-wide mr-1.5">{label}</span>}
+    {label && <span className="text-[9px] font-bold text-outline uppercase tracking-wider mr-2">{label}</span>}
     <div className="flex items-center gap-0.5">
       {options.map((opt) => (
         <button
           key={String(opt.value)}
           onClick={() => onChange(opt.value)}
-          className={`px-2 py-0.5 text-[9px] font-medium rounded-md transition-all whitespace-nowrap ${
+          className={`px-2.5 py-1 text-label-xs font-bold rounded-md transition-all whitespace-nowrap ${
             value === opt.value
               ? 'bg-primary/10 text-primary border border-primary/20 shadow-sm'
               : 'text-on-surface-variant hover:bg-primary/5 hover:text-on-surface border border-transparent'
@@ -505,32 +505,32 @@ const CallIntelligenceReport = ({
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-outline-variant">
         <div className="flex items-center gap-2">
           <div className="size-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface">Call Intelligence Report</span>
+          <span className="text-label-xs font-black uppercase tracking-[0.2em] text-on-surface">Call Intelligence Report</span>
         </div>
-        <span className="text-[9px] font-medium text-on-surface-variant font-mono">{duration}</span>
+        <span className="text-label-xs font-medium text-on-surface-variant font-mono">{duration}</span>
       </div>
 
-      <div className="space-y-3 flex-1">
+      <div className="space-y-4 flex-1">
 
         {/* Sentiment Arc */}
         <motion.div
-          className="rounded-xl border border-outline-variant bg-surface-low/50 p-3 space-y-2"
+          className="rounded-xl border border-outline-variant bg-surface-low/50 p-3.5 space-y-2.5"
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8, duration: 0.4 }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp className="size-3 text-primary" />
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary">Sentiment Arc</span>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="size-4 text-primary" />
+              <span className="text-label-xs font-black uppercase tracking-[0.2em] text-primary">Sentiment Arc</span>
             </div>
-            <div className="flex items-center gap-2 text-[9px] font-medium text-on-surface-variant">
+            <div className="flex items-center gap-2 text-label-xs font-medium text-on-surface-variant">
               <span>Peak <span className="text-primary font-bold">{report.peakSentiment}%</span> @ {report.peakAt}</span>
               <span className="text-outline">·</span>
               <span>Final <span className="text-on-surface font-bold">{report.finalSentiment}%</span></span>
             </div>
           </div>
           <SentimentSparkline points={report.sentimentArc} animate={shown} />
-          <div className="flex items-center justify-between text-[8px] text-on-surface-variant">
+          <div className="flex items-center justify-between text-label-xs text-on-surface-variant opacity-60">
             <span>Start</span>
             <span>Call duration</span>
             <span>End</span>
@@ -562,18 +562,18 @@ const CallIntelligenceReport = ({
         {/* PTP Confidence */}
         {report.ptp ? (
           <motion.div
-            className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2"
+            className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-2.5"
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.2, duration: 0.4 }}
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Handshake className="size-3 text-emerald-400" />
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">PTP Confidence</span>
+              <div className="flex items-center gap-2">
+                <Handshake className="size-4 text-emerald-400" />
+                <span className="text-label-xs font-black uppercase tracking-[0.2em] text-emerald-400">PTP Confidence</span>
               </div>
-              <span className="text-xs font-bold text-emerald-400">{report.ptp.score}%</span>
+              <span className="text-body-sm font-bold text-emerald-400">{report.ptp.score}%</span>
             </div>
-            <div className="h-1 w-full rounded-full bg-outline-variant overflow-hidden">
+            <div className="h-1.5 w-full rounded-full bg-outline-variant overflow-hidden">
               <motion.div
                 className="h-full rounded-full bg-emerald-400"
                 initial={{ scaleX: 0 }}
@@ -582,36 +582,36 @@ const CallIntelligenceReport = ({
                 transition={{ delay: 1.3, duration: 0.8, ease: 'easeOut' }}
               />
             </div>
-            <p className="text-[9px] text-on-surface-variant leading-relaxed">{report.ptp.detail}</p>
+            <p className="text-label-xs text-on-surface-variant leading-relaxed">{report.ptp.detail}</p>
           </motion.div>
         ) : (
           <motion.div
-            className="rounded-xl border border-outline-variant bg-surface-low/30 p-3"
+            className="rounded-xl border border-outline-variant bg-surface-low/30 p-4"
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.2, duration: 0.4 }}
           >
-            <div className="flex items-center gap-1.5 mb-1">
-              <Handshake className="size-3 text-on-surface-variant" />
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-on-surface-variant">PTP Confidence</span>
+            <div className="flex items-center gap-2 mb-1.5">
+              <Handshake className="size-3.5 text-on-surface-variant" />
+              <span className="text-label-xs font-black uppercase tracking-[0.2em] text-on-surface-variant">PTP Confidence</span>
             </div>
-            <p className="text-[9px] text-on-surface-variant">Not applicable for this call type.</p>
+            <p className="text-label-xs text-on-surface-variant">Not applicable for this call type.</p>
           </motion.div>
         )}
 
         {/* Next Best Action */}
         <motion.div
-          className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-2"
+          className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2.5"
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.4, duration: 0.4 }}
         >
-          <div className="flex items-center gap-1.5">
-            <Zap className="size-3 text-primary" />
-            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-primary">Next Best Action</span>
+          <div className="flex items-center gap-2">
+            <Zap className="size-4 text-primary" />
+            <span className="text-label-xs font-black uppercase tracking-[0.2em] text-primary">Next Best Action</span>
           </div>
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             {report.nextBestAction.map((action, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-[9px] text-on-surface-variant">
-                <ArrowRight className="size-2.5 text-primary shrink-0 mt-0.5" />
+              <li key={i} className="flex items-start gap-2 text-label-sm text-on-surface-variant">
+                <ArrowRight className="size-3 text-primary shrink-0 mt-0.5" />
                 <span>{action}</span>
               </li>
             ))}
@@ -648,12 +648,12 @@ const CallIntelligenceReport = ({
       >
         <button
           onClick={onReplay}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/25 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-all"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 border border-primary/25 text-label-sm font-bold text-primary hover:bg-primary/20 transition-all"
         >
-          <RotateCcw className="size-3" /> Replay Call
+          <RotateCcw className="size-4" /> Replay Call
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant text-[10px] font-medium text-on-surface-variant hover:border-outline hover:text-on-surface transition-all">
-          <FileText className="size-3" /> Export Report
+        <button className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-outline-variant text-label-sm font-semibold text-on-surface-variant hover:border-outline hover:text-on-surface transition-all">
+          <FileText className="size-4" /> Export Report
         </button>
       </motion.div>
     </motion.div>
@@ -855,30 +855,30 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
     >
 
       {/* ── Header ── */}
-      <div className={`demo-header flex items-center justify-between px-4 py-2.5 rounded-xl border mb-3 ${
+      <div className={`demo-header flex items-center justify-between px-5 py-3.5 rounded-xl border mb-4 ${
         callEnded
           ? (isDark ? 'bg-red-500/8 border-red-500/20' : 'bg-red-50 border-red-200')
           : (isDark ? 'bg-surface/60 border-outline' : 'bg-surface/80 border-outline-variant shadow-sm')
       }`}>
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1.5 ${callEnded ? 'opacity-60' : ''}`}>
-            <div className={`size-2 rounded-full ${callEnded ? 'bg-red-500' : 'bg-emerald-400 animate-pulse'}`} />
-            <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${callEnded ? 'text-red-400' : 'text-emerald-400'}`}>
+        <div className="flex items-center gap-4">
+          <div className={`flex items-center gap-2 ${callEnded ? 'opacity-60' : ''}`}>
+            <div className={`size-2.5 rounded-full ${callEnded ? 'bg-red-500' : 'bg-emerald-400 animate-pulse'}`} />
+            <span className={`text-label-sm font-black uppercase tracking-[0.2em] ${callEnded ? 'text-red-400' : 'text-emerald-400'}`}>
               {callEnded ? 'Call Ended' : isPaused ? 'Paused' : 'Live Call'}
             </span>
           </div>
           <span className="text-outline/50">·</span>
-          <span className="text-[10px] font-semibold text-on-surface">{sc.agent} — {sc.label}</span>
+          <span className="text-label-sm font-bold text-on-surface">{sc.agent} — {sc.label}</span>
           <span className="text-outline/50">·</span>
-          <span className="text-[10px] font-mono tabular-nums text-on-surface-variant">{durationStr}</span>
+          <span className="text-label-sm font-mono tabular-nums text-on-surface-variant">{durationStr}</span>
           <span className="text-outline/50">·</span>
-          <span className="text-[9px] font-medium text-on-surface-variant bg-surface-high px-2 py-0.5 rounded-full border border-outline-variant">
+          <span className="text-label-xs font-bold text-on-surface-variant bg-surface-high px-3 py-1 rounded-full border border-outline-variant">
             {sc.langLabel}
           </span>
         </div>
         <button
           onClick={callEnded || (!isRunning && !isStarting) ? handleStartCall : handleEndCall}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-label-sm font-black uppercase tracking-wider transition-all ${
             callEnded || (!isRunning && !isStarting)
               ? 'bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 disabled:opacity-50'
               : 'bg-red-500/10 border border-red-500/25 text-red-400 hover:bg-red-500/20'
@@ -886,43 +886,43 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
           disabled={isStarting}
         >
           {isStarting ? (
-            <><RotateCcw className="size-3 animate-spin" /> Connecting...</>
+            <><RotateCcw className="size-3.5 animate-spin" /> Connecting...</>
           ) : callEnded || !isRunning ? (
-            <><Phone className="size-3" /> Start Call</>
+            <><Phone className="size-3.5" /> Start Simulation</>
           ) : (
-            <><PhoneOff className="size-3" /> End Call</>
+            <><PhoneOff className="size-3.5" /> End Call</>
           )}
         </button>
       </div>
 
       {/* ── 2-column body ── */}
-      <div className="flex gap-3 flex-1 min-h-0">
+      <div className="flex gap-4 flex-1 min-h-0">
 
         {/* Left column: Pipeline + Intel */}
-        <div className="w-[200px] shrink-0 flex flex-col gap-3">
+        <div className="w-64 shrink-0 flex flex-col gap-4">
 
           {/* Pipeline */}
-          <div className={`${cardCls} p-3 space-y-1`}>
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-2">Pipeline</p>
+          <div className={`${cardCls} p-4 space-y-2`}>
+            <p className="text-label-xs font-black uppercase tracking-[0.2em] text-on-surface-variant mb-3">Core Pipeline</p>
 
             {[
-              { icon: <Mic className="size-3" />, label: 'STT', ms: 45, cls: 'pipe-step' },
-              { icon: <Brain className="size-3" />, label: 'LLM', ms: 280, cls: 'pipe-step' },
-              { icon: <Volume2 className="size-3" />, label: 'TTS', ms: 120, cls: 'pipe-step' },
+              { icon: <Mic className="size-4" />, label: 'STT', ms: 45, cls: 'pipe-step' },
+              { icon: <Brain className="size-4" />, label: 'LLM', ms: 280, cls: 'pipe-step' },
+              { icon: <Volume2 className="size-4" />, label: 'TTS', ms: 120, cls: 'pipe-step' },
             ].map((step, i) => (
               <div key={step.label}>
                 <div className={`flex items-center justify-between ${step.cls}`}>
-                  <div className="flex items-center gap-1.5 text-on-surface-variant">
+                  <div className="flex items-center gap-2 text-on-surface-variant">
                     {step.icon}
-                    <span className="text-[9px] font-semibold">{step.label}</span>
+                    <span className="text-label-sm font-semibold">{step.label}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="pipe-latency text-[9px] font-mono font-bold text-primary tabular-nums">
+                  <div className="flex items-center gap-1.5">
+                    <span className="pipe-latency text-label-sm font-mono font-bold text-primary tabular-nums">
                       {isRunning ? `${step.ms}ms` : '--'}
                     </span>
                     {isRunning && (
                       <motion.span
-                        className="text-emerald-400 text-[8px]"
+                        className="text-emerald-400 text-xs"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: 0.4 + i * 0.2 }}
@@ -930,50 +930,50 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                     )}
                   </div>
                 </div>
-                {i < 2 && <div className="w-px h-2 bg-outline-variant/60 ml-[5px] my-0.5" />}
+                {i < 2 && <div className="w-px h-2.5 bg-outline-variant/60 ml-[7px] my-0.5" />}
               </div>
             ))}
 
-            <div className="border-t border-outline-variant pt-2 mt-1">
+            <div className="border-t border-outline-variant pt-3 mt-2">
               <div className="flex items-center justify-between">
-                <span className="text-[8px] font-medium text-on-surface-variant">TOTAL</span>
-                <span className="text-[9px] font-mono font-black text-primary">
+                <span className="text-label-xs font-bold text-on-surface-variant">E2E LATENCY</span>
+                <span className="text-label-sm font-mono font-black text-primary">
                   {isRunning ? '445ms ✓' : 'IDLE'}
                 </span>
               </div>
-              <div className="text-[8px] text-on-surface-variant mt-0.5">Target &lt;800ms · <span className="text-emerald-400">{isRunning ? '44% headroom' : 'Ready'}</span></div>
+              <div className="text-[10px] text-on-surface-variant mt-1">Target &lt;800ms · <span className="text-emerald-400 font-bold">{isRunning ? '44% headroom' : 'Ready'}</span></div>
             </div>
           </div>
 
           {/* Live Intel */}
-          <div className={`${cardCls} p-3 space-y-3 flex-1`}>
-            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-on-surface-variant">Live Intel</p>
+          <div className={`${cardCls} p-4 space-y-4 flex-1`}>
+            <p className="text-label-xs font-black uppercase tracking-[0.2em] text-on-surface-variant mb-1">Live Intel</p>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[9px]">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-label-sm">
                 <span className="text-on-surface-variant">Sentiment</span>
-                <span className="font-bold text-primary">{sentiment}%</span>
+                <span className="font-black text-primary">{sentiment}%</span>
               </div>
               <IntelBar value={sentiment} />
             </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[9px]">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-label-sm">
                 <span className="text-on-surface-variant">Propensity</span>
-                <span className="font-bold text-secondary">{propensity}%</span>
+                <span className="font-black text-secondary">{propensity}%</span>
               </div>
               <IntelBar value={propensity} color="bg-secondary" />
             </div>
 
-            <div className="space-y-1.5 pt-1 border-t border-outline-variant">
-              <div className="flex items-center justify-between text-[9px]">
+            <div className="space-y-2.5 pt-2 border-t border-outline-variant">
+              <div className="flex items-center justify-between text-label-sm">
                 <span className="text-on-surface-variant">Intent</span>
-                <span className="font-semibold text-on-surface">{isRunning ? intentLabel : 'Idle'}</span>
+                <span className="font-bold text-on-surface">{isRunning ? intentLabel : 'Idle'}</span>
               </div>
-              <div className="flex items-center justify-between text-[9px]">
+              <div className="flex items-center justify-between text-label-sm">
                 <span className="text-on-surface-variant">Compliance</span>
-                <span className={`font-bold ${complianceActive ? 'text-emerald-400' : 'text-on-surface-variant'}`}>
-                  {complianceActive ? '✓ ON' : 'OFF'}
+                <span className={`font-black ${complianceActive ? 'text-emerald-400' : 'text-on-surface-variant opacity-60'}`}>
+                  {complianceActive ? '✓ ACTIVE' : 'DISABLED'}
                 </span>
               </div>
             </div>
@@ -981,12 +981,12 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
         </div>
 
         {/* Right column */}
-        <div className="flex-1 flex flex-col gap-2 min-h-0">
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
           <AnimatePresence mode="wait">
             {callEnded ? (
               <motion.div
                 key="report"
-                className={`flex-1 ${cardCls} p-4`}
+                className={`flex-1 ${cardCls} p-5`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -998,13 +998,13 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                 />
               </motion.div>
             ) : (
-              <motion.div key="live" className="flex-1 flex flex-col gap-2 min-h-0" initial={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div key="live" className="flex-1 flex flex-col gap-3 min-h-0" initial={{ opacity: 1 }} exit={{ opacity: 0 }}>
 
                 <div 
                   ref={transcriptContainerRef}
                   onScroll={handleScroll}
                   onWheel={(e) => e.stopPropagation()}
-                  className={`${cardCls} flex-1 overflow-y-auto thin-scrollbar p-3 relative min-h-0`}
+                  className={`${cardCls} flex-1 overflow-y-auto thin-scrollbar p-5 relative min-h-0`}
                 >
                   <AnimatePresence mode="wait">
                     {!isRunning && transcript.length === 0 ? (
@@ -1013,7 +1013,7 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="h-full min-h-[220px] flex flex-col items-center justify-center p-4 text-center"
+                        className="h-full min-h-[300px] flex flex-col items-center justify-center p-6 text-center"
                       >
                         <AnimatePresence mode="wait">
                           {isStarting ? (
@@ -1022,36 +1022,36 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                               initial={{ opacity: 0, scale: 0.9 }}
                               animate={{ opacity: 1, scale: 1 }}
                               exit={{ opacity: 0, scale: 1.1 }}
-                              className="flex flex-col items-center gap-4"
+                              className="flex flex-col items-center gap-5"
                             >
-                              <div className="relative size-16 flex items-center justify-center">
+                              <div className="relative size-20 flex items-center justify-center">
                                 <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-                                <Mic className="size-6 text-primary" />
+                                <Mic className="size-8 text-primary" />
                               </div>
-                              <div className="space-y-1">
-                                <p className="text-xs font-bold text-on-surface">Connecting to {sc.agent}...</p>
-                                <p className="text-[9px] text-on-surface-variant animate-pulse">Initializing neural voice engine</p>
+                              <div className="space-y-1.5">
+                                <p className="text-body-base font-black text-on-surface tracking-tight">Connecting to {sc.agent}...</p>
+                                <p className="text-label-sm text-on-surface-variant animate-pulse font-medium">Initializing neural voice engine</p>
                               </div>
                             </motion.div>
                           ) : (
                             <motion.div
                               key="ready"
-                              initial={{ opacity: 0, y: 10 }}
+                              initial={{ opacity: 0, y: 15 }}
                               animate={{ opacity: 1, y: 0 }}
-                              className="bg-surface/40 backdrop-blur-sm rounded-2xl border border-outline-variant p-5 flex flex-col items-center gap-4 w-full max-w-[240px]"
+                              className="bg-surface/40 backdrop-blur-sm rounded-3xl border border-outline-variant p-8 flex flex-col items-center gap-6 w-full max-w-[320px]"
                             >
-                              <div className="size-10 rounded-full bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
-                                <Phone className="size-5" />
+                              <div className="size-14 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
+                                <Phone className="size-7" />
                               </div>
-                              <div className="space-y-1">
-                                <h4 className="text-[10px] font-black text-on-surface uppercase tracking-wider">Ready for {sc.agent}</h4>
-                                <p className="text-[9px] text-on-surface-variant leading-relaxed">
-                                  Simulation calibrated. Adjust settings or start now.
+                              <div className="space-y-2">
+                                <h4 className="text-label-sm font-black text-on-surface uppercase tracking-[0.2em]">Simulation Ready</h4>
+                                <p className="text-label-sm text-on-surface-variant leading-relaxed">
+                                  Voice engine calibrated for <strong>{sc.agent}</strong>. Adjust parameters or start simulation.
                                 </p>
                               </div>
                               <button
                                 onClick={handleStartCall}
-                                className="w-full py-2 rounded-xl bg-primary text-on-primary-fixed text-[10px] font-bold shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                                className="w-full py-3.5 rounded-xl bg-primary text-on-primary-fixed text-label-sm font-black uppercase tracking-widest shadow-xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all"
                               >
                                 Start Simulation
                               </button>
@@ -1064,42 +1064,42 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                         key="transcript"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="space-y-2"
+                        className="space-y-3.5"
                       >
                         {transcript.map((msg, i) => (
                           <motion.div
                             key={i}
-                            initial={{ opacity: 0, y: 8 }}
+                            initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.3 }}
+                            transition={{ duration: 0.35 }}
                             className={`flex ${msg.speaker === 'user' ? 'justify-end' : msg.speaker === 'system' ? 'justify-center' : 'justify-start'}`}
                           >
                             {msg.speaker === 'system' ? (
-                              <div className={`px-3 py-1 rounded-full text-[9px] font-medium border ${
+                              <div className={`px-4 py-1.5 rounded-full text-label-xs font-bold border tracking-wide ${
                                 msg.compliance
                                   ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                  : 'bg-surface-high border-outline text-on-surface-variant'
+                                  : 'bg-surface-high border-outline-variant text-on-surface-variant'
                               }`}>
                                 {msg.text}
                               </div>
                             ) : msg.speaker === 'user' ? (
-                              <div className="max-w-[75%] px-3 py-2 rounded-xl rounded-br-sm bg-primary text-on-primary-fixed text-[10px] leading-relaxed shadow-sm">
+                              <div className="max-w-[70%] px-4 py-3 rounded-2xl rounded-br-sm bg-primary text-on-primary-fixed text-body-base leading-relaxed shadow-lg shadow-primary/10">
                                 {msg.text}
                               </div>
                             ) : (
-                              <div className={`max-w-[80%] px-3 py-2 rounded-xl rounded-bl-sm text-[10px] leading-relaxed border-l-2 ${
+                              <div className={`max-w-[75%] px-4 py-3 rounded-2xl rounded-bl-sm text-body-base leading-relaxed border-l-4 ${
                                 msg.compliance && complianceActive
-                                  ? 'bg-emerald-500/8 border-l-emerald-400 border border-emerald-500/20 text-on-surface'
+                                  ? 'bg-emerald-500/8 border-l-emerald-400 border border-emerald-500/20 text-on-surface font-medium'
                                   : isDark
                                   ? 'bg-surface-high border-l-primary border border-outline-variant text-on-surface'
-                                  : 'bg-surface-low border-l-primary border border-outline-variant text-on-surface'
+                                  : 'bg-surface-low border-l-primary border border-outline-variant text-on-surface shadow-sm'
                               }`}>
                                 {highlightsActive
-                                  ? <span dangerouslySetInnerHTML={{ __html: msg.text.replace(/(₹[\d,]+|PTP|compliance|verified|confirmed)/gi, '<strong class="text-primary">$1</strong>') }} />
+                                  ? <span dangerouslySetInnerHTML={{ __html: msg.text.replace(/(₹[\d,]+|PTP|compliance|verified|confirmed|SMS|payment)/gi, '<strong class="text-primary font-bold">$1</strong>') }} />
                                   : msg.text
                                 }
                                 {msg.lang && msg.lang !== 'system' && (
-                                  <span className="ml-1.5 text-[8px] text-outline">[{msg.lang}]</span>
+                                  <span className="ml-2 text-label-xs text-outline font-bold">[{msg.lang.toUpperCase()}]</span>
                                 )}
                               </div>
                             )}
@@ -1112,15 +1112,15 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                 </div>
 
                 {/* Waveform strip */}
-                <div className={`wave-strip ${cardCls} px-3 py-2 flex items-center gap-3`}>
-                  <Mic className="size-3 text-primary shrink-0" />
+                <div className={`wave-strip ${cardCls} px-4 py-2.5 flex items-center gap-4`}>
+                  <Mic className="size-4 text-primary shrink-0" />
                   <DemoPanelWaveform isActive={isRunning && !isPaused} isDark={isDark} />
                 </div>
 
                 {/* Controls */}
-                <div className={`demo-controls ${cardCls} p-3 space-y-2.5`}>
+                <div className={`demo-controls ${cardCls} p-4 space-y-4`}>
                   {/* Row 1: Dropdowns */}
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <Dropdown<ScenarioKey>
                       label="Scenario" value={scenario}
                       tooltip="Select the core call objective for the AI to handle."
@@ -1153,7 +1153,7 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                       onChange={setTone}
                     />
                     <Dropdown<string>
-                      label="Neural Voice" value={voiceProfile}
+                      label="Persona" value={voiceProfile}
                       tooltip="Select the exact sonic persona used to generate audio."
                       options={VOICE_PROFILES}
                       onChange={setVoiceProfile}
@@ -1161,11 +1161,11 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                   </div>
 
                   {/* Row 1.5: Neural Precision & Stress */}
-                  <div className="flex items-center gap-2 flex-wrap pb-1 z-10 relative">
+                  <div className="flex items-center gap-3 flex-wrap pb-1 z-10 relative">
                     <SegmentedControl<'low' | 'high'>
-                      label="Customer Mood" value={stressLevel}
+                      label="Mood" value={stressLevel}
                       tooltip="Switch to difficult to simulate an angry or financially stressed customer, testing the AI's empathy and de-escalation skills."
-                      options={[{ label: 'Easy', value: 'low' }, { label: 'Difficult', value: 'high' }]}
+                      options={[{ label: 'Easy', value: 'low' }, { label: 'Hard', value: 'high' }]}
                       onChange={setStressLevel}
                     />
                     <SegmentedControl<number>
@@ -1198,11 +1198,11 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                   </div>
 
                   {/* Neural Prompt Editor */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-[8px] font-black uppercase tracking-[0.2em] text-on-surface-variant">
-                        <FileText className="size-3 text-primary" />
-                        Neural Context
+                      <div className="flex items-center gap-2 text-label-xs font-black uppercase tracking-[0.2em] text-on-surface-variant">
+                        <FileText className="size-4 text-primary" />
+                        Neural Context Overlay
                       </div>
                       <div className="flex items-center gap-1.5">
                         {["Strict Compliance", "High Empathy", "Direct"].map(tag => (
@@ -1214,7 +1214,7 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                                         "Focus on speed and risk mitigation. Block cards first, explain later. Maximum urgency.";
                               setEditablePrompt(s);
                             }}
-                            className="px-1.5 py-0.5 rounded bg-surface-high border border-outline-variant text-[7px] font-bold text-on-surface-variant hover:text-primary hover:border-primary/50 transition-colors"
+                            className="px-2 py-1 rounded-lg bg-surface-high border border-outline-variant text-[8px] font-black uppercase text-on-surface-variant hover:text-primary hover:border-primary/50 transition-all"
                           >
                             {tag}
                           </button>
@@ -1224,55 +1224,55 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                     <textarea
                       value={editablePrompt}
                       onChange={(e) => setEditablePrompt(e.target.value)}
-                      className="w-full h-14 bg-surface-low border border-outline-variant rounded-lg p-2 text-[10px] text-on-surface-variant font-mono focus:border-primary/50 focus:ring-1 focus:ring-primary/20 outline-none resize-none thin-scrollbar"
+                      className="w-full h-16 bg-surface-low border border-outline-variant rounded-xl p-3 text-label-sm text-on-surface-variant font-mono focus:border-primary/50 focus:ring-2 focus:ring-primary/10 outline-none resize-none thin-scrollbar leading-relaxed"
                       placeholder="Enter system instructions..."
                     />
                   </div>
 
                   {/* Row 2: Action buttons + toggles */}
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5 flex-wrap">
                     <button
                       onClick={handleBargeIn}
-                      className="group relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/8 text-[10px] font-semibold text-primary hover:bg-primary/15 transition-all"
+                      className="group relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-primary/30 bg-primary/8 text-label-sm font-bold text-primary hover:bg-primary/15 transition-all"
                     >
                       <FloatingTooltip text="Instantly interrupt the AI to test its rapid context-switching capabilities." />
-                      <Zap className="size-3" /> Barge-in
+                      <Zap className="size-3.5" /> Barge-in
                     </button>
                     <button
                       onClick={handleRestart}
-                      className={`group relative flex items-center gap-1 px-3 py-1.5 rounded-lg border font-bold text-[10px] transition-all shadow-sm ${
+                      className={`group relative flex items-center gap-1.5 px-4 py-2 rounded-xl border font-black text-label-xs uppercase tracking-widest transition-all shadow-sm ${
                         !isRunning && transcript.length > 0 
                           ? 'bg-primary text-on-primary-fixed border-primary hover:brightness-110 shadow-primary/20' 
                           : 'border-outline-variant text-on-surface-variant hover:border-outline hover:text-on-surface'
                       }`}
                     >
                       <FloatingTooltip text={transcript.length > 0 ? "Apply new settings and restart the simulation." : "Reset simulation state."} />
-                      <RotateCcw className="size-3" /> {transcript.length > 0 ? "Apply & Restart" : "Reset"}
+                      <RotateCcw className="size-3.5" /> {transcript.length > 0 ? "RESTART" : "RESET"}
                     </button>
                     <button
                       onClick={() => setIsPaused(p => !p)}
-                      className="group relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-outline-variant text-[10px] font-semibold text-on-surface-variant hover:border-outline hover:text-on-surface transition-all"
+                      className="group relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-outline-variant text-label-sm font-bold text-on-surface-variant hover:border-outline hover:text-on-surface transition-all"
                     >
                       <FloatingTooltip text={isPaused ? "Resume the simulation feed." : "Pause the current simulation step."} />
-                      {isPaused ? <><Play className="size-3" /> Resume</> : <><Pause className="size-3" /> Pause</>}
+                      {isPaused ? <><Play className="size-3.5" /> Resume</> : <><Pause className="size-3.5" /> Pause</>}
                     </button>
 
-                    <div className="ml-auto flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 cursor-pointer select-none group relative">
+                    <div className="ml-auto flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer select-none group relative">
                         <FloatingTooltip text="Visually highlights strict regulatory compliance statements made by the AI." />
                         <ToggleSwitch on={complianceActive} onToggle={() => setComplianceActive(v => !v)} />
-                        <span className="text-[9px] text-on-surface-variant font-medium">Compliance</span>
+                        <span className="text-label-xs text-on-surface-variant font-bold uppercase tracking-wider">Compliance</span>
                       </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer select-none group relative">
+                      <label className="flex items-center gap-2 cursor-pointer select-none group relative">
                         <FloatingTooltip text="Dynamically spotlights extracted entities like amounts and confirmation actions." />
                         <ToggleSwitch on={highlightsActive} onToggle={() => setHighlightsActive(v => !v)} />
-                        <span className="text-[9px] text-on-surface-variant font-medium">Highlights</span>
+                        <span className="text-label-xs text-on-surface-variant font-bold uppercase tracking-wider">Highlights</span>
                       </label>
-                      <div className="w-px h-3 bg-outline-variant mx-1" />
-                      <label className="flex items-center gap-1.5 cursor-pointer select-none group relative">
+                      <div className="w-px h-4 bg-outline-variant mx-1" />
+                      <label className="flex items-center gap-2 cursor-pointer select-none group relative">
                         <FloatingTooltip text="Triggers an automatic escalation to a human supervisor if the AI cannot resolve the request." />
                         <ToggleSwitch on={isHandoffEnabled} onToggle={() => setIsHandoffEnabled(v => !v)} />
-                        <span className="text-[9px] text-on-surface-variant font-medium">Handoff</span>
+                        <span className="text-label-xs text-on-surface-variant font-bold uppercase tracking-wider">Handoff</span>
                       </label>
                     </div>
                   </div>

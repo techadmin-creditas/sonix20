@@ -76,10 +76,10 @@ export function AgentHoverPanel({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-      className={`absolute bottom-[calc(100%+8px)] ${edgeCls} z-50 w-72`}
+      className={`absolute bottom-[calc(100%+6px)] ${edgeCls} z-50 w-64`}
       onClick={e => e.stopPropagation()}
     >
-      <div className="rounded-2xl border border-outline-variant bg-surface/96 backdrop-blur-xl shadow-2xl p-4 overflow-hidden relative min-h-[300px] flex flex-col">
+      <div className="rounded-2xl border border-outline-variant bg-surface/96 backdrop-blur-xl shadow-2xl p-3.5 overflow-hidden relative min-h-[280px] flex flex-col">
         <AnimatePresence mode="wait">
           {!showPrompt ? (
             <motion.div
@@ -90,14 +90,14 @@ export function AgentHoverPanel({
               className="space-y-3 flex-1 flex flex-col"
             >
               {/* Header */}
-              <div className="flex items-center gap-3">
-                <div className="size-14 rounded-xl overflow-hidden border border-outline-variant shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="size-12 rounded-xl overflow-hidden border border-outline-variant shrink-0">
                   <AgentAvatar id={agent.id} name={name} isMini={false} isSwitcher={false} instanceId={`panel-${agent.id}`} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-on-surface truncate">{name}</p>
-                  <p className="text-[10px] font-medium text-on-surface-variant uppercase tracking-wider truncate">{role}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[9px] font-bold text-primary">
+                  <p className="text-body-base font-bold text-on-surface truncate">{name}</p>
+                  <p className="text-label-xs text-on-surface-variant uppercase tracking-wider truncate leading-tight">{role}</p>
+                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[9px] font-bold text-primary">
                     {agent.specialty}
                   </span>
                 </div>
@@ -106,14 +106,14 @@ export function AgentHoverPanel({
               <div className="h-px bg-outline-variant/60" />
 
               {/* Benefit */}
-              <p className="text-xs text-on-surface-variant leading-relaxed">{benefit}</p>
+              <p className="text-label-xs text-on-surface-variant leading-relaxed">{benefit}</p>
 
               <div className="h-px bg-outline-variant/60" />
 
               {/* Details */}
               <ul className="space-y-1">
                 {details.map(d => (
-                  <li key={d} className="flex items-start gap-1.5 text-[11px] text-on-surface-variant">
+                  <li key={d} className="flex items-start gap-1.5 text-label-xs text-on-surface-variant leading-tight">
                     <CheckCircle2 className="size-3 text-emerald-400 mt-0.5 shrink-0" />
                     {d}
                   </li>
@@ -134,8 +134,8 @@ export function AgentHoverPanel({
               <div className="h-px bg-outline-variant/60" />
 
               {/* Conversation */}
-              <div className="rounded-lg bg-surface-low/80 border border-outline-variant p-2.5 space-y-1.5 min-h-[52px]">
-                <p className="text-[10px] text-on-surface-variant leading-snug">
+              <div className="rounded-lg bg-surface-low/80 border border-outline-variant p-2 space-y-1 min-h-[48px]">
+                <p className="text-label-xs text-on-surface-variant leading-snug">
                   <span className="text-primary mr-1">🤖</span>
                   {botText}
                   {botText.length < fullBot.length && (
@@ -147,7 +147,7 @@ export function AgentHoverPanel({
                     <motion.p
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-[10px] text-on-surface-variant leading-snug"
+                      className="text-label-xs text-on-surface-variant leading-snug"
                     >
                       <span className="text-secondary mr-1">👤</span>
                       {snippet.user.replace(/^"|"$/g, '')}
@@ -157,17 +157,17 @@ export function AgentHoverPanel({
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 pt-1 mt-auto">
+              <div className="flex gap-2 pt-0.5 mt-auto">
                 <button
                   onClick={onTryDemo}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary text-on-primary-fixed text-[11px] font-semibold hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-primary text-on-primary-fixed text-label-xs font-semibold hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
                 >
                   <Play className="size-3" fill="currentColor" />
                   Try Demo
                 </button>
                 <button
                   onClick={() => setShowPrompt(true)}
-                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-outline-variant text-[11px] font-medium text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all"
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-outline-variant text-label-xs font-medium text-on-surface-variant hover:border-primary/50 hover:text-primary transition-all"
                   title="View Prompt"
                 >
                   <BookOpen className="size-3" />

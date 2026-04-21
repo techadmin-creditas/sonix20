@@ -226,7 +226,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
   const currentTabData = config.sections.hero.industryTabs.find(t => t.key === industryTab)
     ?? config.sections.hero.industryTabs[0];
 
-  const sectionBase = 'relative w-full min-h-screen flex flex-col items-center justify-center p-6 lg:p-12 overflow-hidden [will-change:transform]';
+  const sectionBase = 'relative w-full min-h-screen flex flex-col items-center justify-center p-section-padding overflow-hidden [will-change:transform]';
 
   return (
     <div className="relative w-full min-h-screen bg-background text-on-surface selection:bg-primary/30 scroll-smooth">
@@ -246,11 +246,11 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             {config.branding.logoText}{' '}
             <span className="text-primary font-black">{config.branding.logoVersion}</span>
           </Link>
-          <nav className="hidden md:flex items-center gap-8 text-sm text-on-surface-variant">
+          <nav className="hidden md:flex items-center gap-8 text-body-base text-on-surface-variant">
             {config.header.navLinks.map(nl => (
               <button 
                 key={nl.label} 
-                className="hover:text-primary transition-colors"
+                className="hover:text-primary transition-colors font-medium"
                 onClick={() => {
                   if (nl.sectionIndex !== undefined) {
                     const el = sectionsRef.current[nl.sectionIndex];
@@ -270,7 +270,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
           <div className="flex items-center gap-3">
             <ThemeToggle />
             <Link to={config.header.ctaButton.href}
-              className="rounded-lg bg-primary px-5 py-2 text-xs font-bold uppercase tracking-wider text-on-primary-fixed transition-all hover:brightness-110 active:scale-95 shadow-md shadow-primary/25">
+              className="rounded-xl bg-primary px-6 py-2.5 text-label-sm uppercase tracking-wider text-on-primary-fixed transition-all hover:brightness-110 active:scale-95 shadow-md shadow-primary/25">
               {config.header.ctaButton.text}
             </Link>
           </div>
@@ -300,28 +300,28 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         {/* ─── SECTION 1: HERO ────────────────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[0] = el; }} className={sectionBase}>
           {/* <BackgroundMesh /> */}
-          <div className="relative z-10 w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center pt-20">
+          <div className="relative z-10 w-full max-w-screen-2xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-hero-gap items-center pt-20">
 
             {/* Left: copy */}
-            <div className="space-y-6">
+            <div className="space-y-5">
 
               {/* Platform badge */}
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/25">
-                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="text-xs font-semibold text-primary uppercase tracking-widest">{config.sections.hero.badge}</span>
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/25">
+                <div className="size-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-label-sm text-primary uppercase tracking-widest">{config.sections.hero.badge}</span>
               </motion.div>
 
               {/* Industry tabs */}
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
-                className="flex items-center gap-2 flex-wrap">
+                className="flex items-center gap-3 flex-wrap">
                 {config.sections.hero.industryTabs.map(tab => (
                   <button
                     key={tab.key}
                     onClick={() => setIndustryTab(tab.key)}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    className={`px-4 py-2 rounded-xl text-label-sm transition-all ${
                       industryTab === tab.key
-                        ? 'bg-primary text-on-primary-fixed shadow-md shadow-primary/25'
+                        ? 'bg-primary text-on-primary-fixed shadow-lg shadow-primary/25 scale-105'
                         : 'bg-surface-low border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary'
                     }`}
                   >
@@ -332,7 +332,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
               {/* Headline */}
               <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22, duration: 0.7 }}>
-                <h1 className="text-5xl lg:text-6xl font-bold tracking-tight text-on-surface leading-[1.1]">
+                <h1 className="text-display-hero text-on-surface">
                   Voice AI for{' '}
                   <AnimatePresence mode="wait">
                     <motion.span
@@ -341,7 +341,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.3 }}
-                      className="bg-linear-to-r from-primary via-secondary to-tertiary bg-clip-text text-transparent"
+                      className="bg-linear-to-r from-primary via-secondary to-tertiary bg-clip-text text-transparent inline-block"
                     >
                       {currentTabData.headlineAccent}
                     </motion.span>
@@ -357,7 +357,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.3 }}
-                  className="text-lg text-on-surface-variant leading-relaxed max-w-lg"
+                  className="text-body-xl text-on-surface-variant leading-relaxed max-w-xl"
                 >
                   {currentTabData.subheadline}
                 </motion.p>
@@ -368,27 +368,27 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                 className="flex items-center gap-4 flex-wrap">
                 <button
                   onClick={() => handleTryDemo(AGENTS[0])}
-                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-primary text-on-primary-fixed font-semibold shadow-lg shadow-primary/30 hover:brightness-110 active:scale-95 transition-all">
+                  className="flex items-center gap-3 px-7 py-3.5 rounded-2xl bg-primary text-on-primary-fixed text-body-base font-bold shadow-xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all">
                   <Play className="size-4" fill="currentColor" />
                   {config.sections.hero.primaryCta.text}
                 </button>
                 <Link to={config.sections.hero.secondaryCta.href}
-                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl border border-outline-variant text-on-surface font-semibold hover:border-primary/50 hover:text-primary transition-all">
+                  className="flex items-center gap-3 px-7 py-3.5 rounded-2xl border-2 border-outline-variant text-on-surface text-body-base font-bold hover:border-primary/50 hover:text-primary transition-all">
                   {config.sections.hero.secondaryCta.text} <ArrowRight className="size-4" />
                 </Link>
               </motion.div>
 
               {/* Metrics strip */}
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.55 }}
-                className="flex items-center gap-6 text-sm text-on-surface-variant pt-1 flex-wrap">
+                className="flex items-center gap-6 text-body-base text-on-surface-variant pt-1 flex-wrap">
                 {[
-                  { icon: <Zap className="size-3.5" />, text: '<800ms latency' },
-                  { icon: <Globe className="size-3.5" />, text: '10+ languages' },
-                  { icon: <CheckCircle2 className="size-3.5" />, text: '99.9% uptime' },
+                  { icon: <Zap className="size-4" />, text: '<800ms latency' },
+                  { icon: <Globe className="size-4" />, text: '10+ languages' },
+                  { icon: <CheckCircle2 className="size-4" />, text: '99.9% uptime' },
                 ].map((m, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-primary/80">
+                  <div key={i} className="flex items-center gap-2 text-primary/80">
                     {m.icon}
-                    <span className="text-xs font-medium text-on-surface-variant">{m.text}</span>
+                    <span className="text-label-sm text-on-surface-variant">{m.text}</span>
                   </div>
                 ))}
               </motion.div>
@@ -397,8 +397,8 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
                 className="flex items-center gap-2 flex-wrap">
                 {config.sections.hero.liveChips.map((chip, i) => (
-                  <div key={i} className="flex items-center gap-1 px-3 py-1 rounded-full bg-surface-low border border-outline-variant text-[10px] font-medium text-on-surface-variant">
-                    <span className={`text-[8px] ${chip.icon === 'dot' ? 'text-emerald-400' : chip.icon === 'arrow' ? 'text-primary' : 'text-sky-400'}`}>
+                  <div key={i} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-low border border-outline-variant text-label-xs text-on-surface-variant">
+                    <span className={`text-[10px] ${chip.icon === 'dot' ? 'text-emerald-400' : chip.icon === 'arrow' ? 'text-primary' : 'text-sky-400'}`}>
                       {chip.icon === 'dot' ? '●' : chip.icon === 'arrow' ? '↑' : '✓'}
                     </span>
                     {chip.text}
@@ -413,7 +413,15 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
               {/* Orb with floating badges */}
               <div className="relative flex items-center justify-center w-full">
-                <GradientOrb isActive={false} isConnecting={false} isDark={isDark} onClick={() => handleTryDemo(AGENTS[0])} size={260} />
+                <div className="size-[320px] lg:size-[440px] flex items-center justify-center transition-all duration-700">
+                  <GradientOrb 
+                    isActive={false} 
+                    isConnecting={false} 
+                    isDark={isDark} 
+                    onClick={() => handleTryDemo(AGENTS[0])} 
+                    size={400} 
+                  />
+                </div>
 
                 {FLOAT_STATS.map((fs, i) => (
                   <motion.div
@@ -438,16 +446,16 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                         stiffness: 200 
                       }
                     }}
-                    className={`absolute ${fs.pos} flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface/80 border border-outline-variant backdrop-blur-md text-[10px] font-bold text-on-surface shadow-lg shadow-black/5 select-none cursor-default z-10`}
+                    className={`absolute ${fs.pos} flex items-center gap-2 px-4 py-2 rounded-full bg-surface/80 border border-outline-variant backdrop-blur-md text-label-xs text-on-surface shadow-lg shadow-black/5 select-none cursor-default z-10`}
                   >
-                    <span className="text-primary">{fs.icon}</span>
+                    <span className="text-primary text-base">{fs.icon}</span>
                     {fs.text}
                   </motion.div>
                 ))}
               </div>
 
               {/* Latency bar */}
-              <div className="w-full max-w-sm space-y-2">
+              <div className="w-full max-w-md lg:max-w-xl space-y-4">
                 <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
                   {[
                     { label: 'STT', ms: 45,  pct: 10, cls: 'bg-sky-500' },
@@ -456,7 +464,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   ].map((seg, i) => (
                     <motion.div
                       key={seg.label}
-                      className={`h-full rounded-sm ${seg.cls}`}
+                      className={`h-full rounded-full ${seg.cls}`}
                       style={{ width: `${seg.pct}%` }}
                       initial={{ scaleX: 0, transformOrigin: 'left' }}
                       animate={{ scaleX: 1 }}
@@ -464,25 +472,25 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                     />
                   ))}
                 </div>
-                <div className="flex items-center justify-between text-[9px] font-medium text-on-surface-variant">
+                <div className="flex items-center justify-between text-label-sm text-on-surface-variant">
                   {[
                     { label: 'STT', ms: '45ms',  cls: 'text-sky-400' },
                     { label: 'LLM', ms: '280ms', cls: 'text-primary' },
                     { label: 'TTS', ms: '120ms', cls: isDark ? 'text-cyan-400' : 'text-secondary' },
                   ].map(seg => (
-                    <div key={seg.label} className="flex items-center gap-1">
+                    <div key={seg.label} className="flex items-center gap-1.5">
                       <span className={seg.cls + ' font-bold'}>{seg.label}</span>
                       <span>{seg.ms}</span>
                     </div>
                   ))}
-                  <div className="text-emerald-400 font-semibold">Total: 445ms ✓</div>
+                  <div className="text-emerald-400 font-bold">Total: 445ms ✓</div>
                 </div>
               </div>
 
               {/* Mini live call preview */}
               <motion.div
                 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9 }}
-                className="w-full max-w-sm rounded-xl border border-outline-variant bg-surface/60 backdrop-blur-sm p-3 space-y-2"
+                className="w-full max-w-md lg:max-w-xl rounded-2xl border border-outline-variant bg-surface/60 backdrop-blur-sm p-5 space-y-3"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -517,11 +525,11 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
           {/* Scroll hint */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }}
-            className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-            <span className="text-[10px] font-medium text-on-surface-variant uppercase tracking-widest">Scroll to explore</span>
-            <motion.div className="size-5 rounded-full border border-outline flex items-center justify-center"
-              animate={{ y: [0, 5, 0] }} transition={{ duration: 1.5, repeat: Infinity }}>
-              <div className="size-1.5 rounded-full bg-primary" />
+            className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
+            <span className="text-label-sm text-on-surface-variant uppercase tracking-widest">Scroll to explore</span>
+            <motion.div className="size-6 rounded-full border border-outline flex items-center justify-center"
+              animate={{ y: [0, 8, 0] }} transition={{ duration: 1.5, repeat: Infinity }}>
+              <div className="size-2 rounded-full bg-primary" />
             </motion.div>
           </motion.div>
         </section>
@@ -529,15 +537,15 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         {/* ─── SECTION 2: AGENT SHOWCASE ─────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[1] = el; }} className={sectionBase}>
           {/* <BackgroundMesh /> */}
-          <div className="relative z-10 w-full max-w-6xl mx-auto pt-20 space-y-8">
+          <div className="relative z-10 w-full max-w-screen-2xl mx-auto pt-20 space-y-7">
 
             {/* Header */}
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/25">
-                <span className="text-xs font-semibold text-primary uppercase tracking-widest">Platform Agents</span>
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/25">
+                <span className="text-label-sm text-primary uppercase tracking-widest">Platform Agents</span>
               </div>
-              <h2 className="text-4xl font-bold text-on-surface tracking-tight">{config.sections.agentShowcase.headline}</h2>
-              <p className="text-on-surface-variant max-w-xl mx-auto">{config.sections.agentShowcase.subheadline}</p>
+              <h2 className="text-display-section text-on-surface">{config.sections.agentShowcase.headline}</h2>
+              <p className="text-body-xl text-on-surface-variant max-w-2xl mx-auto">{config.sections.agentShowcase.subheadline}</p>
             </div>
 
             {/* Filter tabs */}
@@ -560,7 +568,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             )}
 
             {/* Agent grid */}
-            <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-card-gap">
               <AnimatePresence mode="popLayout">
                 {displayedAgents.map((agent, i) => {
                   const cust = config.agents.customizations[agent.id] ?? {};
@@ -574,7 +582,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.9 }}
                       transition={{ delay: i * 0.06, type: 'spring', stiffness: 200, damping: 20 }}
-                      className={`group relative rounded-2xl border p-5 flex flex-col items-center gap-3 cursor-pointer transition-all duration-300 ${
+                      className={`group relative rounded-2xl border p-4 flex flex-col items-center gap-2 cursor-pointer transition-all duration-300 ${
                         isDark
                           ? 'bg-surface/60 border-outline-variant hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10'
                           : 'bg-surface/80 border-outline-variant hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10'
@@ -584,37 +592,37 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                       onMouseLeave={() => setHoveredAgentIdx(null)}
                     >
                       {/* Compliance badge */}
-                      <div className="absolute top-3 right-3 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                         <CheckCircle2 className="size-2.5 text-emerald-400" />
-                        <span className="text-[7px] font-bold text-emerald-400">Compliant</span>
+                        <span className="text-[8px] font-bold text-emerald-400 uppercase">Compliant</span>
                       </div>
 
                       {/* Avatar */}
-                      <div className="size-16 rounded-xl overflow-hidden border border-outline-variant group-hover:border-primary/40 transition-colors mt-1 flex items-center justify-center">
+                      <div className="size-14 rounded-xl overflow-hidden border border-outline-variant group-hover:border-primary/40 transition-colors mt-1 flex items-center justify-center">
                         <AgentAvatar id={agent.id} name={agentName} isMini={true} isSwitcher={false} instanceId={`home-${agent.id}`} />
                       </div>
 
                       <div className="text-center space-y-0.5">
-                        <h3 className="text-sm font-semibold text-on-surface">{agentName}</h3>
-                        <p className="text-[10px] font-medium text-on-surface-variant uppercase tracking-wider">{cust.customRole ?? agent.role}</p>
+                        <h3 className="text-body-lg font-bold text-on-surface leading-tight">{agentName}</h3>
+                        <p className="text-label-xs text-on-surface-variant uppercase tracking-widest">{cust.customRole ?? agent.role}</p>
                       </div>
 
                       {/* Metric badge */}
                       <div className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
-                        <span className="text-[10px] font-bold text-primary">{AGENT_METRICS[i % AGENT_METRICS.length]?.stat ?? '—'}</span>
+                        <span className="text-label-xs font-bold text-primary">{AGENT_METRICS[i % AGENT_METRICS.length]?.stat ?? '—'}</span>
                       </div>
 
                       {/* Use-case tags */}
                       <div className="flex flex-wrap gap-1 justify-center">
                         {(AGENT_METRICS[i % AGENT_METRICS.length]?.useCases ?? []).map(tag => (
-                          <span key={tag} className="text-[8px] font-medium text-on-surface-variant bg-surface-high border border-outline-variant px-1.5 py-0.5 rounded-full">
+                          <span key={tag} className="text-[10px] font-medium text-on-surface-variant bg-surface-high border border-outline-variant px-1.5 py-0.5 rounded-full">
                             {tag}
                           </span>
                         ))}
                       </div>
 
                       {/* Try demo CTA */}
-                      <div className="w-full py-1.5 rounded-lg border border-outline-variant text-[10px] font-medium text-on-surface-variant text-center group-hover:border-primary group-hover:text-primary group-hover:bg-primary/5 transition-all">
+                      <div className="w-full py-1.5 rounded-xl border border-outline-variant text-label-xs font-bold text-on-surface-variant text-center group-hover:border-primary group-hover:text-primary group-hover:bg-primary/5 transition-all">
                         {hoveredAgentIdx === i ? `${agent.category} · ${AGENT_METRICS[i % AGENT_METRICS.length]?.tag}` : 'Try Demo'}
                       </div>
 
@@ -643,16 +651,15 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             {/* Explore all */}
             {config.sections.agentShowcase.showExploreAll && (
               <div className="flex items-center justify-center gap-4">
-                <div className="h-px flex-1 bg-outline-variant/40 max-w-32" />
-                <span className="text-xs text-on-surface-variant/50">{displayedAgents.length} of {AGENTS.length} neural agents available</span>
+                <div className="h-px flex-1 bg-outline-variant/40 max-w-48" />
                 <button
                   onClick={() => setShowExplorer(true)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline transition-all"
+                  className="flex items-center gap-2 text-label-sm font-bold text-primary hover:underline transition-all"
                 >
-                  <Layers className="size-3.5" />
+                  <Layers className="size-4" />
                   {config.sections.agentShowcase.exploreCtaText}
                 </button>
-                <div className="h-px flex-1 bg-outline-variant/40 max-w-32" />
+                <div className="h-px flex-1 bg-outline-variant/40 max-w-48" />
               </div>
             )}
           </div>
@@ -661,19 +668,19 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         {/* ─── SECTION 3: HOW IT WORKS ───────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[2] = el; }} className={sectionBase}>
           {/* <BackgroundMesh /> */}
-          <div className="relative z-10 w-full max-w-5xl mx-auto pt-20 space-y-10">
+          <div className="relative z-10 w-full max-w-screen-2xl mx-auto space-y-6">
 
             {/* Header */}
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/25">
-                <span className="text-xs font-semibold text-primary uppercase tracking-widest">Simple Process</span>
+            <div className="text-center space-y-3">
+              <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/25">
+                <span className="text-label-sm text-primary uppercase tracking-widest">Simple Process</span>
               </div>
-              <h2 className="text-4xl font-bold text-on-surface tracking-tight">{config.sections.howItWorks.headline}</h2>
-              <p className="text-on-surface-variant max-w-lg mx-auto">{config.sections.howItWorks.subheadline}</p>
+              <h2 className="text-display-section text-on-surface">{config.sections.howItWorks.headline}</h2>
+              <p className="text-body-xl text-on-surface-variant max-w-2xl mx-auto">{config.sections.howItWorks.subheadline}</p>
             </div>
 
             {/* Steps */}
-            <div className="relative grid grid-cols-3 gap-6 items-start">
+            <div className="relative grid grid-cols-3 gap-4 items-start">
               {/* Connecting line */}
               <motion.div
                 className="absolute top-12 left-[16.66%] right-[16.66%] h-px bg-linear-to-r from-transparent via-primary/40 to-transparent pointer-events-none"
@@ -689,25 +696,25 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   <motion.div key={step.num}
                     initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.15, type: 'spring', stiffness: 150, damping: 20 }}
-                    className={`relative rounded-2xl border p-5 space-y-4 ${
-                      isDark ? 'bg-surface/60 border-outline-variant' : 'bg-surface/80 border-outline-variant'
+                    className={`relative rounded-3xl border p-5 space-y-4 ${
+                      isDark ? 'bg-surface/60 border-outline-variant' : 'bg-surface/80 border-outline-variant shadow-xl shadow-black/5'
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="size-11 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center">
-                        <StepIcon className="size-6 text-primary" />
+                      <div className="size-12 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center">
+                        <StepIcon className="size-7 text-primary" />
                       </div>
-                      <span className="text-5xl font-black text-outline/40 select-none leading-none">{step.num}</span>
+                      <span className="text-5xl font-black text-outline/30 select-none leading-none">{step.num}</span>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <h3 className="text-lg font-semibold text-on-surface">{step.title}</h3>
-                      <p className="text-xs text-on-surface-variant leading-relaxed">{step.desc}</p>
+                    <div className="space-y-2">
+                      <h3 className="text-body-xl font-bold text-on-surface">{step.title}</h3>
+                      <p className="text-label-sm text-on-surface-variant leading-relaxed">{step.desc}</p>
                     </div>
 
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {step.tags.map(tag => (
-                        <span key={tag} className="text-[10px] font-medium text-primary bg-primary/8 border border-primary/20 px-2 py-0.5 rounded-full">
+                        <span key={tag} className="text-label-xs font-bold text-primary bg-primary/8 border border-primary/20 px-3 py-1 rounded-full uppercase tracking-wider">
                           {tag}
                         </span>
                       ))}
@@ -721,7 +728,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             </div>
 
             {/* By the numbers strip */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-2.5">
               {[
                 { val: '<800ms', label: 'Latency' },
                 { val: '35% ↓',  label: 'DSO Avg' },
@@ -731,10 +738,10 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                 <motion.div key={m.val}
                   initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.5 + i * 0.08, type: 'spring', stiffness: 200 }}
-                  className="text-center px-4 py-3 rounded-xl border bg-surface-low border-outline-variant"
+                  className="text-center px-4 py-4 rounded-2xl border bg-surface-low border-outline-variant shadow-lg shadow-black/5"
                 >
-                  <div className="text-xl font-bold text-primary">{m.val}</div>
-                  <div className="text-[9px] font-medium text-on-surface-variant uppercase tracking-wider mt-0.5">{m.label}</div>
+                  <div className="text-2xl lg:text-3xl font-black text-primary">{m.val}</div>
+                  <div className="text-label-xs font-bold text-on-surface-variant uppercase tracking-widest mt-1">{m.label}</div>
                 </motion.div>
               ))}
             </div>
@@ -744,18 +751,18 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         {/* ─── SECTION 4: CTA ─────────────────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[3] = el; }} className={sectionBase}>
           {/* <BackgroundMesh /> */}
-          <div className="relative z-10 w-full max-w-4xl mx-auto space-y-5">
+          <div className="relative z-10 w-full max-w-screen-2xl mx-auto space-y-4">
 
             {/* Testimonials */}
             {config.sections.cta.testimonials && config.sections.cta.testimonials.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
                 className="grid grid-cols-2 gap-4">
                 {config.sections.cta.testimonials.map((t, i) => (
-                  <div key={i} className="rounded-2xl border border-outline-variant bg-surface/60 backdrop-blur-sm p-4 space-y-2">
-                    <p className="text-xs text-on-surface-variant leading-relaxed italic">"{t.quote}"</p>
+                  <div key={i} className="rounded-2xl border border-outline-variant bg-surface/60 backdrop-blur-sm p-5 space-y-3">
+                    <p className="text-body-base text-on-surface-variant leading-relaxed italic">"{t.quote}"</p>
                     <div>
-                      <p className="text-[10px] font-semibold text-on-surface">— {t.author}</p>
-                      <p className="text-[9px] text-on-surface-variant/60">{t.role}, {t.company}</p>
+                      <p className="text-label-sm font-bold text-on-surface">— {t.author}</p>
+                      <p className="text-label-xs text-on-surface-variant/60 uppercase tracking-widest">{t.role}, {t.company}</p>
                     </div>
                   </div>
                 ))}
@@ -764,10 +771,10 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
             {/* Trusted by */}
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-              className="flex items-center justify-center gap-2 flex-wrap">
-              <span className="text-[10px] text-on-surface-variant opacity-50 font-medium">Trusted by teams at</span>
+              className="flex items-center justify-center gap-4 flex-wrap">
+              <span className="text-label-xs text-on-surface-variant opacity-50 font-bold uppercase tracking-widest">Trusted by teams at</span>
               {config.sections.cta.trustedBy.map(brand => (
-                <span key={brand} className="text-[11px] font-bold text-on-surface-variant opacity-40 px-2 py-0.5 rounded border border-outline-variant">
+                <span key={brand} className="text-label-sm font-black text-on-surface-variant opacity-40 px-3 py-1 rounded-xl border-2 border-outline-variant">
                   {brand}
                 </span>
               ))}
@@ -777,7 +784,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             <motion.div
               initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ type: 'spring', stiffness: 150 }}
-              className={`rounded-3xl border p-10 text-center space-y-6 ${
+              className={`rounded-3xl border p-8 text-center space-y-6 max-w-5xl mx-auto ${
                 isDark
                   ? 'bg-surface/40 border-primary/20 backdrop-blur-xl'
                   : 'bg-white/70 border-primary/15 backdrop-blur-xl shadow-2xl shadow-primary/8'
@@ -788,11 +795,11 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               }}
             >
               <div className="space-y-3">
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/25 mb-2">
-                  <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="text-xs font-semibold text-primary uppercase tracking-widest">Ready to Deploy</span>
+                <div className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/10 border border-primary/25 mb-4">
+                  <div className="size-2 rounded-full bg-primary animate-pulse" />
+                  <span className="text-label-sm text-primary uppercase tracking-widest">Ready to Deploy</span>
                 </div>
-                <h2 className="text-4xl lg:text-5xl font-bold text-on-surface tracking-tight leading-tight">
+                <h2 className="text-display-section text-on-surface leading-tight">
                   {config.sections.cta.headline[0]}<br />
                   <span className="bg-linear-to-r from-primary to-secondary bg-clip-text text-transparent">
                     {config.sections.cta.headline[1]}
@@ -806,17 +813,17 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               <div className="flex items-center justify-center gap-4 flex-wrap">
                 <button
                   onClick={() => handleTryDemo(AGENTS[0])}
-                  className="flex items-center gap-2 px-8 py-4 rounded-xl bg-primary text-on-primary-fixed font-semibold text-base shadow-xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all">
+                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-primary text-on-primary-fixed font-semibold text-body-base shadow-xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all">
                   {config.sections.cta.primaryCta.text} <ArrowRight className="size-4" />
                 </button>
                 <Link to={config.sections.cta.secondaryCta.href}
-                  className="flex items-center gap-2 px-8 py-4 rounded-xl border border-outline-variant text-on-surface font-semibold hover:border-primary/50 hover:text-primary transition-all">
+                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl border border-outline-variant text-on-surface font-semibold text-body-base hover:border-primary/50 hover:text-primary transition-all">
                   {config.sections.cta.secondaryCta.text}
                 </Link>
               </div>
 
               {/* Notes */}
-              <div className="flex items-center justify-center gap-4 text-[10px] text-on-surface-variant flex-wrap">
+              <div className="flex items-center justify-center gap-4 text-label-xs text-on-surface-variant flex-wrap">
                 {['14-day free trial', 'No credit card', 'SOC 2 compliant'].map(note => (
                   <span key={note} className="flex items-center gap-1">
                     <CheckCircle2 className="size-3 text-emerald-400" /> {note}
@@ -827,7 +834,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               {/* Metric pills */}
               <div className="flex items-center justify-center gap-4 flex-wrap pt-1">
                 {config.sections.cta.metrics.map(m => (
-                  <div key={m.val} className="text-center px-4 py-2 rounded-xl bg-primary/8 border border-primary/15">
+                  <div key={m.val} className="text-center px-3 py-1.5 rounded-xl bg-primary/8 border border-primary/15">
                     <div className="flex items-center gap-1 justify-center">
                       <span className="text-lg font-bold text-primary">{m.val}</span>
                       {/* Mini sparkline */}
@@ -842,7 +849,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                         />
                       </svg>
                     </div>
-                    <div className="text-[10px] font-medium text-on-surface-variant uppercase tracking-wider">{m.label}</div>
+                    <div className="text-[9px] font-medium text-on-surface-variant uppercase tracking-wider">{m.label}</div>
                   </div>
                 ))}
               </div>
@@ -883,26 +890,26 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             className="fixed inset-0 z-100 bg-background/95 backdrop-blur-3xl overflow-hidden"
           >
             {/* Demo header */}
-            <div className="absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-6 border-b border-outline/30 bg-background/50 backdrop-blur-xl z-10">
-              <div className="flex items-center gap-3">
-                <div className="size-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <span className="text-[10px] font-black text-primary tracking-tighter">S2</span>
+            <div className="absolute top-0 left-0 right-0 h-12 flex items-center justify-between px-4 border-b border-outline/30 bg-background/50 backdrop-blur-xl z-10">
+              <div className="flex items-center gap-2.5">
+                <div className="size-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <span className="text-[9px] font-black text-primary tracking-tighter">S2</span>
                 </div>
-                <h3 className="text-[10px] font-black uppercase text-on-surface-variant tracking-[0.4em]">Sonar Studio</h3>
+                <h3 className="text-[9px] font-black uppercase text-on-surface-variant tracking-[0.4em]">Sonar Studio</h3>
               </div>
               <button
                 onClick={() => setIsDemoMode(false)}
-                className="flex items-center gap-2 rounded-full border border-outline bg-surface/5 py-2 px-4 text-[10px] font-black uppercase tracking-widest text-on-surface-variant transition-all hover:bg-on-surface hover:text-background"
+                className="flex items-center gap-2 rounded-full border border-outline bg-surface/5 py-1.5 px-3.5 text-[9px] font-black uppercase tracking-widest text-on-surface-variant transition-all hover:bg-on-surface hover:text-background"
               >
-                Exit Lab <X className="size-3.5" />
+                Exit Lab <X className="size-3" />
               </button>
             </div>
 
-            <div className="flex h-full w-full pt-14">
-              <aside className={`w-20 md:w-24 border-r border-outline/30 shrink-0 overflow-visible z-20 ${isDark ? 'bg-background/30' : 'bg-background/50'}`}>
+            <div className="flex h-full w-full pt-12">
+              <aside className={`w-16 md:w-20 border-r border-outline/30 shrink-0 overflow-visible z-20 ${isDark ? 'bg-background/30' : 'bg-background/50'}`}>
                 <AgentCommandRail agents={AGENTS} selectedId={selectedAgent?.id} onSelect={setSelectedAgent} instanceId="lab-rail" />
               </aside>
-              <main className="flex-1 p-5 overflow-auto no-scrollbar">
+              <main className="flex-1 p-3.5 md:p-4 overflow-auto no-scrollbar">
                 <motion.div layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.15, duration: 0.5 }} className="h-full">
                   <CallDemoPanel className="h-full" selectedAgent={selectedAgent} />
                 </motion.div>
