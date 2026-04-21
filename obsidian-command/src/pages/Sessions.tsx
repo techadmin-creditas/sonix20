@@ -166,7 +166,7 @@ export default function Sessions() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
                 onClick={() => navigate(`/sessions/${session.id}`)}
-                className="group bg-surface-low p-5 rounded-2xl ghost-border flex flex-col md:flex-row items-center gap-6 cursor-pointer hover:border-primary/40 hover:bg-surface-high transition-all"
+                className="group bg-surface-lowest p-5 rounded-2xl ghost-border flex flex-col md:flex-row items-center gap-6 cursor-pointer hover:border-primary/40 hover:bg-surface-high transition-all"
               >
                 {/* ID & Bot */}
                 <div className="flex items-center gap-4 w-full md:w-64">
