@@ -1,0 +1,1458 @@
+import json
+import logging
+import time
+import asyncio
+from typing import Optional
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi.middleware.cors import CORSMiddleware
+from voicebot.api.middleware.auth import JWTAuthMiddleware
+
+from voicebot.shared.config import get_settings
+from voicebot.shared.logging.logger import setup_logger, correlation_id_var, session_id_var, generate_correlation_id
+from voicebot.shared.models.session import SessionState
+from voicebot.shared.exceptions import VoiceBotError, ServiceExhaustedError, AuthError, HandshakeError
+from voicebot.shared.utils.audio import EnergyGate
+from voicebot.core.session_disposition import (
+    DISPOSITION_LLM_INSTRUCTION,
+    normalize_disposition,
+)
+from voicebot.core.session_recording import SessionRecorder
+
+# --- Import Routers from sub-packages ---
+from voicebot.api.v1.routes import router as gateway_v1_router
+from voicebot.core.transport import WebSocketVoiceTransport
+
+# Lazy import providers in voice_websocket to handle dynamic selection
+# from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
+
+settings = get_settings()
+logger = setup_logger("voicebot-unified", level=settings.log_level)
+
+
+async def _archive_voice_session(
+    session_id: str,
+    bot_config: dict,
+    db: any,
+    mode: str = "classic",
+    user_id: Optional[str] = None,
+    vector_memory: Optional[any] = None,
+):
+    """
+    Centralized post-call archiving logic.
+    Generates summary/intent, updates DB, fires webhooks, and stores in vector memory.
+    Designed to be run as a background task.
+    """
+    try:
+        from voicebot.core.session_transcript_analysis import analyze_transcript_with_bot_llm
+
+        log_entries = await db.get_session_log(session_id)
+        summary, intent, insights, llm_ran, entity_rows = await analyze_transcript_with_bot_llm(
+            log_entries,
+            bot_config,
+            respect_enable_post_call_flag=True,
+        )
+
+        meta_patch: dict = {
+            "summary": summary,
+            "intent": intent,
+            "mode": mode,
+            "insights": insights,
+        }
+        if llm_ran:
+            meta_patch["llm_analysis_at"] = int(time.time())
+            meta_patch["session_nlp_version"] = 2
+            try:
+                await db.replace_session_extracted_facts(
+                    session_id, user_id, entity_rows
+                )
+            except Exception as _ent_persist:
+                logger.warning(
+                    "Persist extracted entities failed for %s: %s",
+                    session_id[:8],
+                    _ent_persist,
+                )
+
+        # Update DB
+        await db.close_session(
+            session_id=session_id,
+            turn_count=len(log_entries),
+            metadata=meta_patch,
+        )
+        logger.info("Session %s archived with summary (mode=%s).", session_id[:8], mode)
+
+        # Auto-label commitment training examples from this session (self-learning feedback)
+        if hasattr(db, "auto_label_commitment_examples"):
+            asyncio.create_task(db.auto_label_commitment_examples(session_id))
+
+        # Store in vector memory (Disabled per user request)
+        # if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
+        #     try:
+        #         await vector_memory.store_conversation(
+        #             session_id=session_id,
+        #             summary=summary,
+        #             user_id=user_id,
+        #         )
+        #     except Exception as _vec_err:
+        #         logger.debug("Vector memory store failed for %s: %s", session_id[:8], _vec_err)
+
+        # Fire Webhook
+        _post_call_url = bot_config.get("post_call_webhook_url", "")
+        if _post_call_url and summary != "No meaningful conversation occurred.":
+            try:
+                import httpx as _httpx
+                async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                    await _hc.post(_post_call_url, json={
+                        "session_id": session_id,
+                        "user_id": user_id,
+                        "bot_id": bot_config.get("id"),
+                        "summary": summary,
+                        "intent": intent,
+                        "turn_count": len(log_entries),
+                        "mode": mode,
+                    })
+                logger.info("Post-call webhook fired for session %s", session_id[:8])
+            except Exception as _wh_err:
+                logger.warning("Post-call webhook failed for %s: %s", session_id[:8], _wh_err)
+
+    except Exception as archive_err:
+        logger.error("Failed to archive session %s: %s", session_id[:8], archive_err, exc_info=True)
+
+
+class AudioFrameNormalizer:
+    """
+    Converts variable-size TTS audio chunks into uniform 10 ms PCM frames.
+
+    TTS providers deliver audio in variable-size chunks. Normalizing to 10 ms
+    (320 bytes at 16 kHz mono linear16) ensures the browser AudioWorklet
+    receives a steady cadence without the initial ~80 ms silence that occurs
+    when waiting to fill larger 20 ms (640-byte) frames.
+    """
+
+    FRAME_BYTES = 320  # 10 ms × 16 000 Hz × 2 bytes/sample  (was 640 / 20 ms)
+
+    def __init__(self) -> None:
+        self._buf: bytearray = bytearray()
+
+    async def push(self, chunk: bytes, emit_fn) -> None:
+        self._buf.extend(chunk)
+        while len(self._buf) >= self.FRAME_BYTES:
+            frame = bytes(self._buf[: self.FRAME_BYTES])
+            del self._buf[: self.FRAME_BYTES]
+            await emit_fn(frame)
+
+    async def flush(self, emit_fn) -> None:
+        """Pad and emit any remaining bytes at turn end.
+
+        Skip if fewer than 100 bytes remain — that's sub-3 ms of audio and
+        emitting it as a zero-padded frame inserts a silence blip at the turn
+        boundary that users perceive as a pop or stutter at the start of the
+        next utterance.
+        """
+        if len(self._buf) < 100:
+            self._buf = bytearray()
+            return
+        remainder = len(self._buf) % self.FRAME_BYTES
+        pad = (self.FRAME_BYTES - remainder) if remainder else 0
+        padded = bytes(self._buf) + b"\x00" * pad
+        self._buf = bytearray()
+        await emit_fn(padded)
+
+    def clear(self) -> None:
+        """Discard any buffered audio bytes immediately."""
+        self._buf = bytearray()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 Unified VoiceBot Server starting (ENV=%s)...", settings.env)
+    # Initialize shared services
+    from voicebot.services.memory.redis_provider import RedisSessionProvider
+    global _shared_redis
+    _shared_redis = RedisSessionProvider(redis_url=settings.redis_url)
+    await _shared_redis.connect()
+    yield
+    if _shared_redis:
+        await _shared_redis.disconnect()
+    
+    logger.info("🛑 Shutting down. Cancelling background tasks to prevent 'Event loop is closed' errors...")
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in tasks:
+        task.cancel()
+    
+    try:
+        # Give tasks a moment to shut down gracefully
+        await asyncio.wait(tasks, timeout=2.0)
+    except Exception:
+        pass
+        
+    logger.info("✅ Cleanup sequence complete.")
+
+
+app = FastAPI(
+    title="Unified VoiceBot Platform",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,
+)
+
+# CORS Extension
+app.add_middleware(
+    CORSMiddleware,
+    # Browser UI runs at http://localhost:3000 during development.
+    # Avoid `allow_credentials=True` with wildcard origins, which can omit
+    # `Access-Control-Allow-Origin` headers and break fetch() in the browser.
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
+)
+app.add_middleware(JWTAuthMiddleware)
+
+# Mount REST API
+app.include_router(gateway_v1_router, prefix="/api/v1")
+
+
+@app.get("/health")
+async def health_check():
+    """Aggregated health check for all internal modules + Redis."""
+    redis_status = "offline"
+    if _shared_redis:
+        redis_status = "online" if await _shared_redis.ping() else "offline"
+
+    return {
+        "status": "healthy" if redis_status == "online" else "degraded",
+        "env": settings.env,
+        "services": {
+            "gateway": "online",
+            "redis": redis_status,
+            "stt": settings.stt_provider,
+            "llm": settings.llm_provider,
+            "tts": settings.tts_provider,
+        }
+    }
+
+
+# Globally track active voice sessions to enforce singleton behavior per user/session_id.
+# This prevents orphaned backgrounds from consuming tokens when a user refreshes or starts new session.
+_active_voice_sessions: dict[str, WebSocket] = {}
+_shared_redis = None # Initialized in lifespan
+
+@app.websocket("/ws/voice/{session_id}")
+async def voice_websocket(
+    websocket: WebSocket,
+    session_id: str,
+    language: str = Query(default="hi"),
+    bot_id: Optional[str] = Query(default=None),
+    user_id: Optional[str] = Query(default=None),
+    stt_mode: Optional[str] = Query(default=None),
+):
+    """
+    Unified real-time voice endpoint.
+    Orchestrates the full pipeline (STT -> LLM -> TTS) internally.
+    Supports dynamic config and simulator mode via JSON messages.
+    """
+    await websocket.accept()
+    vt = WebSocketVoiceTransport(websocket)
+
+    # Tracing
+    correlation_id = generate_correlation_id()
+    correlation_id_var.set(correlation_id)
+    session_id_var.set(session_id)
+    
+    logger.info("New voice session: %s [lang=%s]", session_id[:8], language)
+    
+    from voicebot.core.orchestrator.brain import AgenticBrain, BotState
+    from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
+    from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+    from voicebot.services.llm.groq_provider import GroqStreamingProvider
+    from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+    # from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
+    from voicebot.services.guardrail.pii_detector import PIIDetector
+    from voicebot.services.guardrail.output_guard import OutputGuard
+    from voicebot.services.memory.redis_provider import RedisSessionProvider
+    from voicebot.services.memory.sqlite_provider import SQLiteProvider
+
+
+
+    # Load session and bot config from DB
+    db = SQLiteProvider()
+    await db.initialize()
+    
+    # Reliably recover bot_id from session DB or Query
+    session_data = await db.get_session(session_id)
+    if session_data and not bot_id:
+        bot_id = session_data.get('bot_id')
+        logger.info("Recovered bot_id '%s' from session %s", bot_id, session_id[:8])
+
+    bot_config = {}
+    if bot_id:
+        bot_config = await db.get_bot(bot_id) or {}
+        if bot_config:
+            # Override language if bot has a specific default
+            if language == "en" and bot_config.get("default_language"):
+                language = bot_config.get("default_language")
+                logger.info("Bot-specific language override: %s", language)
+            
+            logger.info("Loaded persona: %s (%s)", bot_config.get('name'), bot_id)
+        else:
+            logger.warning("Bot ID '%s' not found, using default fallback", bot_id)
+
+    if not bot_config:
+        # Check for explicit landing page default first
+        landing_bot = await db.get_landing_page_default_bot()
+        if landing_bot:
+            bot_config = landing_bot
+            logger.info("Using landing page default bot: %s", bot_config.get("name"))
+        else:
+            bots = await db.list_bots()
+            if bots:
+                preferred_id = "recovery-blank"
+                pick_id = next(
+                    (b["id"] for b in bots if b.get("id") == preferred_id),
+                    bots[0]["id"],
+                )
+                bot_config = await db.get_bot(pick_id) or {}
+                logger.info("Defaulting to bot: %s", bot_config.get("name"))
+
+    # 🚀 OVERRIDE: Allow forcing STT mode (e.g. 'hinglish') via query param
+    if stt_mode and bot_config is not None:
+        try:
+            raw_pol = bot_config.get("conversation_policy") or {}
+            pol = {}
+            if isinstance(raw_pol, str):
+                pol = json.loads(raw_pol)
+            elif isinstance(raw_pol, dict):
+                pol = raw_pol
+                
+            pol["stt_language_mode"] = stt_mode
+            bot_config["conversation_policy"] = json.dumps(pol)
+            logger.info("Setting STT language mode override: %s", stt_mode)
+        except Exception as e:
+            logger.warning("Failed to safely override stt_mode: %s", e)
+
+    p_mode = str(bot_config.get("pipeline_mode") or "classic").lower()
+    if p_mode == "speech_speech":
+        # Prefer Gemini Live STS when available (per preference).
+        if settings.gemini_api_key:
+            await _handle_gemini_s2s_session(
+                websocket, vt, session_id, language, bot_config, db
+            )
+            return
+
+        if not settings.openai_api_key:
+            logger.warning(
+                "pipeline_mode=speech_speech but OPENAI_API_KEY is not set — "
+                "falling back to classic STT/LLM/TTS pipeline."
+            )
+            p_mode = "classic"
+        else:
+            # Delegate entirely to the S2S handler; classic providers are NOT initialised.
+            await _handle_speech_speech_session(
+                websocket, vt, session_id, language, bot_config, db
+            )
+            return
+
+    if p_mode == "gemini_s2s":
+        # Delegate entirely to the Gemini Live STS handler; classic providers are NOT initialised.
+        if not settings.gemini_api_key:
+            if vt.connected:
+                await vt.send_json({
+                    "type": "error",
+                    "message": "Gemini STS requested but GEMINI_API_KEY is not set.",
+                    "code": "S2S_GEMINI_KEY_MISSING",
+                })
+                await websocket.close(code=4000)
+            return
+
+        await _handle_gemini_s2s_session(
+            websocket, vt, session_id, language, bot_config, db
+        )
+        return
+
+    # Bot logic language override
+    # If the bot has a default_language (e.g. 'hi') and the query is just the default 'hi',
+    # use the bot's setting (which might be 'en' or 'hi-en').
+    session_language = bot_config.get("default_language") or language
+
+    # Sync session in SQLite (with user_id for cross-session memory)
+    recovered_meta = session_data.get("metadata") if session_data else {}
+    await db.create_session(
+        session_id=session_id,
+        bot_id=bot_config.get("id"),
+        language=session_language,
+        user_id=user_id,
+        metadata=recovered_meta
+    )
+
+    # Track current session in global map
+    _active_voice_sessions[session_id] = websocket
+    setattr(websocket, "_user_id", user_id)
+
+    # State for the session
+    _playback_allowed = True
+    _warm_audio = False
+    normalizer = AudioFrameNormalizer()
+    recorder = SessionRecorder(sample_rate=16000)
+    voice_session_close_sent = False
+
+    # ─── Callback definitions ──────────────────────────────────────────
+
+    async def on_state_change(state: str):
+        nonlocal _playback_allowed
+        if state in ("processing", "speaking"):
+            if not _playback_allowed:
+                logger.info("🔓 Playback re-enabled for session %s (state: %s)", session_id, state)
+            _playback_allowed = True
+        if vt.connected:
+            await vt.send_json({"type": "status", "state": state, "session_id": session_id})
+
+    async def on_audio_output(audio_bytes: bytes):
+        nonlocal _warm_audio
+        if not _playback_allowed:
+            logger.warning("🔇 Dropping %d audio bytes for session %s (playback blocked)", len(audio_bytes), session_id)
+            return
+        recorder.add_bot_pcm(audio_bytes)
+        if vt.connected:
+            logger.debug("📡 Dispatching audio chunk to transport: %d bytes", len(audio_bytes))
+            if not _warm_audio:
+                await vt.send_json({
+                    "type": "log",
+                    "tag": "[AUDIO]",
+                    "message": "First audio bytes dispatched to WebSocket",
+                    "color": "text-green-400"
+                })
+                _warm_audio = True
+            await normalizer.push(audio_bytes, vt.send_bytes)
+
+    async def on_audio_interrupt():
+        nonlocal _playback_allowed, _warm_audio
+        logger.info("🔒 Playback disabled for session %s (interrupted)", session_id)
+        _playback_allowed = False
+        _warm_audio = False  # Reset so the next turn logs its first audio chunk
+        try:
+            normalizer.clear()
+            await vt.send_json({"type": "audio_interrupt"})
+        except Exception: pass
+
+    async def on_audio_resume():
+        nonlocal _playback_allowed
+        if not _playback_allowed:
+            logger.info("🔓 Playback resumed for session %s (interruption was noise/echo)", session_id)
+            _playback_allowed = True
+
+    async def on_transcript(text: str, is_final: bool):
+        if vt.connected:
+            await vt.send_json({"type": "transcript", "text": text, "is_final": is_final})
+
+    async def on_bot_transcript(text: str, is_final: bool):
+        nonlocal _warm_audio
+        if vt.connected:
+            await vt.send_json({"type": "bot_transcript", "text": text, "is_final": is_final})
+        if is_final and vt.connected:
+            await normalizer.flush(vt.send_bytes)
+            _warm_audio = False
+
+    async def on_tool_call(name: str, args: dict):
+        if vt.connected:
+            await vt.send_json({"type": "tool_call", "name": name, "arguments": args})
+
+    async def on_tool_result(name: str, result: str):
+        if vt.connected:
+            await vt.send_json({"type": "tool_result", "name": name, "result": result})
+
+    async def on_log(tag: str, message: str, color: str):
+        if vt.connected:
+            await vt.send_json({"type": "log", "tag": tag, "message": message, "color": color})
+
+    async def on_metrics(metrics: dict):
+        if vt.connected:
+            await vt.send_json({"type": "metrics", **metrics})
+
+    async def on_voice_session_end(reason: str):
+        nonlocal voice_session_close_sent
+        if voice_session_close_sent:
+            return
+        voice_session_close_sent = True
+        logger.info("Voice session end (%s): %s", session_id[:8], reason)
+        if vt.connected:
+            try:
+                await vt.send_json({
+                    "type": "session_ended",
+                    "reason": reason,
+                    "session_id": session_id,
+                })
+            except Exception: pass
+        try:
+            await websocket.close()
+        except Exception: pass
+
+    # ─── Initialize Providers with bot-specific overrides ──────────────────
+    try:
+        # 1. STT — Factory handles language detection and endpointing policies
+        from voicebot.services.stt.voice_stt_factory import create_voice_stt
+        stt_provider = create_voice_stt(bot_config, session_language, settings)
+        logger.info("STT provider initialized ✅")
+
+        # 2. LLM — Factory handles provider detection, high-perf overrides (Groq), and fallbacks
+        from voicebot.services.llm.voice_llm_factory import create_voice_llm
+        llm_provider = create_voice_llm(bot_config, settings)
+        logger.info("LLM stack initialized ✅")
+
+        # 3. TTS — Factory handles multi-provider selection and fallbacks
+        from voicebot.services.tts.voice_tts_factory import create_voice_tts
+        tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
+        logger.info("TTS stack initialized ✅")
+
+        from voicebot.services.memory.redis_provider import RedisSessionProvider
+        # Attach Redis cache for high-frequency phrase caching
+        memory_local = RedisSessionProvider(redis_url=settings.redis_url)
+        await memory_local.connect()
+        if hasattr(tts_provider, "set_cache"):
+            tts_provider.set_cache(memory_local)
+
+        # Attach Redis cache for high-frequency phrase caching
+        # 4. Memory — Primary session state store (Redis)
+        memory = RedisSessionProvider(redis_url=settings.redis_url)
+        await memory.connect()
+        logger.info("Redis memory connected ✅")
+
+        # Attach Redis cache to TTS provider if supported
+        if hasattr(tts_provider, "set_cache"):
+            tts_provider.set_cache(memory)
+
+        # 5. Guardrails — policies from bot JSON
+        from voicebot.shared.policy import parse_json_dict, output_guard_extra_patterns
+        _gp = parse_json_dict(bot_config.get("guardrail_policy"))
+        guardrail = PIIDetector()
+        output_guard = OutputGuard(
+            forbidden_patterns=[
+                r"password: \w+", r"api_key: \w+", r"secret_key: \w+",
+                r"bearer [A-Za-z0-9\-\.\_]+",
+                r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+            ] + output_guard_extra_patterns(_gp)
+        )
+
+        # Vector memory (optional — ChromaDB for RAG; skips silently if not installed)
+        from voicebot.services.memory.vector_provider import VectorMemoryProvider
+        vector_memory = VectorMemoryProvider()
+        await vector_memory.connect()
+
+    except Exception as init_err:
+        logger.error("Failed to initialize session providers: %s", init_err)
+        if websocket.client_state.value == 1:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Initialization Failed: {str(init_err)}",
+                "code": "PROV_INIT_ERR"
+            })
+            await websocket.close(code=4000)
+        return
+
+
+    # Recover metadata and user_id from DB record if it exists
+    db_metadata = (session_data.get("metadata") or {}) if session_data else {}
+    resolved_user_id = user_id or (session_data.get("user_id") if session_data else None) or "anonymous"
+    
+    # Initialize Brain with recovered context
+    session = SessionState(
+        session_id=session_id, 
+        detected_language=language, 
+        user_id=resolved_user_id,
+        metadata=db_metadata
+    )
+
+    # 🚀 SPECULATIVE WARMING: Trigger provider clients pre-emptively
+    if hasattr(llm_provider, "warm"):
+        asyncio.create_task(llm_provider.warm())
+    if hasattr(tts_provider, "warm"):
+        asyncio.create_task(tts_provider.warm())
+
+    vector_memory = locals().get("vector_memory")
+    brain = AgenticBrain(
+        session=session,
+        stt_handler=stt_provider,
+        llm_handler=llm_provider,
+        tts_handler=tts_provider,
+        on_state_change=on_state_change,
+        on_audio_output=on_audio_output,
+        on_transcript=on_transcript,
+        on_bot_transcript=on_bot_transcript,
+        on_tool_call=on_tool_call,
+        on_tool_result=on_tool_result,
+        on_log=on_log,
+        on_metrics=on_metrics,
+        guardrail_handler=guardrail,
+        output_guard_handler=output_guard,
+        memory_handler=memory,
+        db_handler=db,
+        bot_config=bot_config,
+        on_voice_session_end=on_voice_session_end,
+        on_audio_interrupt=on_audio_interrupt,
+        on_audio_resume=on_audio_resume,
+    )
+    # Attach optional vector memory for RAG
+    if vector_memory and getattr(vector_memory, "_available", False):
+        brain._vector_memory = vector_memory
+
+    # STT Callback — forward confidence to brain for low-confidence recovery
+    async def stt_callback(text, is_final, lang, confidence, **kwargs):
+        if text.strip():
+            logger.info("🎙️ stt_callback (final=%s, lang=%s): '%s'", is_final, lang, text)
+        await brain.process_stt_partial(text, is_final, confidence=confidence, **kwargs)
+
+    try:
+        # Step 1: Connect STT in the background so the greeting can start immediately.
+        # Brain._hydrate_session is already a background task from __init__; STT
+        # connection (Deepgram WS handshake, ~2s) runs in parallel with the greeting
+        # TTS synthesis, shaving 2-3 seconds off session start time.
+        stt_ok = False
+
+        async def _connect_stt() -> bool:
+            """Returns True on success, False on failure (never raises)."""
+            try:
+                await asyncio.wait_for(
+                    stt_provider.connect(on_transcript=stt_callback), timeout=5.0
+                )
+                logger.info("✅ STT Bridge established (session=%s)", session_id[:8])
+                return True
+            except Exception as _e:
+                logger.warning("⚠️ STT Bridge failed: %s. Reverting to Simulator Mode.", _e)
+                await vt.send_json({
+                    "type": "log",
+                    "tag": "[SYSTEM]",
+                    "message": f"STT Offline ({type(_e).__name__}): Using Simulator Mode only.",
+                    "color": "text-yellow-400",
+                })
+                try:
+                    _st = await brain.get_infra_status()
+                    await vt.send_json({"type": "infra_status", **_st})
+                except Exception:
+                    pass
+                return False
+
+        # Fire STT connect as a background task — it runs while we do the rest of setup.
+        _stt_task = asyncio.create_task(_connect_stt())
+
+        # Step 2: Notify ready state
+        await vt.send_json({
+            "type": "status",
+            "state": "listening",
+            "session_id": session_id,
+            "message": "Voice bot ready."
+        })
+
+        # Collect STT result before we enter the main receive loop
+        stt_ok = await _stt_task
+
+        # Deepgram net0001: classic WS drops silent mic frames (EnergyGate), so send_audio never
+        # runs and JSON KeepAlive is not sent — use wall-clock ticks while the session is up.
+        _stt_keepalive_stop = asyncio.Event()
+        _stt_kp_task = None
+
+        async def _stt_wall_keepalive_loop() -> None:
+            while not _stt_keepalive_stop.is_set():
+                try:
+                    await asyncio.wait_for(_stt_keepalive_stop.wait(), timeout=4.5)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                if not vt.connected:
+                    return
+                try:
+                    await brain.tick_stt_keepalive_wall()
+                except Exception as _k_err:
+                    logger.debug("STT wall keepalive: %s", _k_err)
+
+        if stt_ok:
+            _stt_kp_task = asyncio.create_task(_stt_wall_keepalive_loop())
+
+        # --- INFRA HEARTBEAT ---
+        async def infra_heartbeat():
+            while vt.connected:
+                try:
+                    status = await brain.get_infra_status()
+                    await vt.send_json({"type": "infra_status", **status})
+                except Exception as e:
+                    logger.error("Heartbeat error: %s", e)
+                await asyncio.sleep(30)
+        
+        heartbeat_task = asyncio.create_task(infra_heartbeat())
+
+        # --- INACTIVITY MONITOR ---
+        last_activity_time = time.time()
+        
+        async def inactivity_monitor():
+            nonlocal last_activity_time
+            while vt.connected:
+                elapsed = time.time() - last_activity_time
+                if elapsed > 60.0:
+                    logger.info("😴 Session %s timed out (60s inactivity)", session_id[:8])
+                    await vt.send_json({
+                        "type": "log",
+                        "tag": "[SYSTEM]",
+                        "message": "Session timed out due to 60s inactivity.",
+                        "color": "text-red-400"
+                    })
+                    await brain.request_session_end("inactivity")
+                    break
+                await asyncio.sleep(2.0)
+        
+        inactivity_task = asyncio.create_task(inactivity_monitor())
+
+        # --- AUTO GREETING ---
+        # Trigger initial greeting turn. Even if TTS fails, transcript will be sent.
+        try:
+            await brain.start_conversation()
+        except Exception as e:
+            logger.error("Greeting failed: %s", e)
+
+        chunk_count = 0
+        energy_gate = EnergyGate(threshold_db=-45.0)
+
+        while True:
+            data = await websocket.receive()
+            
+            if data.get("bytes") is not None:
+                last_activity_time = time.time()
+                audio_bytes = data.get("bytes")
+                recorder.add_user_pcm(audio_bytes)
+                
+                # [LOCAL VAD] We now offload VAD optimization to the STT provider class
+                # which implements a smarter 300ms lookback buffer to avoid clipping.
+                # Dropping frames here interferes with Deepgram's endpointing.
+                
+                chunk_count += 1
+                if chunk_count % 100 == 0:  # Periodically log active audio pressure
+                    logger.debug("🔉 Receiving audio pressure: %d bytes (Total active frames: %d)", len(audio_bytes), chunk_count)
+                await brain.process_audio_chunk(audio_bytes)
+            elif data.get("text") is not None:
+                last_activity_time = time.time()
+                logger.info("📩 Message received: %s", data.get("text")[:100])
+                try:
+                    msg = json.loads(data.get("text"))
+                    msg_type = msg.get("type")
+                    
+                    from voicebot.shared.utils.validation import is_valid_api_key
+
+                    if msg_type == "config":
+                        # DYNAMIC RECONFIGURATION
+                        llm_choice = msg.get("llm", "groq")
+                        llm_model = msg.get("llmModel")
+
+                        # Secure validation before switching
+                        _target_key = None
+                        if llm_choice == "openrouter" or ("/" in str(llm_model) and llm_choice not in ("gemini", "openai", "groq", "anthropic")):
+                             _target_key = settings.openrouter_api_key
+                        elif llm_choice == "gemini":
+                             _target_key = settings.gemini_api_key
+                        elif llm_choice == "groq":
+                             _target_key = settings.groq_api_key
+                        elif llm_choice == "anthropic":
+                             _target_key = settings.anthropic_api_key
+                        else:
+                             _target_key = settings.openai_api_key
+                             
+                        # PROVIDER/MODEL MISMATCH VALIDATION
+                        mismatch_warning = None
+                        model_lower = str(llm_model).lower()
+                        
+                        if llm_choice == "groq" and "gemini" in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Groq does not host Gemini models ({llm_model})."
+                        elif llm_choice == "groq" and "claude" in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Groq does not host Claude models ({llm_model})."
+                        elif llm_choice == "gemini" and "gemini" not in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Gemini provider expects a Gemini model name ({llm_model})."
+                        elif llm_choice == "anthropic" and "claude" not in model_lower:
+                            mismatch_warning = f"⚠️ Provider mismatch: Anthropic provider expects a Claude model name ({llm_model})."
+                        
+                        if mismatch_warning:
+                            logger.warning(mismatch_warning)
+                            await vt.send_json({
+                                "type": "log",
+                                "tag": "[CONFIG]",
+                                "message": mismatch_warning + " Switching anyway but errors are likely.",
+                                "color": "text-orange-400"
+                            })
+
+                        if not is_valid_api_key(_target_key):
+                            logger.warning("🚫 Blocked LLM switch to %s: Invalid/Placeholder API Key", llm_choice)
+                            await vt.send_json({
+                                "type": "log",
+                                "tag": "[SYSTEM]",
+                                "message": f"Cannot switch to {llm_choice}: API Key is a placeholder. Please check your .env file.",
+                                "color": "text-red-400"
+                            })
+                            continue
+
+                        if llm_choice == "openrouter" or ("/" in str(llm_model) and llm_choice not in ("gemini", "openai", "groq", "anthropic")):
+                            from voicebot.services.llm.openrouter_provider import OpenRouterStreamingProvider
+                            brain.llm = OpenRouterStreamingProvider(model=llm_model)
+                        elif llm_choice == "gemini":
+                            from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+                            brain.llm = GeminiStreamingProvider(model=llm_model)
+                        elif llm_choice == "groq":
+                            from voicebot.services.llm.groq_provider import GroqStreamingProvider
+                            brain.llm = GroqStreamingProvider(model=llm_model)
+                        elif llm_choice == "anthropic":
+                            from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
+                            brain.llm = AnthropicStreamingProvider(model=llm_model)
+                        else:
+                            from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
+                            brain.llm = OpenAIStreamingProvider(model=llm_model)
+                            
+                        # Update TTS
+                        tts_choice = msg.get("tts", "deepgram")
+                        voice_id_override = msg.get("voiceId")
+                        if not voice_id_override:
+                             raise ValueError("Dynamic config applied without a valid voice_id.")
+                             
+                        if tts_choice == "deepgram":
+                            from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
+                            brain.tts = DeepgramTTSProvider(model=voice_id_override)
+                        else:
+                            from voicebot.services.tts.elevenlabs_provider import ElevenLabsStreamingProvider
+                            brain.tts = ElevenLabsStreamingProvider(voice_id=voice_id_override)
+                            
+                        logger.info("Pipeline reconfigured: LLM=%s (%s), TTS=%s", llm_choice, llm_model, tts_choice)
+                        await vt.send_json({"type": "status", "message": f"Config updated: {llm_choice} / {tts_choice}"})
+
+                    elif msg_type == "switch_bot":
+                        # HOT-SWAP BOT PERSONA MID-CALL
+                        new_bot_id = msg.get("bot_id")
+                        new_bot_name = msg.get("bot_name")
+                        new_bot_cfg = None
+
+                        if new_bot_id:
+                            new_bot_cfg = await db.get_bot(new_bot_id)
+                        elif new_bot_name:
+                            new_bot_cfg = await db.get_bot_by_name(new_bot_name)
+
+                        if new_bot_cfg:
+                            await brain.switch_bot(new_bot_cfg)
+                            await vt.send_json({"type": "status", "state": "bot_switched", "bot": new_bot_cfg.get("name")})
+                            logger.info("Bot switched to: %s", new_bot_cfg.get("name"))
+                        else:
+                            await vt.send_json({"type": "error", "message": f"Bot not found"})
+
+                    elif msg_type == "test_interruption":
+                        if not brain:
+                            await vt.send_json({"type": "error", "message": "Bridge not initialized."})
+                            continue
+
+                        # 🚀 Triggering Full-Pipeline (STT -> LLM -> TTS) Test
+                        logger.info("🧪 Launching LLM-driven Interruption & Hallucination Test")
+                        await vt.send_json({"type": "log", "tag": "[TEST]", "message": "🔍 Stress-Testing: STT Accuracy & Hallucination Check...", "color": "text-blue-400 font-bold"})
+                        
+                        # B) Inject a System-level instruction turn
+                        # We instruct the LLM to be a test subject and repeat the user's words upon interruption.
+                        test_prompt = (
+                            "ACT AS A TEST SUBJECT. Your goal is to help me test barge-in accuracy and verify no hallucinations occur. "
+                            "1. Start by saying: 'I am now beginning a lengthy, high-speed explanation of planetary mechanics. Please interrupt me now.' "
+                            "2. Then, provide a very long, complex paragraph. "
+                            "3. CRITICAL: When I interrupt you, your next response MUST acknowledge exactly what you heard me say. "
+                            "For example: 'Interruption successful! I heard you say [user utterance]. No hallucinations detected.' "
+                            "Now, begin Step 1."
+                        )
+                        
+                        # C) Trigger the test in the Brain (Hidden from UI logs)
+                        # The UI will stay clean until the bot starts the monologue
+                        asyncio.create_task(brain.process_stt_partial(test_prompt, is_final=True, suppress_transcript=True))
+                        
+                        await vt.send_json({"type": "log", "tag": "[TEST]", "message": "✅ Mode: HALLUCINATION CHECK. Speak over the bot and check its next reply.", "color": "text-green-400"})
+
+                    elif msg_type == "text_query":
+                        # SIMULATOR MODE: Direct text to brain
+                        query = msg.get("text", "")
+                        if query:
+                            logger.info("Simulator query received: %s", query)
+                            # If the bot is mid-speech, interrupt it first so the
+                            # frontend flushes its audio queue before the new turn starts.
+                            if brain.state in (BotState.SPEAKING, BotState.PROCESSING):
+                                await brain.handle_interruption()
+                            # Echo back as transcript so UI shows it
+                            await vt.send_json({"type": "transcript", "text": query, "is_final": True})
+                            await brain._process_user_turn(query)
+
+                    elif msg_type == "interrupt":
+                        await brain.handle_interruption()
+                        
+                except json.JSONDecodeError:
+                    pass
+
+    except WebSocketDisconnect:
+        logger.info("Session %s disconnected", session_id[:8])
+    except RuntimeError as e:
+        if "Cannot call \"receive\"" in str(e) or "WebSocket is not connected" in str(e):
+             logger.info("Session %s disconnected (runtime)", session_id[:8])
+        else:
+             logger.error("Runtime error in session %s: %s", session_id[:8], e)
+    except Exception as e:
+        from voicebot.shared.exceptions import VoiceBotError
+        
+        if isinstance(e, VoiceBotError):
+            logger.error("❌ Terminal VoiceBot Error in %s: %s [%s]", session_id[:8], e.message, e.code)
+            # Notify UI
+            if vt.connected:
+                try:
+                    await vt.send_json({
+                        "type": "error",
+                        "code": e.code,
+                        "message": str(e),
+                    })
+                except Exception: pass
+            
+            # Close call immediately
+            await on_voice_session_end(reason=f"terminal_error_{e.code.lower()}")
+        else:
+            logger.error("Unexpected error in session %s: %s", session_id[:8], e, exc_info=True)
+            await on_voice_session_end(reason="internal_server_error")
+    finally:
+        if 'heartbeat_task' in locals():
+            heartbeat_task.cancel()
+        if locals().get("_stt_keepalive_stop") is not None:
+            _stt_keepalive_stop.set()
+        if locals().get("_stt_kp_task") is not None:
+            _stt_kp_task.cancel()
+            try:
+                await _stt_kp_task
+            except asyncio.CancelledError:
+                pass
+        await brain.cleanup()
+        await stt_provider.disconnect()
+        if hasattr(tts_provider, "disconnect"):
+            await tts_provider.disconnect()
+        
+        # --- Post-Call Summarization ---
+        try:
+            recording_meta = recorder.finalize(
+                session_id=session_id,
+                output_dir=Path(__file__).resolve().parents[1] / "obsidian-command" / "public" / "assets" / "recordings",
+            ) or {}
+            log_entries = await db.get_session_log(session_id)
+            transcript_text = "\n".join([f"{e['role']}: {e['content']}" for e in log_entries if e['role'] in ['user', 'assistant']])
+            
+            summary = "No meaningful conversation occurred."
+            intent = "Unknown"
+            disposition = "unknown"
+            
+            if len(log_entries) > 1 and transcript_text.strip():
+                try:
+                    # Reuse the bot's own provider — same model used during the call.
+                    # brain.cleanup() nulled _client; _get_client() lazy-reinits on first use.
+                    sum_llm = llm_provider
+                    logger.info(
+                        "Post-call summarisation using bot LLM: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
+
+                    # Generate Summary
+                    system_summary = "You are a concise assistant. In 1-2 sentences summarize the user's inquiry and the outcome."
+                    sum_parts = []
+                    async for chunk in sum_llm.stream_completion(system_summary, [{"role": "user", "content": transcript_text}]):
+                        if chunk.content:
+                            sum_parts.append(chunk.content)
+                    if sum_parts:
+                        summary = "".join(sum_parts).strip()
+
+                    # Generate Intent Tag
+                    system_intent = "You are a classification assistant. Output ONLY a 1-3 word noun phrase for the intent."
+                    intent_parts = []
+                    async for chunk in sum_llm.stream_completion(system_intent, [{"role": "user", "content": transcript_text}]):
+                        if chunk.content:
+                            intent_parts.append(chunk.content)
+                    if intent_parts:
+                        intent = "".join(intent_parts).strip()
+
+                    # Generate session disposition (operational outcome)
+                    disposition_parts = []
+                    async for chunk in sum_llm.stream_completion(
+                        DISPOSITION_LLM_INSTRUCTION,
+                        [{"role": "user", "content": transcript_text}],
+                    ):
+                        if chunk.content:
+                            disposition_parts.append(chunk.content)
+                    if disposition_parts:
+                        disposition = normalize_disposition("".join(disposition_parts))
+
+                except Exception as llm_err:
+                    logger.error("LLM Summarization failed: %s", llm_err)
+            
+            await db.close_session(
+                session_id=session_id, 
+                turn_count=len(log_entries), 
+                metadata={
+                    'summary': summary,
+                    'intent': intent,
+                    'disposition': disposition,
+                    **recording_meta,
+                }
+            )
+            logger.info("Session %s archived with summary.", session_id[:8])
+
+            # Store summary in vector memory for future RAG retrieval
+            if vector_memory and getattr(vector_memory, "_available", False) and summary != "No meaningful conversation occurred.":
+                try:
+                    await vector_memory.store_conversation(
+                        session_id=session_id,
+                        summary=summary,
+                        user_id=user_id,
+                    )
+                except Exception as _vec_err:
+                    logger.debug("Vector memory store failed: %s", _vec_err)
+
+            # Post-call webhook: fire summary to external URL if configured
+            _post_call_url = bot_config.get("post_call_webhook_url", "")
+            if _post_call_url and summary != "No meaningful conversation occurred.":
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                        await _hc.post(_post_call_url, json={
+                            "session_id": session_id,
+                            "user_id": user_id,
+                            "bot_id": bot_config.get("id"),
+                            "summary": summary,
+                            "intent": intent,
+                            "disposition": disposition,
+                            "turn_count": len(log_entries),
+                        })
+                    logger.info("Post-call webhook fired for session %s", session_id[:8])
+                except Exception as _wh_err:
+                    logger.warning("Post-call webhook failed: %s", _wh_err)
+
+        except Exception as archive_err:
+            logger.error("Failed to archive session %s: %s", session_id[:8], archive_err)
+        finally:
+            # Remove from singleton registry (always keyed by session_id)
+            if _active_voice_sessions.get(session_id) == websocket:
+                _active_voice_sessions.pop(session_id, None)
+
+async def _handle_gemini_s2s_session(
+    websocket: WebSocket,
+    vt: WebSocketVoiceTransport,
+    session_id: str,
+    language: str,
+    bot_config: dict,
+    db,
+) -> None:
+    """
+    Full WebSocket session handler for pipeline_mode == "gemini_s2s".
+
+    Gemini Live replaces the classic STT→LLM→TTS stack with a single
+    bidirectional audio + transcription session.
+    """
+    from voicebot.services.voice.gemini_s2s_bridge import GeminiLiveS2SBridge
+
+    bridge = GeminiLiveS2SBridge(
+        api_key=settings.gemini_api_key,
+        session_id=session_id,
+        bot_config=bot_config,
+        send_json=vt.send_json,
+        send_bytes=vt.send_bytes,
+        db=db,
+        language=language,
+        gemini_model=(bot_config.get("s2s_model") or None),
+    )
+
+    connected = await bridge.connect()
+    if not connected:
+        if vt.connected:
+            await vt.send_json({
+                "type":    "error",
+                "message": "Speech-to-speech: failed to connect to Gemini Live API. "
+                           "Check GEMINI_API_KEY and model availability.",
+                "code":    "S2S_GEMINI_CONNECT_ERR",
+            })
+            await websocket.close(code=4000)
+        return
+
+    await vt.send_json({
+        "type":       "status",
+        "state":      "listening",
+        "session_id": session_id,
+        "message":    "Speech-to-speech ready (Gemini Live).",
+        "mode":       "gemini_s2s",
+    })
+
+    async def s2s_heartbeat():
+        while vt.connected:
+            await asyncio.sleep(30)
+            if vt.connected:
+                await vt.send_json({
+                    "type": "infra_status",
+                    "mode": "gemini_s2s",
+                    "stt":  "gemini-live",
+                    "llm":  "gemini-live",
+                    "tts":  "gemini-live",
+                })
+
+    heartbeat_task = asyncio.create_task(s2s_heartbeat())
+
+    try:
+        while True:
+            data = await websocket.receive()
+
+            if data.get("bytes") is not None:
+                await bridge.send_audio(data.get("bytes"))
+
+            elif data.get("text") is not None:
+                try:
+                    msg = json.loads(data.get("text"))
+                    msg_type = msg.get("type")
+
+                    if msg_type == "interrupt":
+                        await bridge.handle_interrupt()
+
+                    elif msg_type == "text_query":
+                        query = msg.get("text", "").strip()
+                        if query:
+                            logger.info("Gemini S2S text_query (session=%s): %s", session_id[:8], query)
+                            await bridge.send_text_query(query)
+
+                    elif msg_type in ("config", "switch_bot"):
+                        # Not supported in S2S mode — acknowledge without crashing
+                        await vt.send_json({
+                            "type":    "log",
+                            "tag":     "[S2S]",
+                            "message": f"'{msg_type}' is not supported in gemini_s2s mode.",
+                            "color":   "text-yellow-400",
+                        })
+                    # All other message types silently ignored
+                except json.JSONDecodeError:
+                    pass
+
+    except WebSocketDisconnect:
+        logger.info("S2S (gemini) session %s disconnected", session_id[:8])
+    except RuntimeError as exc:
+        msg_str = str(exc)
+        if "Cannot call \"receive\"" in msg_str or "WebSocket is not connected" in msg_str:
+            logger.info("S2S (gemini) session %s disconnected (runtime)", session_id[:8])
+        else:
+            logger.error("S2S (gemini) runtime error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    except Exception as exc:
+        logger.error("S2S (gemini) error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    finally:
+        heartbeat_task.cancel()
+        await bridge.disconnect()
+
+        # ── Post-call summarisation (same as classic mode) ─────────────────
+        try:
+            log_entries = await db.get_session_log(session_id)
+            transcript_text = "\n".join(
+                f"{e['role']}: {e['content']}"
+                for e in log_entries
+                if e["role"] in ("user", "assistant")
+            )
+
+            summary = "No meaningful conversation occurred."
+            intent = "Unknown"
+            disposition = "unknown"
+
+            if len(log_entries) > 1 and transcript_text.strip():
+                try:
+                    sum_llm = _make_summariser_llm(bot_config)
+                    logger.info(
+                        "S2S (gemini) post-call summarisation using: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
+
+                    sum_prompt = (
+                        "Summarize the following conversation in exactly 1 or 2 concise sentences. "
+                        "Focus solely on the user's primary intent and the resolution. "
+                        "Do not add conversational filler:\n\n" + transcript_text
+                    )
+                    parts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise summarizer.",
+                        messages=[{"role": "user", "content": sum_prompt}],
+                    ):
+                        if chunk.content:
+                            parts.append(chunk.content)
+                    if parts:
+                        summary = "".join(parts).strip()
+
+                    intent_prompt = (
+                        "Based on the following conversation, provide a strict 1-3 word noun phrase "
+                        "representing the core operational intent (e.g. 'Password Reset', "
+                        "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n"
+                        + transcript_text
+                    )
+                    iparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise intent classifier.",
+                        messages=[{"role": "user", "content": intent_prompt}],
+                    ):
+                        if chunk.content:
+                            iparts.append(chunk.content)
+                    if iparts:
+                        intent = "".join(iparts).strip()
+
+                    disposition_prompt = (
+                        DISPOSITION_LLM_INSTRUCTION
+                        + "\nConversation:\n"
+                        + transcript_text
+                    )
+                    dparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a strict post-call outcome classifier.",
+                        messages=[{"role": "user", "content": disposition_prompt}],
+                    ):
+                        if chunk.content:
+                            dparts.append(chunk.content)
+                    if dparts:
+                        disposition = normalize_disposition("".join(dparts))
+                except Exception as llm_err:
+                    logger.error("S2S (gemini) post-call LLM summarisation failed: %s", llm_err)
+
+            await db.close_session(
+                session_id=session_id,
+                turn_count=len(log_entries),
+                metadata={
+                    "summary": summary,
+                    "intent": intent,
+                    "disposition": disposition,
+                    "mode": "gemini_s2s",
+                },
+            )
+            logger.info("S2S (gemini) session %s archived.", session_id[:8])
+
+            # Post-call webhook for S2S mode
+            _post_call_url = bot_config.get("post_call_webhook_url", "")
+            if _post_call_url and summary != "No meaningful conversation occurred.":
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                        await _hc.post(_post_call_url, json={
+                            "session_id": session_id,
+                            "user_id": language,
+                            "summary": summary,
+                            "intent": intent,
+                            "disposition": disposition,
+                            "mode": "gemini_s2s",
+                        })
+                except Exception as _wh_err:
+                    logger.warning("S2S (gemini) post-call webhook failed: %s", _wh_err)
+
+        except Exception as archive_err:
+            logger.error("Failed to archive S2S (gemini) session %s: %s", session_id[:8], archive_err)
+
+async def _handle_speech_speech_session(
+    websocket: WebSocket,
+    vt: WebSocketVoiceTransport,
+    session_id: str,
+    language: str,
+    bot_config: dict,
+    db,
+) -> None:
+    """
+    Full WebSocket session handler for pipeline_mode == "speech_speech".
+
+    Replaces the classic STT→LLM→TTS stack with a single OpenAI Realtime
+    bidirectional session.  The client-facing message protocol is identical
+    to the classic mode so the frontend requires no changes.
+    """
+    from voicebot.services.voice.openai_realtime import OpenAIRealtimeBridge
+
+    bridge = OpenAIRealtimeBridge(
+        api_key=settings.openai_api_key,
+        session_id=session_id,
+        bot_config=bot_config,
+        send_json=vt.send_json,
+        send_bytes=vt.send_bytes,
+        db=db,
+        language=language,
+    )
+
+    connected = await bridge.connect()
+    if not connected:
+        if vt.connected:
+            await vt.send_json({
+                "type":    "error",
+                "message": "Speech-to-speech: failed to connect to OpenAI Realtime API. "
+                           "Check OPENAI_API_KEY and model availability.",
+                "code":    "S2S_CONNECT_ERR",
+            })
+            await websocket.close(code=4000)
+        return
+
+    await vt.send_json({
+        "type":       "status",
+        "state":      "listening",
+        "session_id": session_id,
+        "message":    "Speech-to-speech ready (OpenAI Realtime).",
+        "mode":       "speech_speech",
+    })
+
+    async def s2s_heartbeat():
+        while vt.connected:
+            await asyncio.sleep(30)
+            if vt.connected:
+                await vt.send_json({
+                    "type": "infra_status",
+                    "mode": "speech_speech",
+                    "stt":  "openai-realtime",
+                    "llm":  "openai-realtime",
+                    "tts":  "openai-realtime",
+                })
+
+    heartbeat_task = asyncio.create_task(s2s_heartbeat())
+
+    try:
+        while True:
+            data = await websocket.receive()
+
+            if data.get("bytes") is not None:
+                await bridge.send_audio(data.get("bytes"))
+
+            elif data.get("text") is not None:
+                try:
+                    msg      = json.loads(data.get("text"))
+                    msg_type = msg.get("type")
+
+                    if msg_type == "interrupt":
+                        await bridge.handle_interrupt()
+
+                    elif msg_type == "text_query":
+                        query = msg.get("text", "").strip()
+                        if query:
+                            logger.info("S2S text_query (session=%s): %s", session_id[:8], query)
+                            await bridge.send_text_query(query)
+
+                    elif msg_type in ("config", "switch_bot"):
+                        # Not supported in S2S mode — acknowledge without crashing
+                        await vt.send_json({
+                            "type":    "log",
+                            "tag":     "[S2S]",
+                            "message": f"'{msg_type}' is not supported in speech_speech mode.",
+                            "color":   "text-yellow-400",
+                        })
+                    # All other message types silently ignored
+
+                except json.JSONDecodeError:
+                    pass
+
+    except WebSocketDisconnect:
+        logger.info("S2S session %s disconnected", session_id[:8])
+    except RuntimeError as exc:
+        msg_str = str(exc)
+        if "Cannot call \"receive\"" in msg_str or "WebSocket is not connected" in msg_str:
+            logger.info("S2S session %s disconnected (runtime)", session_id[:8])
+        else:
+            logger.error("S2S runtime error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    except Exception as exc:
+        logger.error("S2S error (session=%s): %s", session_id[:8], exc, exc_info=True)
+    finally:
+        heartbeat_task.cancel()
+        await bridge.disconnect()
+
+        # ── Post-call summarisation (same as classic mode) ─────────────────
+        try:
+            log_entries = await db.get_session_log(session_id)
+            transcript_text = "\n".join(
+                f"{e['role']}: {e['content']}"
+                for e in log_entries
+                if e["role"] in ("user", "assistant")
+            )
+
+            summary = "No meaningful conversation occurred."
+            intent  = "Unknown"
+            disposition = "unknown"
+
+            if len(log_entries) > 1 and transcript_text.strip():
+                try:
+                    sum_llm = _make_summariser_llm(bot_config)
+                    logger.info(
+                        "S2S post-call summarisation using: provider=%s model=%s",
+                        getattr(sum_llm, "provider", type(sum_llm).__name__),
+                        getattr(sum_llm, "model", "?"),
+                    )
+
+                    sum_prompt = (
+                        "Summarize the following conversation in exactly 1 or 2 concise sentences. "
+                        "Focus solely on the user's primary intent and the resolution. "
+                        "Do not add conversational filler:\n\n" + transcript_text
+                    )
+                    parts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise summarizer.",
+                        messages=[{"role": "user", "content": sum_prompt}],
+                    ):
+                        if chunk.content:
+                            parts.append(chunk.content)
+                    if parts:
+                        summary = "".join(parts).strip()
+
+                    intent_prompt = (
+                        "Based on the following conversation, provide a strict 1-3 word noun phrase "
+                        "representing the core operational intent (e.g. 'Password Reset', "
+                        "'Technical Inquiry', 'General Chat'). Output ONLY the tag:\n\n"
+                        + transcript_text
+                    )
+                    iparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a concise intent classifier.",
+                        messages=[{"role": "user", "content": intent_prompt}],
+                    ):
+                        if chunk.content:
+                            iparts.append(chunk.content)
+                    if iparts:
+                        intent = "".join(iparts).strip()
+
+                    disposition_prompt = (
+                        DISPOSITION_LLM_INSTRUCTION
+                        + "\nConversation:\n"
+                        + transcript_text
+                    )
+                    dparts: list[str] = []
+                    async for chunk in sum_llm.stream_completion(
+                        system_prompt="You are a strict post-call outcome classifier.",
+                        messages=[{"role": "user", "content": disposition_prompt}],
+                    ):
+                        if chunk.content:
+                            dparts.append(chunk.content)
+                    if dparts:
+                        disposition = normalize_disposition("".join(dparts))
+
+                except Exception as llm_err:
+                    logger.error("S2S post-call LLM summarisation failed: %s", llm_err)
+
+            await db.close_session(
+                session_id=session_id,
+                turn_count=len(log_entries),
+                metadata={
+                    "summary": summary,
+                    "intent": intent,
+                    "disposition": disposition,
+                    "mode": "speech_speech",
+                },
+            )
+            logger.info("S2S session %s archived.", session_id[:8])
+
+            # Post-call webhook for S2S mode
+            _post_call_url = bot_config.get("post_call_webhook_url", "")
+            if _post_call_url and summary != "No meaningful conversation occurred.":
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10.0) as _hc:
+                        await _hc.post(_post_call_url, json={
+                            "session_id": session_id,
+                            "user_id": language,  # language is in scope from outer
+                            "summary": summary,
+                            "intent": intent,
+                            "disposition": disposition,
+                            "mode": "speech_speech",
+                        })
+                except Exception as _wh_err:
+                    logger.warning("S2S post-call webhook failed: %s", _wh_err)
+
+        except Exception as archive_err:
+            logger.error("Failed to archive S2S session %s: %s", session_id[:8], archive_err)
+
+
+if __name__ == "__main__":
+    uvicorn.run("voicebot.main:app", host="0.0.0.0", port=8000, reload=False)
