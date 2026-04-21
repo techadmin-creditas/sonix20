@@ -338,7 +338,7 @@ export default function LiveTalk({ className }: { className?: string }) {
   }, [stopAudio]);
 
   return (
-    <div className={cn("relative flex flex-col items-center justify-center p-8 h-[550px] w-full", className)}>
+    <div className={cn("relative flex flex-col items-center justify-center p-8 max-h-[550px] w-full", className)}>
       <NLPSpiderGraph status={status} />
       
       <AnimatePresence mode="wait">
