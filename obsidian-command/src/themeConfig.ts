@@ -4,7 +4,7 @@
  */
 
 export const themeConfig = {
-  selectedBrand: 'prismatic' as 'amber' | 'nocturnal' | 'neuralSlate' | 'prismatic',
+  selectedBrand: 'nocturnal' as 'amber' | 'nocturnal' | 'neuralSlate' | 'prismatic',
   selectedMode: 'light' as 'light' | 'dark',
 
   amber: {
