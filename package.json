@@ -5,6 +5,6 @@
         "obsidian-command"
     ],
     "scripts": {
-        "build": "npm run build -w obsidian-command && rm -rf dist && cp -r obsidian-command/dist ./dist"
+        "build": "npm run build -w obsidian-command && rm -rf dist && cp -r obsidian-command/dist ./dist && rm -rf venv .venv voicebot-ui obsidian-command node_modules package-lock.json"
     }
 }
