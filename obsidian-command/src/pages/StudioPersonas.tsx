@@ -53,6 +53,14 @@ import { Link, useLocation } from 'react-router-dom';
 // Shared Premium Components
 // ─────────────────────────────────────────────────────────────────────────────
 
+const VOICES = [
+   { id: 'v1', name: 'Ananya', provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
+   { id: 'v2', name: 'Aarav', provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
+   { id: 'v3', name: 'Priya', provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
+   { id: 'v4', name: 'Arjun', provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
+   { id: 'v5', name: 'Kavya', provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
+];
+
 const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { label?: string, placeholder: string, value: string, onChange: (v: string) => void, icon?: any }) => (
    <div className="space-y-2 group/input">
       {label && (
@@ -139,7 +147,7 @@ const NeuralIdentityForge = ({
       empathy: initialPersona?.empathy || 75,
    }));
 
-   const [activeTab, setActiveTab] = React.useState<'Voice' | 'Language' | 'Tone'>('Voice');
+   const [activeTab, setActiveTab] = React.useState<'Language' | 'Tone' | 'Voice'>('Language');
    const [isPlaying, setIsPlaying] = React.useState(false);
    const [isCloning, setIsCloning] = React.useState(false);
    const [mediaRecorder, setMediaRecorder] = React.useState<MediaRecorder | null>(null);
@@ -212,7 +220,7 @@ const NeuralIdentityForge = ({
 
       setIsPlaying(true);
 
-      const voice = availableVoices.find(v => v.id === formData.selectedVoice || v.name === formData.selectedVoice);
+      const voice = VOICES.find(v => v.id === formData.selectedVoice || v.name === formData.selectedVoice);
       if (!voice) {
          console.warn('Voice not found for preview:', formData.selectedVoice);
          setIsPlaying(false);
@@ -274,9 +282,11 @@ const NeuralIdentityForge = ({
    const isComplete = !!(formData.selectedVoice && formData.language && formData.emotion);
 
    const avatars = [
-      { id: 'v1', name: 'Rachel', image: '/avatars/rachel.png', label: 'Female • 24y', info: 'Best for: Collections' },
-      { id: 'v2', name: 'Marcus', image: '/avatars/marcus.png', label: 'Male • 30y', info: 'Control Room' },
-      { id: 'v3', name: 'Saira', image: '/avatars/saira.png', label: 'Female • 28y', info: 'Tech Expert' },
+      { id: 'v1', name: 'Ananya', image: '/avatars/rachel.png', label: 'Female • 24y', info: 'Best for: Collections' },
+      { id: 'v2', name: 'Aarav', image: '/avatars/marcus.png', label: 'Male • 30y', info: 'Control Room' },
+      { id: 'v3', name: 'Priya', image: '/avatars/saira.png', label: 'Female • 28y', info: 'Tech Expert' },
+      { id: 'v4', name: 'Arjun', image: '/avatars/marcus.png', label: 'Male • 26y', info: 'Sales Support' },
+      { id: 'v5', name: 'Kavya', image: '/avatars/rachel.png', label: 'Female • 22y', info: 'Instant Verification' },
    ];
 
    const getVoiceAvatar = (voiceName?: string) => {
@@ -286,34 +296,29 @@ const NeuralIdentityForge = ({
    const renderTabContent = () => {
       switch (activeTab) {
          case 'Voice':
-            if (isFetchingVoices) {
+            return VOICES.map((av, i) => {
                return (
-                  <div className="flex items-center gap-2 p-4 text-[10px] font-bold text-outline uppercase tracking-widest">
-                     <Loader2 className="size-4 animate-spin" /> Fetching Neural Assets...
-                  </div>
+                  <button
+                     key={i}
+                     onClick={() => patch({
+                        gender: [0, 2, 4].includes(i) ? 'Female' : 'Male',
+                        selectedVoice: av.id
+                     })}
+                     className={cn(
+                        "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
+                        formData.selectedVoice === av.id ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
+                     )}
+                  >
+                     <div className="size-10 rounded-full bg-surface-low overflow-hidden border border-outline-variant/5 flex items-center justify-center">
+                        <Bot className="size-6 text-primary/40" />
+                     </div>
+                     <div className="text-left">
+                        <div className="text-[11px] font-bold text-on-surface line-clamp-1 max-w-[120px]">{av.name}</div>
+                        <div className="text-[8px] font-medium text-outline uppercase tracking-tighter">{av.provider}</div>
+                     </div>
+                  </button>
                );
-            }
-            return availableVoices.map((av, i) => (
-               <button
-                  key={i}
-                  onClick={() => patch({
-                     gender: av.name.toLowerCase().includes('female') || av.name === 'Rachel' || av.name === 'Saira' ? 'Female' : 'Male',
-                     selectedVoice: av.id
-                  })}
-                  className={cn(
-                     "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
-                     formData.selectedVoice === av.id ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
-                  )}
-               >
-                  <div className="size-10 rounded-full bg-surface-low overflow-hidden border border-outline-variant/5 flex items-center justify-center">
-                     <Bot className="size-6 text-primary/40" />
-                  </div>
-                  <div className="text-left">
-                     <div className="text-[11px] font-bold text-on-surface line-clamp-1 max-w-[120px]">{av.name}</div>
-                     <div className="text-[8px] font-medium text-outline uppercase tracking-tighter">{av.provider}</div>
-                  </div>
-               </button>
-            ));
+            });
          case 'Language':
             return (metadata.languages.length > 0 ? metadata.languages : []).map((lang, i) => (
                <button
@@ -434,7 +439,7 @@ const NeuralIdentityForge = ({
                      <div className="space-y-4">
                         <div className="flex items-center justify-between">
                            <div className="inline-flex p-1 bg-surface-lowest border border-outline-variant/10 rounded-2xl">
-                              {['Voice', 'Language', 'Tone'].map(tab => (
+                              {['Language', 'Tone', 'Voice'].map(tab => (
                                  <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab as any)}
@@ -521,7 +526,7 @@ const NeuralIdentityForge = ({
                         )}
                         <div className="aspect-4/5 relative">
                            <img
-                              src={getVoiceAvatar(availableVoices.find(v => v.id === formData.selectedVoice)?.name)}
+                              src={getVoiceAvatar(VOICES.find(v => v.id === formData.selectedVoice)?.name)}
                               alt="Current Persona"
                               className="absolute inset-0 w-full h-full object-cover"
                            />
@@ -535,7 +540,10 @@ const NeuralIdentityForge = ({
                                     </span>
                                  </div>
                                  <h4 className="text-3xl font-bold text-on-surface tracking-tighter">
-                                    {availableVoices.find(v => v.id === formData.selectedVoice)?.name || 'Select Identity'}
+                                    {(() => {
+                                       const voice = VOICES.find(v => v.id === formData.selectedVoice);
+                                       return voice?.name || 'Select Identity';
+                                    })()}
                                  </h4>
                               </div>
 
@@ -1109,7 +1117,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                                  <Brain className="size-4" /> Neural Blueprints (Source)
                               </h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                 {personas.filter(p => p.owner_user_id!=selectedUser.id).map(p => (
+                                 {personas.filter(p => p.owner_user_id != selectedUser.id).map(p => (
                                     <div key={p.id} className="p-6 rounded-[2.5rem] border bg-surface-lowest border-outline-variant/5 hover:border-primary/20 hover:bg-surface-low flex items-center justify-between transition-all group">
                                        <div className="flex items-center gap-4">
                                           <div className="size-12 rounded-2xl bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">

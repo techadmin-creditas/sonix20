@@ -35,13 +35,13 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     path: '/sessions',
     description: 'Live monitoring and session history.'
   },
-  // {
-  //   id: 'studio',
-  //   label: 'Voice Library',
-  //   icon: Mic2,
-  //   path: '/studio',
-  //   description: 'Manage cloned voices and synthesis profiles.'
-  // },
+  {
+    id: 'studio',
+    label: 'Voice Library',
+    icon: Mic2,
+    path: '/studio',
+    description: 'Manage cloned voices and synthesis profiles.'
+  },
   {
     id: 'personas',
     label: 'Bot Factory',

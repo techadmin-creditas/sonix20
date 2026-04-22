@@ -20,7 +20,14 @@ import { cn } from '../lib/utils';
 import { useStudio } from '../contexts/StudioContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
-import { VOICE_RELAYS } from '../data/voiceData';
+
+const VOICES = [
+  { id: 'v1', name: 'Ananya', provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
+  { id: 'v2', name: 'Aarav', provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
+  { id: 'v3', name: 'Priya', provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
+  { id: 'v4', name: 'Arjun', provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
+  { id: 'v5', name: 'Kavya', provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
+];
 
 // --- Sub-components ---
 
@@ -63,7 +70,8 @@ const MiniWavePlayer = ({ isPlaying, onToggle }: { isPlaying: boolean; onToggle:
 };
 
 const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlaying, onPlayToggle }: any) => {
-  const relay = VOICE_RELAYS.find(r => r.id === persona.selectedVoice);
+  const relay = VOICES.find(r => r.id === persona.selectedVoice || r.name === persona.selectedVoice);
+  const provider = relay?.provider || (persona.selectedVoice?.includes('v') ? 'ElevenLabs' : 'Neural');
 
   return (
     <motion.tr
@@ -71,7 +79,6 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlayin
       animate={{ opacity: 1 }}
       className="group border-b border-outline-variant/5 hover:bg-surface-low/50 transition-colors"
     >
-      {/* Identity Column */}
       <td className="py-4 pl-4 whitespace-nowrap">
         <div className="flex items-center gap-3">
           <div className={cn(
@@ -91,30 +98,23 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlayin
         </div>
       </td>
 
-      {/* Engine Column */}
       <td className="py-4 px-4 whitespace-nowrap">
         <div className="flex items-center gap-2">
           <div className="size-6 rounded bg-surface-lowest border border-outline-variant/5 flex items-center justify-center">
             <Database className="size-3 text-outline" />
           </div>
-          <div>
-            <p className="text-[10px] font-bold text-on-surface leading-none">{relay?.name || 'Default'}</p>
-            <p className="text-[8px] text-primary/70 uppercase tracking-widest font-bold mt-0.5">{relay?.provider || 'Neural'}</p>
-          </div>
+          <p className="text-[10px] text-primary/70 uppercase tracking-widest font-black">{provider}</p>
         </div>
       </td>
 
-      {/* Voice Sample Column */}
       <td className="py-4 px-4 whitespace-nowrap">
         <MiniWavePlayer isPlaying={isPlaying} onToggle={onPlayToggle} />
       </td>
 
-      {/* Role Column */}
       <td className="py-4 px-4">
         <p className="text-[10px] font-medium text-outline truncate max-w-[150px]">{persona.useCase}</p>
       </td>
 
-      {/* Behavioral DNA Column */}
       <td className="py-4 px-4">
         <div className="flex flex-col gap-2 w-32">
           <div className="flex items-center justify-between">
@@ -127,7 +127,6 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlayin
         </div>
       </td>
 
-      {/* Status Column */}
       <td className="py-4 px-4 whitespace-nowrap">
         <div className={cn(
           "flex items-center gap-2 px-2 py-1 rounded-lg border w-fit",
@@ -138,7 +137,6 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlayin
         </div>
       </td>
 
-      {/* Actions Column */}
       <td className="py-4 px-4 text-right pr-4">
         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
@@ -169,6 +167,86 @@ const RegistryRow = ({ persona, isDeployed, onToggle, onTest, onDelete, isPlayin
     </motion.tr>
   );
 };
+
+const VoiceRelayRow = ({ voice, isPlaying, onPlayToggle, onForge }: any) => (
+  <motion.tr
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="group border-b border-outline-variant/5 hover:bg-surface-low/50 transition-colors"
+  >
+    <td className="py-4 pl-4 whitespace-nowrap">
+      <div className="flex items-center gap-3">
+        <div className={cn(
+          "size-8 rounded-lg flex items-center justify-center font-bold text-[10px] border shadow-sm bg-primary/10 border-primary/20 text-primary"
+        )}>
+          {voice.name?.charAt(0)}
+        </div>
+        <div>
+          <p className="text-xs font-bold text-on-surface leading-none">{voice.name}</p>
+          <p className="text-[9px] text-outline mt-1">{voice.provider} · Global Relay</p>
+        </div>
+      </div>
+    </td>
+
+    <td className="py-4 px-4 whitespace-nowrap">
+      <div className="flex items-center gap-2">
+        <div className="size-6 rounded bg-surface-lowest border border-outline-variant/5 flex items-center justify-center">
+          <Database className="size-3 text-outline" />
+        </div>
+        <p className="text-[10px] text-primary/70 uppercase tracking-widest font-black">{voice.provider}</p>
+      </div>
+    </td>
+
+    <td className="py-4 px-4 whitespace-nowrap">
+      <MiniWavePlayer isPlaying={isPlaying} onToggle={onPlayToggle} />
+    </td>
+
+    <td className="py-4 px-4">
+      <p className="text-[10px] font-medium text-outline truncate max-w-[150px]">{voice.role}</p>
+    </td>
+
+    <td className="py-4 px-4">
+      <div className="flex flex-col gap-2 w-32">
+        <div className="flex items-center justify-between">
+          <span className="text-[7px] font-bold text-outline uppercase">Latency</span>
+          <span className="text-[7px] font-mono text-primary">
+            {voice.latency}
+          </span>
+        </div>
+        <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+          <div className="h-full bg-primary"
+            style={{ width: voice.stability }} />
+        </div>
+      </div>
+    </td>
+
+    <td className="py-4 px-4 whitespace-nowrap">
+      <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 w-fit">
+        <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-[8px] font-black uppercase tracking-widest">Online</span>
+      </div>
+    </td>
+
+    <td className="py-4 px-4 text-right pr-4">
+      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={onForge}
+          className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-on-primary-fixed transition-all"
+          title="Forge Persona"
+        >
+          <Zap className="size-3.5" />
+        </button>
+        <button
+          onClick={() => { }}
+          className="p-1.5 rounded-lg hover:bg-rose-500/10 text-outline hover:text-rose-500 transition-all"
+          title="Delete Voice"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+    </td>
+  </motion.tr>
+);
 
 const CloneVoiceView = ({ onClose }: { onClose: () => void }) => {
   const [isUploading, setIsUploading] = React.useState(false);
@@ -253,15 +331,10 @@ export default function StudioLibrary() {
   const [playingId, setPlayingId] = React.useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleTestVoice = (id: string) => {
-    setActivePersonaId(id);
-    recordActivity(`Testing Context Loaded: ${id}`);
-    navigate('/studio/test');
-  };
-
-  const filteredPersonas = personas.filter(p =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.useCase.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredVoices = VOICES.filter(v =>
+    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.role.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (isCloneMode) {
@@ -270,30 +343,26 @@ export default function StudioLibrary() {
 
   return (
     <div className="space-y-6 h-[calc(100vh-120px)] overflow-hidden flex flex-col">
-      <div className="flex justify-between items-end shrink-0">
-        {/* <div className="space-y-1">
-          <p className="text-[10px] font-bold text-primary uppercase tracking-[0.4em]">Fleet Management</p>
-          <h1 className="text-3xl font-headline font-extrabold text-on-surface uppercase tracking-tight leading-none">Persona Registry</h1>
-        </div> */}
+      <div className="flex justify-between items-center shrink-0">
         <div className="flex gap-3">
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-outline group-focus-within:text-primary transition-colors" />
             <input
               type="text"
-              placeholder="Search fleet..."
+              placeholder="Search voices by name, provider or role..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-surface-low border border-outline-variant/10 rounded-xl pl-10 pr-4 py-2 text-xs font-bold outline-none focus:ring-1 focus:ring-primary/30 w-64 transition-all"
+              className="bg-surface-low border border-outline-variant/10 rounded-xl pl-10 pr-4 py-2 text-xs font-bold outline-none focus:ring-1 focus:ring-primary/30 w-80 transition-all shadow-inner"
             />
           </div>
-          {/* <button
-            onClick={() => setIsCloneMode(true)}
-            className="flex items-center gap-2 ember-gradient px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all"
-          >
-            <PlusCircle className="size-3.5" />
-            Launch Replicator
-          </button> */}
         </div>
+        <button
+          onClick={() => setIsCloneMode(true)}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-all group shadow-sm"
+        >
+          <PlusCircle className="size-4 group-hover:rotate-90 transition-transform" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Clone Voice</span>
+        </button>
       </div>
 
       <div className="flex-1 bg-surface-lowest rounded-4xl border border-outline-variant/10 relative overflow-hidden flex flex-col premium-forge-border shadow-inner">
@@ -301,8 +370,8 @@ export default function StudioLibrary() {
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 bg-surface-lowest z-10">
               <tr className="border-b border-outline-variant/10">
-                <th className="py-4 pl-4 text-[9px] font-bold text-outline uppercase tracking-widest">Neural Identity</th>
-                <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Engine</th>
+                <th className="py-4 pl-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Identity</th>
+                <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Engine Provider</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Sample</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Operational Role</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Behavioral DNA</th>
@@ -311,28 +380,37 @@ export default function StudioLibrary() {
               </tr>
             </thead>
             <tbody>
-              {filteredPersonas.map((p) => (
-                <RegistryRow
-                  key={p.id}
-                  persona={p}
-                  isDeployed={deployedIds?.includes(p.id)}
-                  isPlaying={playingId === p.id}
-                  onPlayToggle={() => setPlayingId(playingId === p.id ? null : p.id)}
-                  onToggle={() => toggleDeployment(p.id)}
-                  onTest={() => handleTestVoice(p.id)}
-                  onDelete={() => deletePersona(p.id)}
-                />
-              ))}
+              {filteredVoices.length > 0 ? (
+                filteredVoices.map((voice) => (
+                  <VoiceRelayRow
+                    key={voice.id}
+                    voice={voice}
+                    isPlaying={playingId === voice.id}
+                    onPlayToggle={() => setPlayingId(playingId === voice.id ? null : voice.id)}
+                    onForge={() => navigate('/studio/agents')}
+                  />
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={7} className="py-20 text-center">
+                    <p className="text-xs font-bold text-outline uppercase tracking-[0.2em]">No matching neural assets found</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="p-4 bg-surface-low/50 border-t border-outline-variant/5 flex justify-between items-center shrink-0">
           <p className="text-[10px] font-bold text-outline uppercase tracking-widest">
-            Total Neural Instances: <span className="text-on-surface">{personas.length}</span>
+            Neural Assets: <span className="text-on-surface">{filteredVoices.length}</span>
           </p>
-          <p className="text-[10px] font-bold text-outline uppercase tracking-widest">
-            Active Relays: <span className="text-emerald-500">{deployedIds?.length}</span>
+          <div className="h-4 w-px bg-outline-variant/10" />
+          {/* <p className="text-[10px] font-bold text-outline uppercase tracking-widest">
+            Studio Personas: <span className="text-on-surface">{personas.length}</span>
+          </p> */}
+          <p className="text-[10px] font-bold text-outline uppercase tracking-widest ml-auto">
+            Operational Nodes: <span className="text-emerald-500 font-mono">{filteredVoices?.length}</span>
           </p>
         </div>
       </div>
