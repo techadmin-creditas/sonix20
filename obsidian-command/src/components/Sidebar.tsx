@@ -77,7 +77,7 @@ export function Sidebar({
       </div>
 
       <NavLink
-        to="/profile"
+        to=""
         className={({ isActive }) => cn(
           "p-6 border-t border-outline-variant/10 transition-all cursor-pointer group",
           isActive ? "ember-gradient studio-glow" : "hover:bg-surface-high/60"

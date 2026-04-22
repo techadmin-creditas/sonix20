@@ -26,10 +26,10 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
         role: currentUser.role === 'admin' ? "System Administrator" : "Standard User",
         joined: "Oct 2023",
         status: "Verified",
-        location: "California, USA",
+        location: "Creditas Solutions, India",
         plan: currentUser.role === 'admin' ? "Enterprise Alpha" : "Growth Beta",
         apiCalls: "1.2M / 5M",
-        credits: "$842.10"
+        credits: ""
     });
 
     React.useEffect(() => {
@@ -144,22 +144,22 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                                             <Settings2 className="size-4 text-primary" />
                                             Edit Profile
                                         </button>
-                                        <button className="bg-surface-highest hover:bg-white/10 text-on-surface px-6 py-2.5 rounded-xl font-bold text-sm border border-white/5 transition-all flex items-center gap-2 active:scale-95">
+                                        {/* <button className="bg-surface-highest hover:bg-white/10 text-on-surface px-6 py-2.5 rounded-xl font-bold text-sm border border-white/5 transition-all flex items-center gap-2 active:scale-95">
                                             <Key className="size-4 text-amber-400" />
                                             API Access
-                                        </button>
+                                        </button> */}
                                     </>
                                 )}
                             </div>
                         </div>
 
-                        <div className="hidden lg:flex flex-col items-end gap-2 text-right border-l border-white/5 pl-12 py-2">
+                        {/* <div className="hidden lg:flex flex-col items-end gap-2 text-right border-l border-white/5 pl-12 py-2">
                             <div className="text-[10px] font-black text-outline uppercase tracking-widest mb-1">Current Credits</div>
                             <div className="text-4xl font-headline font-black text-emerald-400">{userData.credits}</div>
                             <button className="text-xs font-bold text-primary hover:underline flex items-center gap-1 mt-1">
                                 Add balance <ExternalLink className="size-3" />
                             </button>
-                        </div>
+                        </div> */}
                     </div>
                 </div>
 
@@ -167,7 +167,7 @@ export default function Profile({ currentUser }: { currentUser: AuthUser }) {
                     {/* Left Column: Details */}
                     <div className="lg:col-span-1 space-y-8">
                         <section className="glass-panel rounded-3xl p-8 space-y-6">
-                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-outline border-b border-white/5 pb-4">Personal Intelligence</h3>
+                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-outline border-b border-white/5 pb-4">Personal Information</h3>
                             <div className="space-y-6">
                                 <InfoRow
                                     icon={Mail}
