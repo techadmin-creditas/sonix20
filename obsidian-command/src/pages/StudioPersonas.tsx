@@ -554,7 +554,7 @@ const NeuralIdentityForge = ({
                               <div className="flex flex-col">
                                  <div className="flex items-center gap-2 mb-2">
                                     <div className={cn("size-2 rounded-full bg-primary", isPlaying && "animate-ping")} />
-                                    <span className={cn("text-[10px] font-black uppercase tracking-[0.3em]", isPlaying ? "text-primary" : "text-outline/20")}>
+                                    <span className={cn("text-[10px] font-black uppercase text-white tracking-[0.3em]", isPlaying ? "text-white" : "text-outline/20")}>
                                        {isPlaying ? 'Audio Link Active' : 'System Standby'}
                                     </span>
                                  </div>

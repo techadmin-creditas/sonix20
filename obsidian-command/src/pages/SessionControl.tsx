@@ -164,8 +164,12 @@ export default function SessionControl() {
       const state = location.state as { initialBotName?: string } | null;
       if (bots.length > 0) {
         if (state?.initialBotName) {
-          const preSelected = bots.find(b => b.name === state.initialBotName);
-          setSelectedBot(preSelected || bots[0]);
+          const preSelected = bots.find(b => b.name.toLowerCase() === state.initialBotName?.toLowerCase());
+          if (preSelected) {
+            setSelectedBot(preSelected);
+          } else {
+            setSelectedBot(bots[0]);
+          }
         } else {
           setSelectedBot(bots[0]);
         }
@@ -174,7 +178,21 @@ export default function SessionControl() {
 
     api.listAiPersonas().then(personas => {
       setAvailablePersonas(personas);
-      if (personas.length > 0) setSelectedPersona(personas[0]);
+      const state = location.state as { initialBotName?: string, initialPersonaName?: string } | null;
+      const targetName = state?.initialPersonaName || state?.initialBotName;
+
+      if (personas.length > 0) {
+        if (targetName) {
+          const preSelected = personas.find(p => p.name.toLowerCase() === targetName?.toLowerCase());
+          if (preSelected) {
+            setSelectedPersona(preSelected);
+          } else {
+            setSelectedPersona(personas[0]);
+          }
+        } else {
+          setSelectedPersona(personas[0]);
+        }
+      }
     });
     // Fetch real-time model capability data
     api.getModels()
