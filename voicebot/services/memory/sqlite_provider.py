@@ -51,6 +51,20 @@ class SQLiteProvider:
     def _get_conn(self) -> sqlite3.Connection:
         """Get a thread-local SQLite connection."""
         if self._conn is None:
+            # Vercel / serverless workaround: Copy DB to /tmp for write access
+            is_vercel = os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+            if is_vercel and str(self._db_path).startswith("/var/task"):
+                tmp_path = Path("/tmp/voicebot.db")
+                if not tmp_path.exists():
+                    import shutil
+                    logger.info("Serverless environment detected. Copying DB to /tmp for write access.")
+                    try:
+                        shutil.copy2(self._db_path, tmp_path)
+                    except Exception as e:
+                        logger.error("Failed to copy DB to /tmp: %s", e)
+                        # Fallback to creating a new one in /tmp if copy fails
+                self._db_path = tmp_path
+
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
@@ -2545,7 +2559,7 @@ class SQLiteProvider:
                     float(data.get("empathy", 75)),
                     float(data.get("stability", 80)),
                     float(data.get("clarity", 60)),
-                    float(data.get("styleExaggeration", data.get("style_exaggeration", 35))),
+                    float(data.get("styleExaggeration", data.get("style_exaggeration", data.get("expressiveness", 35)))),
                     data.get("baseModel", data.get("base_model", "Sonix-Flash-1")),
                     data.get("selectedVoice", data.get("selected_voice", "v1")),
                     data.get("themeColor", data.get("theme_color", "blue")),
@@ -2607,6 +2621,7 @@ class SQLiteProvider:
             "owner_user_id": "owner_user_id",
             "themeColor": "theme_color",
             "theme_color": "theme_color",
+            "expressiveness": "style_exaggeration",
         }
         def _do():
             conn = self._get_conn()

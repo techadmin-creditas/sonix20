@@ -13,7 +13,7 @@
     ],
     "functions": {
         "api/index.py": {
-            "excludeFiles": "{obsidian-command/**,dist/**,node_modules/**,voicebot-ui/**,venv/**,data/**,tests/**,docs/**,scripts/**,backend/**,deploy_dist/**}"
+            "excludeFiles": "{obsidian-command/**,dist/**,node_modules/**,voicebot-ui/**,venv/**,tests/**,docs/**,scripts/**,backend/**,deploy_dist/**}"
         }
     }
 }
