@@ -49,10 +49,10 @@ async function readErrorMessage(res: Response, fallback: string): Promise<string
 /** HTTP origin for the voice gateway (no /api/v1), used to build default ws:// URL */
 export function getApiOrigin(): string {
   try {
-    const u = new URL(BASE_URL);
+    const u = new URL(BASE_URL, window.location.origin);
     return `${u.protocol}//${u.host}`;
   } catch {
-    return 'http://localhost:8000';
+    return window.location.origin;
   }
 }
 
@@ -359,7 +359,7 @@ export const api = {
     if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'));
     return res.json();
   },
-  
+
   async resetUserPermissions(userId: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/admin/users/${userId}/reset-permissions`, {
       method: 'POST',
@@ -444,11 +444,11 @@ export const api = {
     livekit?: { url: string; token: string; room_name: string } | null;
     livekit_error?: string;
   }> {
-    const url = new URL(`${BASE_URL}/sessions`);
+    const url = new URL(`${BASE_URL}/sessions`, window.location.origin);
     if (botId) url.searchParams.append('bot_id', botId);
     url.searchParams.append('transport', transport);
     if (userId) url.searchParams.append('user_id', userId);
-    
+
     // Choose between authed fetch and native fetch
     const fetchFn = noAuth ? nativeFetch : fetch;
     const res = await fetchFn(url.toString(), { method: 'POST' });
@@ -530,8 +530,8 @@ export const api = {
       body: formData,
     });
     if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Unknown cloning error' }));
-        throw new Error(err.detail || 'Voice cloning failed');
+      const err = await res.json().catch(() => ({ detail: 'Unknown cloning error' }));
+      throw new Error(err.detail || 'Voice cloning failed');
     }
     return res.json();
   },
@@ -816,7 +816,7 @@ export const api = {
     default_language: string;
     deepgram_query_params: Record<string, string>;
   }> {
-    const url = new URL(`${BASE_URL}/bots/${botId}/stt-sandbox`);
+    const url = new URL(`${BASE_URL}/bots/${botId}/stt-sandbox`, window.location.origin);
     if (opts?.rawPcm) url.searchParams.set('raw_pcm', 'true');
     const fd = new FormData();
     fd.append('file', audioBlob, filename);

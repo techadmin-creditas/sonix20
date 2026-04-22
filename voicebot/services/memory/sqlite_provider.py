@@ -149,6 +149,9 @@ class SQLiteProvider:
 
     def _create_tables(self) -> None:
         conn = self._get_conn()
+        # Temporarily disable foreign keys during schema migration/seeding
+        conn.execute("PRAGMA foreign_keys=OFF")
+        
         # Role permissions table
         conn.executescript(
             """
@@ -517,6 +520,10 @@ class SQLiteProvider:
         self._backfill_owner_columns(admin_id)
         self._seed_default_bots()
         self._seed_ai_personas()
+
+        # Re-enable foreign keys after architecture is settled
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.commit()
 
     def _seed_default_bots(self) -> None:
         """
