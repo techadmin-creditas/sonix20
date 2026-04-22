@@ -51,6 +51,7 @@ class SQLiteProvider:
     def _get_conn(self) -> sqlite3.Connection:
         """Get a thread-local SQLite connection."""
         if self._conn is None:
+            logger.info("Initializing SQLite provider with DB at: %s", self._db_path)
             # Vercel / serverless workaround: Copy DB to /tmp for write access
             is_vercel = os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
             if is_vercel and str(self._db_path).startswith("/var/task"):
