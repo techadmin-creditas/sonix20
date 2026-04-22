@@ -539,6 +539,7 @@ class SQLiteProvider:
         conn = self._get_conn()
         bot_id = "recovery-blank"
         row = conn.execute("SELECT id, is_active FROM bots WHERE id = ?", (bot_id,)).fetchone()
+        seed_recovery = False
         if row:
             if row["is_active"] == 0:
                 conn.execute(
@@ -546,57 +547,60 @@ class SQLiteProvider:
                     (bot_id,),
                 )
                 conn.commit()
-            return
-
-        name = "Blank Agent (Call Recovery)"
-        if conn.execute("SELECT 1 FROM bots WHERE name = ? AND is_active = 1", (name,)).fetchone():
-            return
+        else:
+            name = "Blank Agent (Call Recovery)"
+            if not conn.execute("SELECT 1 FROM bots WHERE name = ? AND is_active = 1", (name,)).fetchone():
+                seed_recovery = True
 
         tools_json = json.dumps(
             ["search_knowledge", "get_appointments", "remember_user_fact"]
         )
-        system_prompt = (
-            "You are a concise, professional voice assistant for callers whose session may have "
-            "dropped, transferred, or restarted. Greet briefly and confirm you are ready to help. "
-            "If you need to look up information, use search_knowledge immediately without "
-            "announcing it. Do not invent policies or data. Keep replies short and clear."
-        )
 
-        greeting = "Hi — I'm here to continue. What do you need help with?"
-        description = (
-            "Built-in fallback persona for call recovery and advanced handoff. No workflow binding; "
-            "pure LLM + tools. Safe to use as default when bot_id is unknown."
-        )
         owner_user_id = self._get_admin_user_id(conn)
-        conn.execute(
-            """
-            INSERT INTO bots (
-                id, name, description, persona, system_prompt, greeting, tools_enabled,
-                llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
-                 default_language, is_landing_page_default
+
+        if seed_recovery:
+            system_prompt = (
+                "You are a concise, professional voice assistant for callers whose session may have "
+                "dropped, transferred, or restarted. Greet briefly and confirm you are ready to help. "
+                "If you need to look up information, use search_knowledge immediately without "
+                "announcing it. Do not invent policies or data. Keep replies short and clear."
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
-            """,
-            (
-                bot_id,
-                name,
-                description,
-                "calm, efficient, and helpful",
-                system_prompt,
-                greeting,
-                tools_json,
-                "llama-3.3-70b-versatile",
-                "EXAVITQu4vr4xnSDxMaL",
-                "Call recovery",
-                "bot",
-                "primary",
-                0.6,
-                1024,
-                owner_user_id,
-                "hi",
-            ),
-        )
-        conn.commit()
+
+            greeting = "Hi — I'm here to continue. What do you need help with?"
+            description = (
+                "Built-in fallback persona for call recovery and advanced handoff. No workflow binding; "
+                "pure LLM + tools. Safe to use as default when bot_id is unknown."
+            )
+            owner_user_id = self._get_admin_user_id(conn)
+            conn.execute(
+                """
+                INSERT INTO bots (
+                    id, name, description, persona, system_prompt, greeting, tools_enabled,
+                    llm_model, voice_id, role, icon, color, temperature, max_tokens, workflow_id, owner_user_id,
+                     default_language, is_landing_page_default
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 1)
+                """,
+                (
+                    bot_id,
+                    name,
+                    description,
+                    "calm, efficient, and helpful",
+                    system_prompt,
+                    greeting,
+                    tools_json,
+                    "llama-3.3-70b-versatile",
+                    "EXAVITQu4vr4xnSDxMaL",
+                    "Call recovery",
+                    "bot",
+                    "primary",
+                    0.6,
+                    1024,
+                    owner_user_id,
+                    "hi",
+                ),
+            )
+            conn.commit()
 
         
         # Add test_meta_data for persistent simulator overrides if it doesn't exist
