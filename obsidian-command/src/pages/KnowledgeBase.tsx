@@ -700,7 +700,7 @@ function FilterChip({ label, active, onClick }: any) {
       className={cn(
         "px-5 py-2 rounded-full text-xs font-bold transition-all",
         active
-          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]"
+          ? "ember-gradient shadow-[0_0_15px_rgba(255,183,123,0.2)]"
           : "bg-surface text-outline hover:bg-surface-high ghost-border"
       )}
     >

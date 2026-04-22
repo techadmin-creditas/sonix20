@@ -881,7 +881,7 @@ export default function DiyWithAI() {
                             'rounded-2xl px-4 py-3 text-sm shadow-sm',
                             t.role === 'bot'
                               ? 'bg-surface-high border border-outline-variant/10'
-                              : 'bg-primary text-on-primary-fixed',
+                              : 'ember-gradient',
                           )}
                         >
                           <TypewriterText text={t.content} speed={25} />
@@ -1169,7 +1169,7 @@ export default function DiyWithAI() {
                             'rounded-2xl px-4 py-3 text-sm transition-all',
                             t.role === 'bot'
                               ? 'bg-surface-high border border-outline-variant/10'
-                              : 'bg-primary text-on-primary-fixed',
+                              : 'ember-gradient',
                           )}
                         >
                           {t.content}

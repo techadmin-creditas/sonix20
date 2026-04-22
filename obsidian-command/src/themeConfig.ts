@@ -60,7 +60,7 @@ export const themeConfig = {
       tertiary: '#4cd6ff',
       background: '#f1f5f9',
       surface: '#ffffff',
-      surfaceLow: '#eff2f5',
+      surfaceLow: '#F7F9FC',
       surfaceHigh: '#e5e9ef',
       surfaceHighest: '#d7dce4',
       surfaceLowest: '#ffffff',

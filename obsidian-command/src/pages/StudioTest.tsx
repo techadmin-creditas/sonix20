@@ -87,7 +87,7 @@ const SynthesisCard = ({ persona, isABMode }: { persona: PersonaProfile; isABMod
          <div className="flex gap-3">
             <button
                onClick={handleGenerate}
-               className="flex-1 bg-primary text-on-primary-fixed py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+               className="flex-1 ember-gradient py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
                <Zap className="size-3.5 fill-current" />
                Generate Sample
@@ -321,7 +321,7 @@ export default function StudioTest() {
                                  "w-full max-w-sm py-5 rounded-2xl font-bold text-[12px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3",
                                  testStatus === 'testing' ? "bg-outline/20 text-outline cursor-wait" :
                                     testStatus === 'passed' ? "bg-emerald-500 text-on-primary-fixed shadow-[0_0_20px_rgba(16,185,129,0.3)]" :
-                                       "bg-primary text-on-primary-fixed studio-glow-amber shadow-xl hover:scale-105"
+                                       "ember-gradient studio-glow-amber shadow-xl hover:scale-105"
                               )}
                            >
                               {testStatus === 'testing' ? (
@@ -541,7 +541,7 @@ export default function StudioTest() {
                                        onClick={() => handleEnvChange(env.toLowerCase())}
                                        className={cn(
                                           "px-3 py-2 rounded-xl border text-[9px] font-bold uppercase tracking-widest transition-all text-center",
-                                          activeEnv === env.toLowerCase() ? "bg-primary text-on-primary-fixed border-primary" : "bg-surface-low border-outline-variant/5 text-outline hover:text-primary hover:border-primary/20"
+                                          activeEnv === env.toLowerCase() ? "ember-gradient border-primary" : "bg-surface-low border-outline-variant/5 text-outline hover:text-primary hover:border-primary/20"
                                        )}
                                     >
                                        {env}

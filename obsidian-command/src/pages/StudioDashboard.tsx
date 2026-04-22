@@ -151,7 +151,7 @@ export default function StudioDashboard() {
                      {['Latency', 'Load', 'Distribution'].map(t => (
                         <button key={t} className={cn(
                            "px-4 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest transition-all",
-                           t === 'Distribution' ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline hover:bg-surface-high"
+                           t === 'Distribution' ? "ember-gradient shadow-lg" : "text-outline hover:bg-surface-high"
                         )}>{t}</button>
                      ))}
                   </div>
@@ -176,7 +176,7 @@ export default function StudioDashboard() {
                            <div className="flex justify-between items-start mb-4">
                               <div className={cn(
                                  "size-10 rounded-2xl flex items-center justify-center border shadow-inner transition-colors",
-                                 selectedProvider === provider ? "bg-primary text-on-primary-fixed border-primary/20" : "bg-surface-lowest text-primary border-outline-variant/10"
+                                 selectedProvider === provider ? "ember-gradient border-primary/20" : "bg-surface-lowest text-primary border-outline-variant/10"
                               )}>
                                  <Database className="size-4" />
                               </div>
@@ -310,7 +310,7 @@ export default function StudioDashboard() {
                      disabled={isGenerating}
                      className={cn(
                         "flex-1 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-[0.2em] shadow-xl transition-all flex items-center justify-center gap-2",
-                        isGenerating ? "bg-surface-high text-outline cursor-wait" : "bg-primary text-on-primary-fixed studio-glow-amber hover:scale-[1.02]"
+                        isGenerating ? "bg-surface-high text-outline cursor-wait" : "ember-gradient studio-glow-amber hover:scale-[1.02]"
                      )}
                   >
                      {isGenerating ? "Audit..." : "Audit Report"}

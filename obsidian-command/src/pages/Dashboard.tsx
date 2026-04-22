@@ -299,7 +299,7 @@ export default function Dashboard() {
                 <p className="text-[10px] font-bold text-outline uppercase tracking-widest mt-1">Traffic volume across last 30 days</p>
               </div>
               <div className="flex gap-2 p-1 bg-surface-low rounded-xl border border-outline-variant/10">
-                <button className="px-5 py-2 rounded-lg bg-primary text-on-primary-fixed text-[9px] font-bold uppercase tracking-widest shadow-lg">Monthly</button>
+                <button className="px-5 py-2 rounded-lg ember-gradient text-[9px] font-bold uppercase tracking-widest shadow-lg">Monthly</button>
                 <button className="px-5 py-2 rounded-lg text-outline text-[9px] font-bold uppercase tracking-widest hover:bg-surface-highest transition-all">Weekly</button>
               </div>
             </div>
