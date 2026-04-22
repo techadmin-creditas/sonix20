@@ -150,7 +150,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => 
                       <input
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Neural Identity"
+                        placeholder="USERNAME"
                         className="w-full pl-11 pr-4 py-3 rounded-2xl bg-background/50 border border-outline-variant/20 focus:border-primary/50 focus:bg-background transition-all outline-none text-sm font-semibold placeholder:text-outline/30 placeholder:font-normal"
                         autoFocus
                       />
@@ -165,7 +165,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => 
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Security Key"
+                        placeholder="PASSWORD"
                         className="w-full pl-11 pr-4 py-3 rounded-2xl bg-background/50 border border-outline-variant/20 focus:border-primary/50 focus:bg-background transition-all outline-none text-sm font-semibold placeholder:text-outline/30 placeholder:font-normal"
                       />
                     </div>
