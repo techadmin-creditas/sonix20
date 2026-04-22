@@ -71,7 +71,7 @@ export default function TestUserManagement() {
 
   if (!isAdmin) {
     return (
-      <div className="flex-1 flex flex-col bg-background p-6 lg:p-10">
+      <div className="flex-1 flex flex-col  p-6 lg:p-10">
         <Header title="Vault Access Restricted" subtitle="Identity Shield Active" />
         <main className="flex-1 flex items-center justify-center">
           <div className="max-w-2xl w-full glass-panel rounded-3xl p-12 text-center border border-primary/10 shadow-2xl">
@@ -84,7 +84,7 @@ export default function TestUserManagement() {
             </p>
             <button 
               onClick={() => navigate('/dashboard')}
-              className="px-8 py-3.5 rounded-xl bg-primary text-on-primary-fixed font-bold flex items-center gap-2 mx-auto hover:brightness-110 active:scale-95 transition-all shadow-lg"
+              className="px-8 py-3.5 rounded-xl ember-gradient font-bold flex items-center gap-2 mx-auto hover:brightness-110 active:scale-95 transition-all shadow-lg"
             >
               Return to Grid
             </button>
@@ -172,7 +172,7 @@ export default function TestUserManagement() {
               setUserFormData({});
               setIsAddingUser(true);
             }}
-            className="px-6 py-2 rounded-xl bg-primary text-on-primary-fixed font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            className="px-6 py-2 rounded-xl ember-gradient font-bold text-[10px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
           >
             <Plus className="size-4" /> Provision User
           </button>
@@ -316,7 +316,7 @@ export default function TestUserManagement() {
 
                 <button
                   onClick={handleAddColumn}
-                  className="w-full py-5 rounded-2xl bg-primary text-on-primary-fixed font-bold text-[10px] uppercase tracking-[0.3em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4"
+                  className="w-full py-5 rounded-2xl ember-gradient font-bold text-[10px] uppercase tracking-[0.3em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4"
                 >
                   Apply Schema Logic
                 </button>
@@ -365,7 +365,7 @@ export default function TestUserManagement() {
                 </button>
                 <button
                   onClick={handleSaveUser}
-                  className="grow py-5 rounded-2xl bg-primary text-on-primary-fixed font-bold text-[10px] uppercase tracking-[0.3em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  className="grow py-5 rounded-2xl ember-gradient font-bold text-[10px] uppercase tracking-[0.3em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   <CheckCircle className="size-5" />
                   {editingUser ? 'Synchronize' : 'Initialize'}

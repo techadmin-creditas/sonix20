@@ -41,7 +41,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <Link to="/" className="font-headline text-lg font-extrabold tracking-wider text-zinc-100">Sonix 2.0</Link>
           <div className="flex items-center gap-3">
-            <ThemeToggle />
+            {/* <ThemeToggle /> */}
             <Link to="/login" className="rounded-lg bg-orange-500 px-3.5 py-2 text-xs font-bold text-black">
               Start for free
             </Link>

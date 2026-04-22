@@ -65,7 +65,7 @@ export const HomeCreationLab = forwardRef<HTMLElement, HomeCreationLabProps>(({ 
                 <div className="flex items-center gap-5 relative z-10">
                   <div className={`size-12 shrink-0 rounded-2xl flex items-center justify-center transition-all duration-500 shadow-inner ${
                     activeStep === i 
-                      ? 'bg-primary text-on-primary-fixed shadow-primary/40' 
+                      ? 'ember-gradient shadow-primary/40' 
                       : 'bg-surface-high text-on-surface-variant group-hover:bg-surface-highest'
                   }`}>
                     <s.icon className={`size-5 ${activeStep === i ? 'animate-pulse' : ''}`} />

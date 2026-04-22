@@ -24,17 +24,17 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (user: AuthUser) => 
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col text-on-surface selection:bg-primary/30 selection:text-primary">
       <header className="sticky top-0 z-10 border-b border-outline-variant/10 bg-background/80 backdrop-blur-md">
         <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-3">
           <Link to="/" className="font-headline text-sm font-bold text-on-surface hover:text-primary transition-colors">
             Sonix
           </Link>
-          <ThemeToggle />
+          {/* <ThemeToggle /> */}
         </div>
       </header>
       <div className="flex-1 flex items-center justify-center px-4 py-10">
-      <form onSubmit={submit} className="w-full max-w-sm p-6 rounded-2xl bg-surface-low border border-outline-variant/20 space-y-4">
+      <form onSubmit={submit} className="w-full max-w-sm p-6 rounded-2xl bg-surface-high border border-outline-variant/50 shadow-sm space-y-4">
         <h1 className="text-xl font-bold">Sign in</h1>
         <p className="text-xs text-on-surface-variant">Use your dashboard username and password.</p>
         <div className="space-y-2">

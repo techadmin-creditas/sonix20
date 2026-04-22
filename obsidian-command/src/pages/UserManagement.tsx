@@ -230,7 +230,7 @@ export default function UserManagement() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-background min-h-screen">
+    <div className="flex-1 flex flex-col min-h-screen">
       <Header
         title="Admin Command Center"
         subtitle="Identity & Access Governance"
@@ -274,7 +274,7 @@ export default function UserManagement() {
                   onClick={() => setActiveTab('users')}
                   className={cn(
                     "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                    activeTab === 'users' ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline hover:text-on-surface"
+                    activeTab === 'users' ? "ember-gradient shadow-lg" : "text-outline hover:text-on-surface"
                   )}
                 >
                   Indentity Registry
@@ -283,7 +283,7 @@ export default function UserManagement() {
                   onClick={() => setActiveTab('roles')}
                   className={cn(
                     "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                    activeTab === 'roles' ? "bg-primary text-on-primary-fixed shadow-lg" : "text-outline hover:text-on-surface"
+                    activeTab === 'roles' ? "ember-gradient shadow-lg" : "text-outline hover:text-on-surface"
                   )}
                 >
                   Protocol Matrix
@@ -420,7 +420,7 @@ export default function UserManagement() {
                           className={cn(
                             "w-full px-5 py-3.5 rounded-2xl text-left text-[11px] font-black uppercase tracking-widest transition-all border group relative overflow-hidden",
                             selectedRoleId === role.id 
-                              ? "bg-primary border-primary text-on-primary-fixed shadow-indigo shadow-lg" 
+                              ? "ember-gradient shadow-indigo  shadow-lg" 
                               : "bg-background border-white/5 text-outline hover:border-primary/30"
                           )}
                         >
@@ -442,7 +442,7 @@ export default function UserManagement() {
                         />
                         <button 
                           onClick={handleAddRole} 
-                          className="w-full py-4 rounded-xl bg-primary text-on-primary-fixed flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all"
+                          className="w-full py-4 rounded-xl ember-gradient flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all"
                         >
                           <Plus className="size-4" /> Initialize
                         </button>
@@ -502,7 +502,7 @@ export default function UserManagement() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="relative w-full max-w-2xl h-full bg-surface-highest border-l border-white/5 shadow-2xl flex flex-col"
+              className="relative w-full max-w-2xl h-full studio-mesh-gradient border-l border-white/5 shadow-2xl flex flex-col"
             >
               <div className="p-10 border-b border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-5">
@@ -528,7 +528,7 @@ export default function UserManagement() {
                       />
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-outline ml-1">Initial Key</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-outline ml-1">Password</label>
                       <input 
                         type="password"
                         placeholder="••••••••" 
@@ -587,7 +587,7 @@ export default function UserManagement() {
                 <button 
                   form="provision-form"
                   type="submit"
-                  className="flex-2 py-4 rounded-2xl bg-primary text-on-primary-fixed shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all"
+                  className="flex-2 py-4 rounded-2xl ember-gradient shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all"
                 >
                   Initialize Identity
                 </button>
@@ -597,35 +597,43 @@ export default function UserManagement() {
         )}
       </AnimatePresence>
 
-      {/* User Permission Editor Modal */}
+      {/* User Permission Editor Drawer */}
       <AnimatePresence>
         {isPermModalOpen && (
-          <div className="fixed inset-0 z-110 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-110 flex justify-end">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsPermModalOpen(false)}
-              className="absolute inset-0 bg-background/80 backdrop-blur-md"
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col glass-panel rounded-4xl border border-white/10 shadow-huge overflow-hidden"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="relative w-full max-w-3xl h-full bg-surface-highest border-l border-white/5 shadow-2xl flex flex-col"
             >
-              <div className="p-8 border-b border-white/5 flex items-center justify-between bg-surface-highest/20">
+              <div className="p-10 border-b border-white/5 flex items-center justify-between">
                 <div className="flex items-center gap-5">
-                  <div className="size-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-inner"><Lock className="size-6" /></div>
+                  <div className="size-14 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500 shadow-inner">
+                    <Lock className="size-8" />
+                  </div>
                   <div>
-                    <h3 className="text-xl font-headline font-black tracking-tight">Identity Override</h3>
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] mt-1 text-outline">Custom Protocol Editor</p>
+                    <h3 className="text-2xl font-headline font-black tracking-tight">Identity Override</h3>
+                    <p className="text-[11px] font-black uppercase tracking-[0.3em] mt-1 text-amber-500">Custom Protocol Editor</p>
                   </div>
                 </div>
-                <button onClick={() => setIsPermModalOpen(false)} className="size-10 rounded-xl border border-white/5 hover:bg-white/5 flex items-center justify-center text-outline"><X className="size-5" /></button>
+                <button 
+                  onClick={() => setIsPermModalOpen(false)} 
+                  className="size-12 rounded-2xl border border-white/5 hover:bg-white/5 flex items-center justify-center text-outline"
+                >
+                  <X className="size-6" />
+                </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
                 <PermissionSelector 
                   permissions={editingPermissions}
                   onToggle={handleToggleEditingPermission}
@@ -633,16 +641,16 @@ export default function UserManagement() {
                 />
               </div>
 
-              <div className="p-8 bg-surface-highest/20 border-t border-white/5 flex gap-4">
+              <div className="p-10 bg-background/30 border-t border-white/5 flex gap-4">
                 <button 
                   onClick={() => setIsPermModalOpen(false)}
-                  className="flex-1 py-4 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-outline hover:bg-white/5 transition-all text-xs"
+                  className="flex-1 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase tracking-widest text-outline hover:bg-white/5 transition-all"
                 >
                   Discard Overrides
                 </button>
                 <button 
                   onClick={handleSavePermissions}
-                  className="flex-2 py-4 rounded-xl bg-primary text-on-primary-fixed shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all text-xs"
+                  className="flex-2 py-4 rounded-2xl ember-gradient shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all"
                 >
                   Commit Protocols
                 </button>
@@ -651,6 +659,7 @@ export default function UserManagement() {
           </div>
         )}
       </AnimatePresence>
+
     </div>
   );
 }

@@ -34,7 +34,7 @@ const MiniWavePlayer = ({ isPlaying, onToggle }: { isPlaying: boolean; onToggle:
         onClick={onToggle}
         className={cn(
           "size-8 rounded-xl flex items-center justify-center transition-all shadow-sm",
-          isPlaying ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20" : "bg-surface-high text-outline hover:text-primary hover:bg-surface-highest"
+          isPlaying ? "ember-gradient shadow-lg shadow-primary/20" : "bg-surface-high text-outline hover:text-primary hover:bg-surface-highest"
         )}
       >
         {isPlaying ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current ml-0.5" />}
@@ -226,7 +226,7 @@ const CloneVoiceView = ({ onClose }: { onClose: () => void }) => {
           <button
             disabled={isUploading}
             onClick={handleUpload}
-            className="w-full bg-primary text-on-primary-fixed py-4 rounded-2xl font-bold text-xs shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 relative overflow-hidden group/btn"
+            className="w-full ember-gradient py-4 rounded-2xl font-bold text-xs shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 relative overflow-hidden group/btn"
           >
             <div className="absolute inset-0 bg-white/10 translate-y-full group-hover/btn:translate-y-0 transition-transform" />
             <span className="relative z-10">
@@ -288,7 +288,7 @@ export default function StudioLibrary() {
           </div>
           {/* <button
             onClick={() => setIsCloneMode(true)}
-            className="flex items-center gap-2 bg-primary text-on-primary-fixed px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all"
+            className="flex items-center gap-2 ember-gradient px-6 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-xl studio-glow-amber hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
             <PlusCircle className="size-3.5" />
             Launch Replicator

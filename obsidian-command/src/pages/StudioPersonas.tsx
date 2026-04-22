@@ -369,7 +369,7 @@ const NeuralIdentityForge = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0.5 }}
             transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-            className="relative w-full max-w-[1100px] h-full bg-surface-low border-l border-outline-variant/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
+            className="relative w-full max-w-[1100px] h-full studio-mesh-gradient border-l border-outline-variant/10 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col pointer-events-auto"
          >
             {/* Header */}
             <div className="px-10 py-6 flex items-center justify-between border-b border-outline-variant/10 shrink-0 z-10 bg-surface/80 backdrop-blur-md">
@@ -449,7 +449,7 @@ const NeuralIdentityForge = ({
                            </div>
                         </div>
                         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
-                           {activeTab === 'Voice' && (
+                           {/* {activeTab === 'Voice' && (
                               <button
                                  onClick={startRecording}
                                  disabled={isRecording || isCloning}
@@ -463,7 +463,7 @@ const NeuralIdentityForge = ({
                                     {isCloning ? 'Cloning...' : isRecording ? 'Recording...' : 'Clone Me'}
                                  </div>
                               </button>
-                           )}
+                           )} */}
                            {renderTabContent()}
                         </div>
                      </div>
@@ -498,7 +498,7 @@ const NeuralIdentityForge = ({
                </div>
 
                {/* Right Column (Fixed Preview) */}
-               <div className="w-[440px] p-10 bg-surface-low border-l border-outline-variant/10 flex flex-col shrink-0">
+               <div className="w-[440px] p-10 studio-mesh-gradient border-l border-outline-variant/10 flex flex-col shrink-0">
                   <div className="flex flex-col gap-8 sticky top-0">
                      <h3 className="text-xl font-bold text-on-surface flex items-center gap-3">
                         <Activity className="size-5 text-primary" /> Entity Preview
@@ -967,7 +967,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
             </div>
             <button
                onClick={loadPersonas}
-               className="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all"
+               className="flex items-center gap-2 px-5 py-2.5 ember-gradient rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all"
             >
                <RefreshCw className="size-3.5" /> Retry
             </button>
@@ -1205,7 +1205,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
                      {!search && (
                         <button
                            onClick={() => setIsForgeOpen(true)}
-                           className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary-fixed rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
+                           className="flex items-center gap-2 px-6 py-3 ember-gradient rounded-xl text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all mt-2"
                         >
                            <Plus className="size-4" /> Create First Persona
                         </button>

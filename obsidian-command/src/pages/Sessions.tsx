@@ -93,7 +93,7 @@ export default function Sessions() {
         title="Sessions"
         subtitle="Conversation History & Analytics"
         actions={
-          <div className="w-full flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div className="w-full flex flex-col md:flex-row gap-4 justify-between items-center ">
 
             {sessions?.length > 0 && (
               <div className="relative w-full md:w-96">
@@ -103,7 +103,7 @@ export default function Sessions() {
                   placeholder="Search by ID, Bot, User"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 rounded-2xl bg-surface-low ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
+                  className="w-full pl-12 pr-4 py-3 rounded-2xl bg-[#F7F9FC] ghost-border text-sm focus:outline-none focus:border-primary/50 transition-all"
                 />
               </div>
             )}

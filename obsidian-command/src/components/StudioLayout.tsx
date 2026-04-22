@@ -39,7 +39,7 @@ export function StudioLayout() {
             className={({ isActive }) => cn(
               "flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest transition-all",
               isActive
-                ? "bg-primary text-on-primary-fixed shadow-md shadow-primary/20"
+                ? "ember-gradient shadow-md shadow-primary/20"
                 : "text-outline hover:text-on-surface hover:bg-surface-high/50"
             )}
           >

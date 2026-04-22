@@ -761,7 +761,7 @@ export default function SessionDetail() {
                         <div className="flex flex-col gap-1.5">
                           <div className={cn(
                             "p-4 rounded-2xl text-sm leading-relaxed transition-all",
-                            msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium",
+                            msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "ember-gradient font-medium",
                             i === activeTranscriptIndex && "ring-2 ring-primary/70 shadow-lg shadow-primary/15"
                           )}>
                             {msg.content}

@@ -162,7 +162,7 @@ function SectionAccordion({
         >
           <div className={cn(
             "p-2.5 rounded-xl transition-all duration-300 shadow-sm",
-            isOpen ? "bg-primary text-on-primary-fixed" : "bg-surface-highest text-on-surface-variant group-hover:bg-primary/10 group-hover:text-primary"
+            isOpen ? "ember-gradient" : "bg-surface-highest text-on-surface-variant group-hover:bg-primary/10 group-hover:text-primary"
           )}>
             <Icon className="size-5" />
           </div>
@@ -867,7 +867,7 @@ export default function BotConfig() {
                             setAiProvider(null);
                           }
                         }}
-                        className="flex-2 py-3 rounded-xl bg-primary text-on-primary-fixed font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+                        className="flex-2 py-3 rounded-xl ember-gradient font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
                       >
                         <CheckCircle2 className="size-4" />
                         Apply AI Improvements

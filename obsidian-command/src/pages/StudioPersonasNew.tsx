@@ -341,7 +341,7 @@ const NeuralIdentityForge = ({
                                                 onClick={() => setActiveTab(tab as any)}
                                                 className={cn(
                                                     "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                                                    activeTab === tab ? "bg-primary text-on-primary-fixed shadow-md" : "text-outline hover:text-on-surface"
+                                                    activeTab === tab ? "ember-gradient shadow-md" : "text-outline hover:text-on-surface"
                                                 )}
                                             >
                                                 {tab}
