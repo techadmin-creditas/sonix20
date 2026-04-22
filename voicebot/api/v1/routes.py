@@ -2077,7 +2077,7 @@ async def get_testing_metadata():
         "languages": [
             {"id": "en", "name": "English", "label": "United States", "sub": "Primary"},
             {"id": "hi", "name": "Hindi", "label": "India", "sub": "Regional"},
-            {"id": "hinglish", "name": "Hinglish", "label": "In-Hi Mix", "sub": "Native Mix"},
+            {"id": "ta", "name": "Tamil", "label": "India", "sub": "Classical"},
             {"id": "es", "name": "Spanish", "label": "Spain", "sub": "Europe"},
         ],
         "tones": [

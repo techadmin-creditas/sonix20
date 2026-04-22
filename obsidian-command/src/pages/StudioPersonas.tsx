@@ -54,11 +54,11 @@ import { Link, useLocation } from 'react-router-dom';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VOICES = [
-   { id: 'v1', name: 'Ananya', provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
-   { id: 'v2', name: 'Aarav', provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
-   { id: 'v3', name: 'Priya', provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
-   { id: 'v4', name: 'Arjun', provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
-   { id: 'v5', name: 'Kavya', provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
+   { id: 'v1', name: 'Ananya', languages: ['Hindi', 'English', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
+   { id: 'v2', name: 'Aarav', languages: ['Hindi'], provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
+   { id: 'v3', name: 'Priya', languages: ['Hindi', 'English', 'Spanish', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
+   { id: 'v4', name: 'Arjun', languages: ['Hindi', 'English'], provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
+   { id: 'v5', name: 'Kavya', languages: ['Hindi', 'English'], provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
 ];
 
 const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { label?: string, placeholder: string, value: string, onChange: (v: string) => void, icon?: any }) => (
@@ -208,6 +208,24 @@ const NeuralIdentityForge = ({
       loadData();
    }, []);
 
+   // 🧠 Auto-deselect voice if language constraints change
+   React.useEffect(() => {
+      if (!formData.selectedVoice) return;
+
+      const currentVoice = VOICES.find(v => v.id === formData.selectedVoice);
+      if (!currentVoice) return;
+
+      const selectedLangs = (formData.language || '').split(',').map(l => l.trim()).filter(Boolean);
+      // We only filter if languages ARE selected. If none selected, we show all.
+      if (selectedLangs.length === 0) return;
+
+      // If voice doesn't support ANY of the selected languages, deselect it
+      const isCompatible = currentVoice.languages.some(l => selectedLangs.includes(l));
+      if (!isCompatible) {
+         patch({ selectedVoice: '' });
+      }
+   }, [formData.language]);
+
    const patch = (val: Partial<AiPersona>) => setFormData(prev => ({ ...prev, ...val }));
 
    const handlePlayPreview = async () => {
@@ -293,45 +311,61 @@ const NeuralIdentityForge = ({
       return avatars.find(a => a.name === voiceName)?.image || avatars[0].image;
    };
 
+
    const renderTabContent = () => {
       switch (activeTab) {
-         case 'Voice':
-            return VOICES.map((av, i) => {
+         case 'Language':
+            return (metadata.languages.length > 0 ? metadata.languages : []).map((lang, i) => {
+               const isSelected = (formData.language || '').split(',').map(s => s.trim()).includes(lang.name);
                return (
                   <button
                      key={i}
-                     onClick={() => patch({
-                        gender: [0, 2, 4].includes(i) ? 'Female' : 'Male',
-                        selectedVoice: av.id
-                     })}
+                     onClick={() => {
+                        const currentLangs = (formData.language || '').split(',').map(s => s.trim()).filter(Boolean);
+                        let nextLangs;
+                        if (isSelected) {
+                           nextLangs = currentLangs.filter(l => l !== lang.name);
+                        } else {
+                           nextLangs = [...currentLangs, lang.name];
+                        }
+                        patch({ language: nextLangs.length > 0 ? nextLangs.join(', ') : '' });
+                     }}
                      className={cn(
-                        "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
-                        formData.selectedVoice === av.id ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
+                        "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
+                        isSelected ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
                      )}
                   >
-                     <div className="size-10 rounded-full bg-surface-low overflow-hidden border border-outline-variant/5 flex items-center justify-center">
-                        <Bot className="size-6 text-primary/40" />
-                     </div>
                      <div className="text-left">
-                        <div className="text-[11px] font-bold text-on-surface line-clamp-1 max-w-[120px]">{av.name}</div>
-                        <div className="text-[8px] font-medium text-outline uppercase tracking-tighter">{av.provider}</div>
+                        <div className="text-[11px] font-bold text-on-surface">{lang.name}</div>
+                        <div className="text-[8px] font-medium text-outline">{lang.sub}</div>
                      </div>
+                     {isSelected && <Check className="size-3 text-primary" />}
                   </button>
                );
             });
-         case 'Language':
-            return (metadata.languages.length > 0 ? metadata.languages : []).map((lang, i) => (
+         case 'Voice':
+            return VOICES.filter(v => {
+               if (!formData.language) return true;
+               const selectedLangs = formData.language.split(',').map(l => l.trim());
+               return v.languages.some(l => selectedLangs.includes(l));
+            }).map((av, i) => (
                <button
                   key={i}
-                  onClick={() => patch({ language: lang.name })}
+                  onClick={() => patch({
+                     gender: [0, 2, 4].includes(i) ? 'Female' : 'Male',
+                     selectedVoice: av.id
+                  })}
                   className={cn(
-                     "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
-                     formData.language === lang.name ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
+                     "flex items-center gap-3 p-2 pr-4 rounded-2xl border transition-all shrink-0",
+                     formData.selectedVoice === av.id ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
                   )}
                >
+                  <div className="size-10 rounded-full bg-surface-low overflow-hidden border border-outline-variant/5 flex items-center justify-center">
+                     <Bot className="size-6 text-primary/40" />
+                  </div>
                   <div className="text-left">
-                     <div className="text-[11px] font-bold text-on-surface">{lang.name}</div>
-                     <div className="text-[8px] font-medium text-outline">{lang.sub}</div>
+                     <div className="text-[11px] font-bold text-on-surface line-clamp-1 max-w-[120px]">{av.name}</div>
+                     <div className="text-[8px] font-medium text-outline uppercase tracking-tighter">{av.provider}</div>
                   </div>
                </button>
             ));
@@ -401,7 +435,7 @@ const NeuralIdentityForge = ({
                      <div className="p-8 bg-surface-lowest border border-outline-variant/10 rounded-[2.5rem] space-y-8 shadow-sm relative overflow-hidden group/forge">
                         <div className="absolute -right-12 -top-12 size-48 bg-primary/5 blur-[80px] group-hover/forge:bg-primary/10 transition-all" />
                         <div className="flex items-center gap-8">
-                           <div className="size-20 shrink-0 rounded-[2rem] bg-surface-low flex items-center justify-center border border-outline-variant/5 shadow-inner">
+                           <div className="size-20 shrink-0 rounded-4xl bg-surface-low flex items-center justify-center border border-outline-variant/5 shadow-inner">
                               <Fingerprint className="size-12 text-primary" />
                            </div>
                            <div className="flex-1">
@@ -454,21 +488,6 @@ const NeuralIdentityForge = ({
                            </div>
                         </div>
                         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
-                           {/* {activeTab === 'Voice' && (
-                              <button
-                                 onClick={startRecording}
-                                 disabled={isRecording || isCloning}
-                                 className={cn(
-                                    "flex flex-col items-center justify-center gap-2 p-2 px-6 rounded-2xl border border-dashed transition-all shrink-0",
-                                    isRecording ? "border-error bg-error/5 text-error" : "border-outline-variant/30 bg-surface-low text-outline hover:border-primary/40 hover:bg-primary/5"
-                                 )}
-                              >
-                                 {isCloning ? <Loader2 className="size-5 animate-spin" /> : isRecording ? <Mic2 className="size-5 animate-pulse" /> : <Plus className="size-5" />}
-                                 <div className="text-[9px] font-black uppercase tracking-tighter">
-                                    {isCloning ? 'Cloning...' : isRecording ? 'Recording...' : 'Clone Me'}
-                                 </div>
-                              </button>
-                           )} */}
                            {renderTabContent()}
                         </div>
                      </div>
@@ -515,7 +534,7 @@ const NeuralIdentityForge = ({
                      )}>
                         {!isComplete && (
                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/40 backdrop-blur-md p-10 text-center">
-                              <div className="size-16 rounded-full bg-primary/20 flex items-center justify-center mb-6 animate-pulse">
+                              <div className="size-16 rounded-full bg-primary/20 flex items-center justify-center mb-6 animate-pulse shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)]">
                                  <Lock className="size-8 text-white" />
                               </div>
                               <h5 className="text-white font-bold text-lg mb-2 uppercase tracking-tighter">Acoustic Link Offline</h5>

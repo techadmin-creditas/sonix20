@@ -22,11 +22,11 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Filter, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
 
 const VOICES = [
-  { id: 'v1', name: 'Ananya', provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
-  { id: 'v2', name: 'Aarav', provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
-  { id: 'v3', name: 'Priya', provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
-  { id: 'v4', name: 'Arjun', provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
-  { id: 'v5', name: 'Kavya', provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
+  { id: 'v1', name: 'Ananya', languages: ['Hindi', 'English', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
+  { id: 'v2', name: 'Aarav', languages: ['Hindi'], provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
+  { id: 'v3', name: 'Priya', languages: ['Hindi', 'English', 'Spanish', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
+  { id: 'v4', name: 'Arjun', languages: ['Hindi', 'English'], provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
+  { id: 'v5', name: 'Kavya', languages: ['Hindi', 'English'], provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
 ];
 
 // --- Sub-components ---
@@ -183,17 +183,18 @@ const VoiceRelayRow = ({ voice, isPlaying, onPlayToggle, onForge }: any) => (
         </div>
         <div>
           <p className="text-xs font-bold text-on-surface leading-none">{voice.name}</p>
-          <p className="text-[9px] text-outline mt-1">{voice.provider} · Global Relay</p>
+          <p className="text-[9px] text-outline mt-1">{voice.provider} · Neural Core</p>
         </div>
       </div>
     </td>
 
     <td className="py-4 px-4 whitespace-nowrap">
-      <div className="flex items-center gap-2">
-        <div className="size-6 rounded bg-surface-lowest border border-outline-variant/5 flex items-center justify-center">
-          <Database className="size-3 text-outline" />
-        </div>
-        <p className="text-[10px] text-primary/70 uppercase tracking-widest font-black">{voice.provider}</p>
+      <div className="flex flex-wrap gap-1 max-w-[150px]">
+        {(voice.languages || ['English']).map((lang: string, i: number) => (
+          <span key={i} className="px-2 py-0.5 rounded-full bg-primary/5 border border-primary/10 text-[8px] font-bold text-primary uppercase tracking-tighter">
+            {lang}
+          </span>
+        ))}
       </div>
     </td>
 
@@ -334,7 +335,8 @@ export default function StudioLibrary() {
   const filteredVoices = VOICES.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     v.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.role.toLowerCase().includes(searchQuery.toLowerCase())
+    v.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (v.languages || []).some((l: string) => l.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   if (isCloneMode) {
@@ -371,7 +373,7 @@ export default function StudioLibrary() {
             <thead className="sticky top-0 bg-surface-lowest z-10">
               <tr className="border-b border-outline-variant/10">
                 <th className="py-4 pl-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Identity</th>
-                <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Engine Provider</th>
+                <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Language Compatibility</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Voice Sample</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Operational Role</th>
                 <th className="py-4 px-4 text-[9px] font-bold text-outline uppercase tracking-widest">Behavioral DNA</th>

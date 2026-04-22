@@ -782,12 +782,16 @@ export default function SessionControl() {
       setLivekitHint(null);
       const res = await api.createSession(
         selectedBot.id,
-        sessionTransport === 'webrtc' ? 'webrtc' : 'websocket',
+        null, // 🌍 Let api.ts decide the best transport for the current environment
         userId.trim() || undefined
       );
-      const { session_id, websocket_url } = res;
+
+      const { session_id, websocket_url, transport: effectiveTransport } = res;
+      const isLiveKit = effectiveTransport === 'webrtc' || effectiveTransport === 'livekit';
+
       setSessionId(session_id);
-      if (sessionTransport === 'webrtc') {
+
+      if (isLiveKit) {
         if (!res.livekit?.token || !res.livekit?.url) {
           setIsConnecting(false);
           setStatus('LiveKit unavailable');
@@ -1177,7 +1181,9 @@ export default function SessionControl() {
                                   <div>
                                     <h3 className="text-lg font-headline font-black text-on-surface tracking-tight leading-tight">{p.name}</h3>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                      <p className="text-[9px] font-black text-primary uppercase tracking-[0.12em]">{p.language.toUpperCase()}</p>
+                                      <p className="text-[8px] font-black text-primary uppercase tracking-[0.15em] max-w-[120px] truncate" title={p.language}>
+                                        {p.language.toUpperCase()}
+                                      </p>
                                       <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                                         <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
                                         <span className="text-[7px] font-black text-emerald-600 uppercase tracking-widest leading-none">Active</span>
@@ -1527,7 +1533,7 @@ export default function SessionControl() {
                   }}
                   transition={{
                     boxShadow: { duration: 1 },
-                    rotate: isLive ? { duration: 20, repeat: Infinity, ease: "linear" } : 0
+                    rotate: { duration: 20, repeat: isLive ? Infinity : 0, ease: "linear" }
                   }}
                   className={cn(
                     "size-32 sm:size-36 lg:size-40 rounded-full flex items-center justify-center border border-white/10 relative overflow-hidden",

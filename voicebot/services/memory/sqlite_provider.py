@@ -52,24 +52,29 @@ class SQLiteProvider:
         """Get a thread-local SQLite connection."""
         if self._conn is None:
             logger.info("Initializing SQLite provider with DB at: %s", self._db_path)
+            
             # Vercel / serverless workaround: Copy DB to /tmp for write access
             is_vercel = os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
             if is_vercel and str(self._db_path).startswith("/var/task"):
                 tmp_path = Path("/tmp/voicebot.db")
+                
+                # Check if we should copy the DB (either it doesn't exist or it's potentially outdated)
+                # Note: /tmp persists across requests in the same execution environment instance.
                 if not tmp_path.exists():
                     import shutil
-                    logger.info("Serverless environment detected. Copying DB to /tmp for write access.")
+                    logger.info("Serverless cold start. Syncing package DB to /tmp for write access.")
                     try:
                         shutil.copy2(self._db_path, tmp_path)
+                        logger.info("Successfully synced DB to /tmp")
                     except Exception as e:
                         logger.error("Failed to copy DB to /tmp: %s", e)
-                        # Fallback to creating a new one in /tmp if copy fails
+                
                 self._db_path = tmp_path
 
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA journal_mode=WAL")  # Write-ahead logging for concurrency
+            self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
         return self._conn
 

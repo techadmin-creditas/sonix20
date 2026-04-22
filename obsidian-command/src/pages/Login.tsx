@@ -49,7 +49,7 @@ const BackgroundWaves = () => (
   <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
     <FloatingNeuralNodes />
     <motion.div
-      className="absolute -top-[20%] -right-[10%] w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px]"
+      className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-primary/20 rounded-full blur-[120px]"
       animate={{
         x: [0, 80, 0],
         y: [0, -60, 0],
@@ -59,7 +59,7 @@ const BackgroundWaves = () => (
       transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
     />
     <motion.div
-      className="absolute -bottom-[20%] -left-[10%] w-[500px] h-[500px] bg-primary/15 rounded-full blur-[100px]"
+      className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-primary/15 rounded-full blur-[100px]"
       animate={{
         x: [0, -100, 0],
         y: [0, 80, 0],

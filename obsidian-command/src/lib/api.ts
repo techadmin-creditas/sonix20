@@ -434,7 +434,7 @@ export const api = {
 
   async createSession(
     botId?: string,
-    transport: 'websocket' | 'webrtc' | 'livekit' = 'websocket',
+    transport: 'websocket' | 'webrtc' | 'livekit' | null = null,
     userId?: string,
     noAuth = false
   ): Promise<{
@@ -444,9 +444,13 @@ export const api = {
     livekit?: { url: string; token: string; room_name: string } | null;
     livekit_error?: string;
   }> {
+    // 🌍 Environment Detection: Default to 'livekit' on Vercel, 'websocket' on localhost
+    const isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('sonix');
+    const selectedTransport = transport || (isVercel ? 'livekit' : 'websocket');
+
     const url = new URL(`${BASE_URL}/sessions`, window.location.origin);
     if (botId) url.searchParams.append('bot_id', botId);
-    url.searchParams.append('transport', transport);
+    url.searchParams.append('transport', selectedTransport);
     if (userId) url.searchParams.append('user_id', userId);
 
     // Choose between authed fetch and native fetch
