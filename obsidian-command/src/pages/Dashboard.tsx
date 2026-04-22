@@ -215,7 +215,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Capabilities Hover Hint */}
-                    <div className="absolute inset-x-4 bottom-4 translate-y-4 opacity-0 group-hover/bot:translate-y-0 group-hover/bot:opacity-100 transition-all duration-300 pointer-events-none">
+                    {/* <div className="absolute inset-x-4 bottom-4 translate-y-4 opacity-0 group-hover/bot:translate-y-0 group-hover/bot:opacity-100 transition-all duration-300 pointer-events-none">
                       <div className="flex justify-center gap-1">
                         {bot.tools.slice(0, 3).map((t: string) => (
                           <div key={t} className="size-5 rounded-md bg-primary/20 flex items-center justify-center">
@@ -223,7 +223,7 @@ export default function Dashboard() {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </div> */}
                   </div>
                 </motion.div>
               ))}
