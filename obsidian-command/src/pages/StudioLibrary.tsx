@@ -230,13 +230,13 @@ const VoiceRelayRow = ({ voice, isPlaying, onPlayToggle, onForge }: any) => (
 
     <td className="py-4 px-4 text-right pr-4">
       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
+        {/* <button
           onClick={onForge}
           className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-on-primary-fixed transition-all"
           title="Forge Persona"
         >
           <Zap className="size-3.5" />
-        </button>
+        </button> */}
         <button
           onClick={() => { }}
           className="p-1.5 rounded-lg hover:bg-rose-500/10 text-outline hover:text-rose-500 transition-all"
