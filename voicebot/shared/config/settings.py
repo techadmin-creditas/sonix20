@@ -10,7 +10,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, AliasChoices
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -69,9 +69,9 @@ class KafkaSettings(BaseSettings):
 class LiveKitSettings(BaseSettings):
     """LiveKit WebRTC server configuration."""
     model_config = SettingsConfigDict(extra="ignore")
-    url: str = Field(default="ws://127.0.0.1:7880", alias="LIVEKIT_URL")
-    api_key: str = Field(default="devkey", alias="LIVEKIT_API_KEY")
-    api_secret: str = Field(default="secret", alias="LIVEKIT_API_SECRET")
+    url: str = Field(default="ws://localhost:7880", alias="LIVEKIT_URL")
+    api_key: str = Field(default="", alias="LIVEKIT_API_KEY")
+    api_secret: str = Field(default="", alias="LIVEKIT_API_SECRET")
 
 
 class STTSettings(BaseSettings):
@@ -182,15 +182,15 @@ class AppSettings(BaseSettings):
     elevenlabs_voice_id: str = Field(default="21m00Tcm4TlvDq8ikWAM", alias="ELEVENLABS_VOICE_ID")
 
     # --- Other configs (can stay nested if we use double underscores, but keeping them simple) ---
-    postgres_url: Optional[str] = Field(default=None, validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"))
+    postgres_url: Optional[str] = Field(default=None, alias="DATABASE_URL")
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
     # LiveKit / WebRTC (optional)
-    livekit_url: str = Field(default="ws://127.0.0.1:7880", alias="LIVEKIT_URL")
+    livekit_url: str = Field(default="", alias="LIVEKIT_URL")
     # Browser-visible signaling URL (when unset, LIVEKIT_URL is used). Use for Docker/IPv6 issues, e.g. ws://127.0.0.1:7880
     livekit_client_url: str = Field(default="", alias="LIVEKIT_CLIENT_URL")
-    livekit_api_key: str = Field(default="devkey", alias="LIVEKIT_API_KEY")
-    livekit_api_secret: str = Field(default="secret", alias="LIVEKIT_API_SECRET")
+    livekit_api_key: str = Field(default="", alias="LIVEKIT_API_KEY")
+    livekit_api_secret: str = Field(default="", alias="LIVEKIT_API_SECRET")
 
     # JWT (REST auth when debug=False)
     jwt_secret_key: str = Field(default="change-me-in-production", alias="JWT_SECRET_KEY")
