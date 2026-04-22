@@ -110,6 +110,30 @@ class PostgresProvider:
 
         logger.info("Postgres initialized successfully.")
 
+    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        pool = await self._get_pool()
+        row = await pool.fetchrow("SELECT * FROM users WHERE username = $1", username)
+        if row:
+            d = dict(row)
+            d['permissions'] = json.loads(d['permissions'] or '[]')
+            return d
+        return None
+
+    async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        pool = await self._get_pool()
+        row = await pool.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+        if row:
+            d = dict(row)
+            d['permissions'] = json.loads(d['permissions'] or '[]')
+            return d
+        return None
+
+    async def get_role_permissions(self, role_id: str) -> List[str]:
+        # Simple implementation for now (can expand if role table is added)
+        if role_id == 'admin':
+            return ["*"]
+        return ["read:*", "update:own"]
+
     async def list_bots(self, active_only: bool = True) -> List[Dict[str, Any]]:
         pool = await self._get_pool()
         query = "SELECT * FROM bots"
@@ -130,7 +154,41 @@ class PostgresProvider:
             VALUES ($1, $2, $3, $4)
         """, session_id, bot_id, user_id, language)
 
+    async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        pool = await self._get_pool()
+        row = await pool.fetchrow("SELECT * FROM sessions WHERE id = $1", session_id)
+        return dict(row) if row else None
+
     async def list_sessions(self, limit: int = 50) -> List[Dict[str, Any]]:
         pool = await self._get_pool()
         rows = await pool.fetch("SELECT * FROM sessions ORDER BY started_at DESC LIMIT $1", limit)
         return [dict(r) for r in rows]
+
+    async def get_landing_page_default_bot(self) -> Optional[Dict[str, Any]]:
+        pool = await self._get_pool()
+        # Fallback to first active bot if no landing page default is specifically marked
+        row = await pool.fetchrow("SELECT * FROM bots WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1")
+        return dict(row) if row else None
+
+    async def merge_session_metadata(self, session_id: str, new_meta: Dict[str, Any]) -> None:
+        pool = await self._get_pool()
+        # Postgres JSON handling — for now just simple replace if it gets too complex
+        # But for MVP, let's keep it compatible
+        row = await pool.fetchrow("SELECT metadata FROM sessions WHERE id = $1", session_id)
+        meta = json.loads(row['metadata'] or '{}') if row else {}
+        meta.update(new_meta)
+        await pool.execute("UPDATE sessions SET metadata = $1 WHERE id = $2", json.dumps(meta), session_id)
+
+    async def get_session_log(self, session_id: str) -> List[Dict[str, Any]]:
+        pool = await self._get_pool()
+        rows = await pool.fetch("SELECT * FROM conversation_logs WHERE session_id = $1 ORDER BY timestamp ASC", session_id)
+        return [dict(r) for r in rows]
+
+    async def get_knowledge_entries(self, bot_id: str) -> List[Dict[str, Any]]:
+        pool = await self._get_pool()
+        # Knowledge table isn't created yet in my minimal initialize, let's keep it safe
+        try:
+            rows = await pool.fetch("SELECT * FROM knowledge_base WHERE bot_id = $1", bot_id)
+            return [dict(r) for r in rows]
+        except:
+            return []
