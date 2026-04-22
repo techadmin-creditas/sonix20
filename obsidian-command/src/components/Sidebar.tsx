@@ -23,7 +23,7 @@ export function Sidebar({
           <div>
             <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.1</h1>
           </div>
-          <ThemeToggle />
+          {/* <ThemeToggle /> */}
         </div>
 
         <nav className="flex flex-col gap-2">

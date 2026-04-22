@@ -690,7 +690,7 @@ export default function SessionDetail() {
                 className={cn(
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all",
                   activeTab === tab.id
-                    ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20"
+                    ? "ember-gradient shadow-lg shadow-primary/20"
                     : "text-outline hover:bg-surface-highest"
                 )}
               >
