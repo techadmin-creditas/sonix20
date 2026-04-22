@@ -356,13 +356,13 @@ export default function StudioLibrary() {
             />
           </div>
         </div>
-        <button
+        {/* <button
           onClick={() => setIsCloneMode(true)}
           className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-all group shadow-sm"
         >
           <PlusCircle className="size-4 group-hover:rotate-90 transition-transform" />
           <span className="text-[10px] font-black uppercase tracking-widest">Clone Voice</span>
-        </button>
+        </button> */}
       </div>
 
       <div className="flex-1 bg-surface-lowest rounded-4xl border border-outline-variant/10 relative overflow-hidden flex flex-col premium-forge-border shadow-inner">
