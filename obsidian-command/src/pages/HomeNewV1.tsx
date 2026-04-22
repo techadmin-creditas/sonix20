@@ -175,8 +175,8 @@ export default function HomeNewV1() {
           </Link>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <ThemeToggle />
-              <Link to="/login" className="studio-glow rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase tracking-wider text-on-primary-fixed transition-transform hover:scale-105 active:scale-95">
+              {/* <ThemeToggle /> */}
+              <Link to="/login" className="studio-glow rounded-full bg-on-surface px-5 py-2 text-xs font-bold uppercase tracking-wider hover:scale-105 active:scale-95 text-background transition-all hover:bg-primary hover:text-on-primary-fixed">
                 Login
               </Link>
             </div>

@@ -12,7 +12,7 @@ export const HomeCta = forwardRef<HTMLElement, {}>(({}, ref) => {
         <h2 className="reveal-item font-headline text-6xl font-black md:text-8xl lg:text-9xl text-on-surface">
           Start Your <br /> <span className="text-primary">Journey.</span>
         </h2>
-        <Link to="/login" className="studio-glow inline-flex items-center gap-4 rounded-full bg-primary px-12 py-6 text-sm font-black uppercase tracking-[0.2em] text-on-primary-fixed transition-all hover:scale-110 active:scale-95">
+        <Link to="/login" className="studio-glow inline-flex items-center gap-4 rounded-full bg-on-surface px-12 py-6 text-sm font-black uppercase tracking-[0.2em] text-background transition-all hover:scale-110 active:scale-95 hover:bg-primary hover:text-on-primary-fixed">
           Launch Now
           <ArrowRight className="size-5" />
         </Link>
