@@ -1289,7 +1289,7 @@ export default function SessionControl() {
             {!isLive ? (
               <>
                 {/* Caller ID + Transport — grouped as a pill pair on sm+, stacked on xs */}
-                {/* <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl px-1 relative">
+                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl px-1 relative">
                   <UserCircle2 className="size-3.5 text-on-surface-variant ml-2 shrink-0" />
                   <div className="relative group">
                     <input
@@ -1357,7 +1357,7 @@ export default function SessionControl() {
                 >
                   <Settings2 className="size-4 shrink-0" />
                   <span className="hidden md:inline">Config</span>
-                </button> */}
+                </button>
 
                 {/* Initialize Bridge CTA */}
                 <button
