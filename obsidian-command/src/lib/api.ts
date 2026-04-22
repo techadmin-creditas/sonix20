@@ -1,5 +1,5 @@
 /** REST API base (override with VITE_API_BASE, e.g. http://localhost:8000/api/v1) */
-const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api/v1';
+const BASE_URL = import.meta.env.VITE_API_BASE || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8000/api/v1' : '/api/v1');
 const AUTH_TOKEN_KEY = 'voicebot.auth.token';
 
 export type AuthUser = {

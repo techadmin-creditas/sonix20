@@ -16,7 +16,7 @@ import logging
 import time
 import os
 import uuid
-from typing import Optional
+from typing import Optional, Any
 
 import httpx
 from fastapi import (
@@ -64,10 +64,16 @@ _MAX_STT_SANDBOX_BYTES = 6 * 1024 * 1024
 _db: Optional[SQLiteProvider] = None
 
 
-async def get_db() -> SQLiteProvider:
+async def get_db() -> Any:
     global _db
     if _db is None:
-        _db = SQLiteProvider()
+        if settings.postgres_url:
+            from voicebot.services.memory.postgres_provider import PostgresProvider
+            logger.info("Connecting to Postgres provider...")
+            _db = PostgresProvider()
+        else:
+            logger.info("Connecting to SQLite provider...")
+            _db = SQLiteProvider()
         await _db.initialize()
     return _db
 
