@@ -160,6 +160,11 @@ class AppSettings(BaseSettings):
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_default_model: str = Field(default="meta-llama/llama-3.3-70b-instruct", alias="OPENROUTER_DEFAULT_MODEL")
 
+    # Sentiment: never use the main voice LLM when unset; use small Groq when key present.
+    sentiment_classifier_model: str = Field(
+        default="llama-3.1-8b-instant", alias="SENTIMENT_CLASSIFIER_MODEL"
+    )
+
     # Classifier LLM — used for intent/sentiment/interceptor classification tasks.
     # Override via env vars or per-bot via bot_config["classifier_llm_provider"].
     # Supported: groq | openrouter | anthropic | gemini  (empty = auto-pick)
@@ -169,6 +174,7 @@ class AppSettings(BaseSettings):
     # Session inactivity timeout — how long (seconds) the bot waits in LISTENING
     # state before ending the call. Per-bot override via bot_config.inactivity_timeout_seconds.
     inactivity_timeout_seconds: int = Field(default=60, alias="INACTIVITY_TIMEOUT_SECONDS")
+    enable_post_call_summary: bool = Field(default=False, alias="ENABLE_POST_CALL_SUMMARY")
     serper_api_key: str = Field(default="", alias="SERPER_API_KEY")
 
     tts_provider: str = Field(default="elevenlabs", alias="TTS_PROVIDER")
@@ -189,6 +195,9 @@ class AppSettings(BaseSettings):
     # JWT (REST auth when debug=False)
     jwt_secret_key: str = Field(default="change-me-in-production", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_access_token_expire_minutes: int = Field(default=1440, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    admin_username: str = Field(default="admin", alias="ADMIN_USERNAME")
+    admin_password: str = Field(default="admin123", alias="ADMIN_PASSWORD")
 
 
 def _resolve_env_file() -> str:

@@ -1,16 +1,22 @@
 import React from 'react';
 import { Header } from '../components/Header';
-import { Settings2, Download, Waves, Zap, Mic2, Database, HardDrive, Clock, UserPlus, MoreVertical, BrainCircuit, Loader2 } from 'lucide-react';
+import { Settings2, Download, Waves, Zap, Mic2, Database, HardDrive, Clock, UserPlus, MoreVertical, BrainCircuit, Loader2, ShieldAlert, ArrowLeft } from 'lucide-react';
 import { TEAMMATES } from '../constants';
 import { cn } from '../lib/utils';
 import { api } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 export default function SettingsPage() {
+  const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   const [healthData, setHealthData] = React.useState<any>(null);
   const [vectorHealth, setVectorHealth] = React.useState<{ status: string; doc_count: number } | null>(null);
   const [healthLoading, setHealthLoading] = React.useState(true);
 
   React.useEffect(() => {
+    if (!isAdmin) return;
     async function loadHealth() {
       try {
         const [health, vector] = await Promise.all([
@@ -23,7 +29,64 @@ export default function SettingsPage() {
       finally { setHealthLoading(false); }
     }
     loadHealth();
-  }, []);
+  }, [isAdmin]);
+
+  if (!isAdmin) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-10 bg-background relative overflow-hidden">
+        {/* Animated Background Gradients */}
+        <motion.div 
+          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.4, 0.3] }}
+          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-red-500/10 blur-[120px] rounded-full"
+        />
+        <motion.div 
+          animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.3, 0.2] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "linear", delay: 1 }}
+          className="absolute -bottom-40 -left-40 w-[600px] h-[600px] bg-primary/10 blur-[120px] rounded-full"
+        />
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel max-w-2xl w-full p-16 rounded-[3rem] text-center relative z-10 border border-red-500/20 shadow-2xl shadow-red-500/5"
+        >
+          <motion.div 
+            initial={{ scale: 0.8, rotate: -10 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", damping: 12 }}
+            className="size-24 rounded-3xl bg-red-500/10 flex items-center justify-center mx-auto mb-10 border border-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.1)]"
+          >
+            <ShieldAlert className="size-12 text-red-500" />
+          </motion.div>
+
+          <h2 className="font-headline text-4xl font-black text-on-surface mb-6 uppercase tracking-widest">
+            Neural Access <span className="text-red-500">Denied</span>
+          </h2>
+          
+          <p className="text-lg text-outline mb-12 leading-relaxed">
+            Identity mismatch detected. Platform settings are restricted to administrative entities within the Obsidian network.
+          </p>
+
+          <div className="h-px bg-linear-to-r from-transparent via-red-500/20 to-transparent w-full mb-12" />
+
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="group flex items-center justify-center gap-3 mx-auto px-10 py-5 rounded-2xl bg-surface-high hover:bg-surface-highest border border-outline-variant/20 transition-all active:scale-95 shadow-xl"
+          >
+            <ArrowLeft className="size-5 text-primary group-hover:-translate-x-1 transition-transform" />
+            <span className="font-bold text-sm uppercase tracking-widest">Return to Dashboard</span>
+          </button>
+        </motion.div>
+
+        <div className="mt-10 px-6 py-2 rounded-full border border-outline-variant/10 bg-surface-low/50 backdrop-blur-sm relative z-10">
+          <p className="text-[10px] font-black text-outline uppercase tracking-[0.3em]">
+            Security Protocol: RBAC-TRANSIT-SECURED
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const svcStatus = (key: string) => {
     if (healthLoading) return 'checking';
@@ -32,12 +95,12 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title="Platform Settings" 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title="Platform Settings"
         actions={
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => {
                 if (confirm('Discard all unsaved changes?')) {
                   window.location.reload();
@@ -47,7 +110,7 @@ export default function SettingsPage() {
             >
               Discard Changes
             </button>
-            <button 
+            <button
               onClick={() => alert('Settings saved successfully!')}
               className="px-6 py-2.5 rounded-lg ember-gradient text-on-primary-fixed text-sm font-bold shadow-lg active:scale-95 transition-all"
             >
@@ -69,9 +132,9 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-6 w-full">
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-outline">Organization Name</label>
-                  <input 
-                    className="w-full bg-surface-highest border-none rounded-lg px-4 py-3 text-on-surface focus:ring-1 focus:ring-primary/50 transition-all" 
-                    type="text" 
+                  <input
+                    className="w-full bg-surface-highest border-none rounded-lg px-4 py-3 text-on-surface focus:ring-1 focus:ring-primary/50 transition-all"
+                    type="text"
                     defaultValue="Sonic Architect"
                   />
                 </div>
@@ -120,24 +183,24 @@ export default function SettingsPage() {
               {healthLoading && <Loader2 className="size-4 animate-spin text-primary" />}
             </div>
             <div className="glass-panel p-8 rounded-2xl flex flex-col gap-6">
-              <DatabaseItem 
-                icon={Database} 
-                name="Redis Cache" 
-                desc="Volatile session memory & TTS audio cache" 
-                status={svcStatus('redis')} 
+              <DatabaseItem
+                icon={Database}
+                name="Redis Cache"
+                desc="Volatile session memory & TTS audio cache"
+                status={svcStatus('redis')}
                 active={svcStatus('redis') === 'online'}
               />
-              <DatabaseItem 
-                icon={HardDrive} 
-                name="SQLite Primary" 
-                desc="Persistent bots, sessions, facts & logs" 
+              <DatabaseItem
+                icon={HardDrive}
+                name="SQLite Primary"
+                desc="Persistent bots, sessions, facts & logs"
                 status="online"
                 active
               />
-              <DatabaseItem 
-                icon={BrainCircuit} 
-                name="ChromaDB Vector Memory" 
-                desc={vectorHealth ? `RAG context store · ${vectorHealth.doc_count} documents` : 'Semantic RAG context store'} 
+              <DatabaseItem
+                icon={BrainCircuit}
+                name="ChromaDB Vector Memory"
+                desc={vectorHealth ? `RAG context store · ${vectorHealth.doc_count} documents` : 'Semantic RAG context store'}
                 status={vectorHealth?.status ?? (healthLoading ? 'checking' : 'unknown')}
                 active={vectorHealth?.status === 'online'}
               />
@@ -172,7 +235,7 @@ export default function SettingsPage() {
               <h3 className="font-headline text-xl font-bold text-on-surface">Teammates</h3>
               <p className="text-sm text-outline">Manage access and permissions for your team.</p>
             </div>
-            <button 
+            <button
               onClick={() => alert('Invite user modal would open here.')}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface-high border border-outline-variant/20 text-sm font-bold hover:border-primary/50 transition-all"
             >
@@ -250,7 +313,7 @@ function ProviderCard({ icon: Icon, name, status, apiKey }: any) {
           <p className="text-xs text-outline font-mono mt-1">{apiKey}</p>
         </div>
       </div>
-      <button 
+      <button
         onClick={() => {
           if (confirm(`Are you sure you want to rotate the API key for ${name}? This will invalidate the current key immediately.`)) {
             alert('Key rotated successfully. New key: ' + Math.random().toString(36).substring(7));

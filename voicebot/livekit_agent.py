@@ -11,7 +11,8 @@ from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.models.session import SessionState
 from voicebot.core.orchestrator.brain import AgenticBrain, BotState
 from voicebot.services.memory.sqlite_provider import SQLiteProvider
-from voicebot.services.stt.deepgram_provider import DeepgramStreamingProvider
+from voicebot.shared.policy import parse_json_dict
+from voicebot.services.stt.deepgram_provider import DeepgramStreamingProvider, resolve_stt_language_for_session
 from voicebot.services.llm.groq_provider import GroqStreamingProvider
 from voicebot.services.tts.deepgram_tts_provider import DeepgramTTSProvider
 
@@ -23,10 +24,14 @@ class LiveKitVoiceAgent:
     """
     Standalone LiveKit Agent that connects a LiveKit Room to the AgenticBrain.
     """
-    def __init__(self, room_name: str, bot_id: Optional[str] = None):
+    def __init__(self, room_name: str, bot_id: Optional[str] = None, session_id: Optional[str] = None):
         self.room_name = room_name
         self.bot_id = bot_id
-        self.session_id = f"lk-{room_name}"
+        
+        # 🔑 SESSION ID: Use provided ID or extract from room_name
+        # The room name is "voice-<truncated_id>", but the DB needs the full UUID.
+        self.session_id = session_id or room_name.replace("voice-", "")
+        
         self.room = rtc.Room()
         
         # Audio Source (16kHz, mono) for publishing bot voice
@@ -76,17 +81,42 @@ class LiveKitVoiceAgent:
         """Main loop for the agent."""
         logger.info("Starting LiveKit Agent for room: %s", self.room_name)
         
-        # 1. Initialize Brain
+        # 1. Initialize DB and Fetch Session Data
         db = SQLiteProvider()
         await db.initialize()
-        await db.create_session(self.session_id, bot_id=self.bot_id)
         
-        bot_config = await db.get_bot(self.bot_id) if self.bot_id else None
+        # 🔄 HYDRATION: Fetch the existing session created by the Gateway
+        db_session = await db.get_session(self.session_id)
+        if not db_session:
+             logger.warning("Session %s not found in DB at startup! Metadata injection may fail.", self.session_id)
+        
+        # 🤖 BOT CONFIG RECOVERY: Use provided bot_id OR pull from DB session
+        effective_bot_id = self.bot_id or (db_session.get("bot_id") if db_session else None)
+        bot_config = await db.get_bot(effective_bot_id) if effective_bot_id else None
+        
         if not bot_config:
+            logger.warning("No bot_config found for bot_id: %s. Falling back to first available bot.", effective_bot_id)
             bots = await db.list_bots()
             bot_config = bots[0] if bots else {}
             
         session = SessionState(session_id=self.session_id)
+        
+        # 👤 Sync metadata from DB session (if found)
+        try:
+            if db_session:
+                # 👤 Set core session attributes
+                session.user_id = db_session.get("user_id") or "anonymous"
+                session.detected_language = db_session.get("language") or "hi"
+                
+                # 📋 Merge metadata
+                if db_session.get("metadata"):
+                    session.metadata.update(db_session["metadata"])
+                
+                logger.info("Hydrated session %s: user=%s, lang=%s, meta_keys=%s", 
+                            self.session_id[:8], session.user_id, session.detected_language, list(session.metadata.keys()))
+        except Exception as e:
+            logger.warning("Failed to hydrate session metadata: %s", e)
+
 
         # Normalize TTS output to 10 ms frames (320 bytes at 16 kHz mono linear16).
         # 10 ms frames emit sooner when Deepgram WS sends small initial chunks,
@@ -102,8 +132,13 @@ class LiveKitVoiceAgent:
                 n -= 1
             if n == 0:
                 return
-            frame = rtc.AudioFrame(raw, 16000, 1, n // 2)
-            await self.audio_source.capture_frame(frame)
+            try:
+                frame = rtc.AudioFrame(raw, 16000, 1, n // 2)
+                await self.audio_source.capture_frame(frame)
+            except Exception as e:
+                # This often happens during rapid barge-in/interrupt cycles if the RTC 
+                # state is temporarily unstable. We log and drop the frame to prevent crash.
+                logger.debug("Dropped audio frame due to RTC State: %s", e)
 
         async def on_audio_output(audio_bytes: bytes):
             _audio_buf.extend(audio_bytes)
@@ -111,6 +146,11 @@ class LiveKitVoiceAgent:
                 frame_data = bytes(_audio_buf[:_FRAME_BYTES])
                 del _audio_buf[:_FRAME_BYTES]
                 await _emit_audio_frame(frame_data)
+
+        async def on_audio_interrupt():
+            # Drop any partial frame sitting in the normalizer buffer so stale
+            # audio bytes from the interrupted turn are never played.
+            _audio_buf.clear()
 
         async def broadcast_data(data_type: str, payload: dict):
             try:
@@ -137,17 +177,79 @@ class LiveKitVoiceAgent:
         async def on_log(tag: str, message: str, color: str):
             await broadcast_data("log", {"tag": tag, "message": message, "color": color})
 
+        async def on_metrics(metrics: dict):
+            if metrics.get("type") == "audio_handoff":
+                await broadcast_data("audio_handoff", {})
+            await broadcast_data("metrics", metrics)
+
+        # 🚀 DYNAMIC PROVIDER SELECTION (Based on bot_config)
+        # 1. STT Provider
+        _lk_pol = parse_json_dict(bot_config.get("conversation_policy") or {})
+        _session_lang = (bot_config.get("default_language") or "hi").lower()
+        _stt_lang = resolve_stt_language_for_session(_session_lang, _lk_pol)
+        _ep = _lk_pol.get("stt_endpointing_ms")
+        try:
+            _ep_i = int(_ep) if _ep is not None else None
+        except (TypeError, ValueError):
+            _ep_i = None
+        _vad = _lk_pol.get("stt_rms_vad_threshold")
+        try:
+            _vad_f = float(_vad) if _vad is not None else None
+        except (TypeError, ValueError):
+            _vad_f = None
+        stt_provider = DeepgramStreamingProvider(
+            language=_stt_lang,
+            endpointing_ms=_ep_i,
+            vad_rms_threshold=_vad_f,
+        )
+
+        # 2. LLM Provider
+        _llm_prov = str(bot_config.get("llm_provider") or "").lower()
+        _llm_model = bot_config.get("llm_model") or "llama-3.3-70b-versatile"
+        
+        if _llm_prov == "openai":
+            from voicebot.services.llm.openai_provider import OpenAIStreamingProvider
+            llm_provider = OpenAIStreamingProvider(model=_llm_model)
+        elif _llm_prov == "gemini":
+            from voicebot.services.llm.gemini_provider import GeminiStreamingProvider
+            llm_provider = GeminiStreamingProvider(model=_llm_model)
+        elif _llm_prov == "anthropic":
+            from voicebot.services.llm.anthropic_provider import AnthropicStreamingProvider
+            llm_provider = AnthropicStreamingProvider(model=_llm_model)
+        else:
+            # High-perf default (Groq)
+            llm_provider = GroqStreamingProvider(model=_llm_model)
+
+        from voicebot.services.llm.voice_llm_factory import wrap_llm_with_fallbacks
+
+        llm_provider = wrap_llm_with_fallbacks(llm_provider, bot_config, settings)
+
+        # 3. TTS Provider (Hindi-Aware & Factory-Based)
+        from voicebot.services.tts.voice_tts_factory import create_voice_tts
+        tts_provider = await create_voice_tts(bot_config, settings, on_log_fn=on_log)
+        logger.info("TTS stack initialized via factory ✅")
+
+        # 4. Optional: Guardrails & Caching (Parity with main.py)
+        from voicebot.services.memory.redis_provider import RedisSessionProvider
+        memory = RedisSessionProvider(redis_url=settings.redis_url)
+        await memory.connect()
+        if hasattr(tts_provider, "set_cache"):
+            tts_provider.set_cache(memory)
+
         self.brain = AgenticBrain(
             session=session,
-            stt_handler=DeepgramStreamingProvider(),
-            llm_handler=GroqStreamingProvider(model=bot_config.get("llm_model", "llama-3.3-70b-versatile")),
-            tts_handler=DeepgramTTSProvider(model=bot_config.get("voice_id", "aura-asteria-en")),
+            stt_handler=stt_provider,
+            llm_handler=llm_provider,
+            tts_handler=tts_provider,
+            memory_handler=memory,
             db_handler=db,
             bot_config=bot_config,
             on_audio_output=on_audio_output,
+            on_audio_interrupt=on_audio_interrupt,
             on_bot_transcript=on_bot_transcript,
             on_transcript=on_transcript,
-            on_log=on_log
+            on_log=on_log,
+            on_metrics=on_metrics
         )
 
         # 2. Connect STT eagerly before participants join (avoids race condition and first-frame loss)
@@ -232,7 +334,7 @@ class LiveKitVoiceAgent:
                     logger.info("Ingesting: %d frames from user", frame_count)
 
                 if resampler is None:
-                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, frame.num_channels)
+                    resampler = rtc.AudioResampler(frame.sample_rate, 16000, num_channels=frame.num_channels)
                     logger.info(
                         "AudioResampler initialized: %dHz %dch → 16000Hz 1ch",
                         frame.sample_rate, frame.num_channels,

@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 from voicebot.shared.config import get_settings
 
@@ -63,7 +63,7 @@ class DeepgramWSTTSProvider:
         self._receive_task: Optional[asyncio.Task] = None
 
         # Audio chunks from the current Speak request land here.
-        self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._audio_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
         # Signals that all audio for the last Flush has been delivered.
         self._flushed_event = asyncio.Event()
         # Protects concurrent speak() calls (only one segment at a time).
@@ -89,7 +89,7 @@ class DeepgramWSTTSProvider:
             # Use `certifi` CA bundle so TLS verification works in dev
             # environments that may not have the expected system trust store.
             import ssl
-            ssl_context: ssl.SSLContext | None = None
+            ssl_context: Optional[ssl.SSLContext] = None
             try:
                 import certifi  # type: ignore
 
@@ -137,7 +137,7 @@ class DeepgramWSTTSProvider:
 
     # ─── Public API ───────────────────────────────────────────────────────────
 
-    async def stream_speech(self, text: str) -> AsyncIterator[bytes]:
+    async def stream_speech(self, text: str, **kwargs: Any) -> AsyncIterator[bytes]:
         """
         Send text for synthesis and yield audio chunks as they arrive.
 
@@ -200,13 +200,24 @@ class DeepgramWSTTSProvider:
         if not self._connected or not self._ws:
             return
         self._resetting = True
+        # Drain queued audio immediately so stream_speech() unblocks without
+        # playing stale chunks from the interrupted turn.
+        drained = 0
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+                drained += 1
+            except asyncio.QueueEmpty:
+                break
+        if drained:
+            logger.debug("WS TTS reset: drained %d stale audio chunks", drained)
         try:
             await self._ws.send(json.dumps({"type": "Reset"}))
         except Exception as exc:
             logger.warning("WS TTS reset send error: %s", exc)
         # Unblock any waiting stream_speech caller.
         await self._audio_queue.put(None)
-        logger.debug("WS TTS: Reset sent")
+        logger.debug("WS TTS: Reset sent (drained=%d)", drained)
 
     async def stop(self) -> None:
         """Alias for reset() — matches HTTP provider interface."""

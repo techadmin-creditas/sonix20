@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Header } from '../components/Header';
-import { 
-  Database, 
-  Search, 
-  PlusCircle, 
-  ChevronRight, 
-  Edit2, 
-  Trash2, 
+import {
+  Database,
+  Search,
+  PlusCircle,
+  ChevronRight,
+  Edit2,
+  Trash2,
   CheckCircle2,
   ExternalLink,
   X,
@@ -19,6 +19,8 @@ import { KNOWLEDGE_BASE } from '../constants';
 import { cn } from '../lib/utils';
 import { api, KnowledgeEntry, RawVectorEntry, QACacheEntry } from '../lib/api';
 import { Loader2 } from 'lucide-react';
+import { PermissionGuard } from '../components/PermissionGuard';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function KnowledgeBase() {
   const [entries, setEntries] = useState<any[]>([]);
@@ -26,13 +28,26 @@ export default function KnowledgeBase() {
   const [selectedEntry, setSelectedEntry] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('Global');
-  const [activeTab, setActiveTab] = useState<'manual' | 'learned' | 'vector'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'learned' | 'vector' | 'ingest' | 'tools'>('manual');
   const [vectorSubTab, setVectorSubTab] = useState<'memory' | 'qa'>('memory');
   const [bots, setBots] = useState<any[]>([]);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [formData, setFormData] = useState({ question: '', answer: '', topic: 'General', priority: 2 });
+
+  const [ingestUrl, setIngestUrl] = useState('');
+  const [ingestLoading, setIngestLoading] = useState(false);
+  const [tools, setTools] = useState<any[]>([]);
+  const [isToolModalOpen, setIsToolModalOpen] = useState(false);
+  const [toolData, setToolData] = useState({
+    name: '',
+    description: '',
+    url: '',
+    method: 'GET',
+    parameters: '{"city": "string"}',
+    headers: '{}'
+  });
 
   const loadEntries = async () => {
     setLoading(true);
@@ -41,28 +56,26 @@ export default function KnowledgeBase() {
         const data = await api.getKnowledgeEntries();
         setEntries(data);
       } else if (activeTab === 'learned') {
-        if (selectedBotId) {
-          const data = await api.getLearnedMemory(selectedBotId);
-          // Map to match KnowledgeEntry shape roughly for the UI
-          setEntries(data.map((d: any) => ({
-            id: d.id,
-            question: d.category.toUpperCase() + ": " + d.source,
-            answer: d.content,
-            topic: d.category,
-            priority: 1,
-            created_at: parseFloat(d.timestamp) || Date.now() / 1000
-          })));
-        } else {
-          setEntries([]);
-        }
+          // Fallback or specific logic
+          if (activeTab === 'learned' && selectedBotId) {
+            const data = await api.getLearnedMemory(selectedBotId);
+            setEntries(data.map((d: any) => ({
+                id: d.id,
+                question: d.category.toUpperCase() + ": " + d.source,
+                answer: d.content,
+                topic: d.category,
+                priority: 1,
+                created_at: parseFloat(d.timestamp) || Date.now() / 1000
+            })));
+          }
       } else if (activeTab === 'vector') {
         if (vectorSubTab === 'memory') {
           const data = await api.getAllVectorMemory();
           setEntries(data.map(d => ({
             id: d.id,
-            question: `Document Shard: ${d.id.slice(0, 8)}...`,
+            question: d.metadata?.source || `Document Shard: ${d.id.slice(0, 8)}...`,
             answer: d.content,
-            topic: d.metadata?.type || 'Summary',
+            topic: d.metadata?.category?.toUpperCase() || 'CORE',
             priority: 0,
             created_at: parseFloat(d.metadata?.timestamp) || Date.now() / 1000,
             rawMetadata: d.metadata
@@ -99,17 +112,25 @@ export default function KnowledgeBase() {
     }
   };
 
+  const loadTools = async () => {
+    try {
+      const data = await api.getCustomTools();
+      setTools(data);
+    } catch (err) { console.error(err); }
+  };
+
   React.useEffect(() => {
     loadBots();
   }, []);
 
   React.useEffect(() => {
     loadEntries();
+    if (activeTab === 'tools') loadTools();
   }, [activeTab, selectedBotId, vectorSubTab]);
-
+  
   const filteredEntries = entries.filter(entry => {
-    const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = activeFilter === 'Global' || (entry.topic === activeFilter);
     return matchesSearch && matchesFilter;
   });
@@ -134,6 +155,20 @@ export default function KnowledgeBase() {
     }
   };
 
+  const handleIngest = async () => {
+    if (!ingestUrl.trim()) return;
+    setIngestLoading(true);
+    try {
+      await api.ingestUrl(ingestUrl);
+      setIngestUrl('');
+      alert('Ingestion job forked successfully!');
+    } catch (err) {
+      alert('Failed to trigger ingestion.');
+    } finally {
+      setIngestLoading(false);
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -146,75 +181,102 @@ export default function KnowledgeBase() {
     }
   };
 
+  const handleToolForge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let parsedParams = {};
+      let parsedHeaders = {};
+      try { parsedParams = JSON.parse(toolData.parameters); } catch { alert('Invalid JSON in Parameters'); return; }
+      try { parsedHeaders = JSON.parse(toolData.headers); } catch { alert('Invalid JSON in Headers'); return; }
+      await api.createCustomTool({
+        name: toolData.name,
+        description: toolData.description,
+        url: toolData.url,
+        method: toolData.method,
+        parameters: parsedParams,
+        headers: parsedHeaders,
+      });
+      setIsToolModalOpen(false);
+      setToolData({ name: '', description: '', url: '', method: 'GET', parameters: '{"city": "string"}', headers: '{}' });
+      loadTools();
+    } catch (err) {
+      alert('Failed to forge tool — check console for details.');
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-h-screen relative overflow-hidden">
+    <div className="flex-1 flex flex-col  relative overflow-hidden">
       {/* Background Glows */}
       <div className="absolute -top-20 -right-20 w-96 h-96 bg-primary/5 blur-[120px] rounded-full"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/2 blur-[150px] rounded-full"></div>
 
       <Header 
-        title="Overview" 
-        subtitle="Knowledge Base"
+        title="Intelligence Hub" 
+        subtitle="Manage knowledge core and autonomous tools."
         actions={
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="h-10 px-6 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
-          >
-            <PlusCircle className="size-4" />
-            New Entry
-          </button>
+          <div className="flex gap-4">
+            <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+              <button
+                onClick={() => {
+                  setFormData({ question: '', answer: '', topic: 'General', priority: 2 });
+                  setSelectedEntry(null);
+                  setIsModalOpen(true);
+                }}
+                className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+              >
+                <PlusCircle className="size-5" />
+                New Entry
+              </button>
+            </PermissionGuard>
+          </div>
         }
       />
 
       <div className="flex-1 overflow-y-auto px-10 pb-10 custom-scrollbar z-10">
         <div className="flex justify-between items-end mb-10 mt-8">
           <div>
-            <h2 className="text-4xl font-extrabold text-on-surface tracking-tight">Intelligence & Memory</h2>
-            <p className="text-outline mt-2 text-lg">Manage domain knowledge and explore the autonomous vector store.</p>
+            <h2 className="text-4xl font-extrabold text-on-surface uppercase tracking-widest">Neural Memory Core</h2>
+            <p className="text-outline mt-2 text-lg">Manage distributed knowledge shards and autonomous capabilities.</p>
           </div>
         </div>
 
         <div className="mb-10 flex flex-col md:flex-row gap-6 items-center">
           <div className="relative flex-1 group">
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 size-6 text-outline group-focus-within:text-primary transition-colors" />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Find any topic, question, or answer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-16 pl-16 pr-6 bg-surface-low rounded-xl border-none ring-1 ring-white/5 focus:ring-primary/40 focus:bg-surface transition-all text-lg placeholder:text-outline/50 text-on-surface shadow-xl"
+              className="w-full h-16 pl-16 pr-6 bg-surface-low rounded-xl border-none ring-1 ring-white/5 focus:ring-primary/40 focus:bg-surface transition-all text-lg placeholder:text-outline/50 text-on-surface shadow-xl shadow-primary/5"
             />
           </div>
           <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0 overflow-x-auto no-scrollbar">
-             <button 
-                onClick={() => setActiveTab('manual')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'manual' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Manual Core
-             </button>
-             <button 
-                onClick={() => setActiveTab('learned')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'learned' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Autonomous Memory
-             </button>
-             <button 
-                onClick={() => setActiveTab('vector')}
-                className={cn("px-8 rounded-xl font-bold transition-all text-sm uppercase tracking-widest whitespace-nowrap", 
-                  activeTab === 'vector' ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-             >
-                Vector Explorer
-             </button>
+             {[
+               { id: 'manual', label: 'Manual Core' },
+               { id: 'learned', label: 'Autonomous' },
+               { id: 'vector', label: 'Vector Store' },
+               { id: 'ingest', label: 'Unified Inflow' },
+               { id: 'tools', label: 'Tools Forge' }
+             ].map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id as any)}
+                  className={cn("px-6 rounded-xl font-bold transition-all text-[10px] uppercase tracking-[0.2em] whitespace-nowrap", 
+                    activeTab === t.id ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+                >
+                   {t.label}
+                </button>
+             ))}
           </div>
         </div>
 
-          <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-outline uppercase tracking-widest mr-2">Scope:</span>
+              <span className="text-[10px] font-black text-outline uppercase tracking-widest mr-2">Shard Filter:</span>
+              <div className="flex flex-wrap gap-3">
               {activeTab === 'manual' ? (
-                  ['Global', 'Alex', 'Nova', 'Max'].map(filter => (
+                  ['Global', 'Sales', 'Support', 'Fulfillment'].map(filter => (
                       <FilterChip 
                           key={filter} 
                           label={filter} 
@@ -222,225 +284,406 @@ export default function KnowledgeBase() {
                           onClick={() => setActiveFilter(filter)}
                       />
                   ))
-              ) : activeTab === 'learned' ? (
-                  bots.map(bot => (
-                      <FilterChip 
-                          key={bot.id} 
-                          label={bot.name} 
-                          active={selectedBotId === bot.id} 
-                          onClick={() => setSelectedBotId(bot.id)}
-                      />
-                  ))
-              ) : (
+              ) : (activeTab === 'learned' || activeTab === 'vector') ? (
                 <>
                   <FilterChip 
-                    label="Long-term Shards" 
+                    label="Global Cluster" 
+                    active={activeFilter === 'Global'} 
+                    onClick={() => setActiveFilter('Global')} 
+                  />
+                  <FilterChip 
+                    label="PDF Shards" 
+                    active={activeFilter === 'DOCUMENTATION'} 
+                    onClick={() => setActiveFilter('DOCUMENTATION')} 
+                  />
+                  <FilterChip 
+                    label="Web Crawls" 
+                    active={activeFilter === 'WEBSITE'} 
+                    onClick={() => setActiveFilter('WEBSITE')} 
+                  />
+                </>
+              ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              {activeTab === 'learned' && (
+                <div className="flex h-10 px-4 bg-white/5 rounded-full items-center border border-white/10 gap-4">
+                  <span className="text-[10px] font-black text-outline uppercase tracking-widest">Node:</span>
+                  <select 
+                    className="bg-transparent text-[10px] font-black text-primary uppercase focus:outline-none cursor-pointer"
+                    value={selectedBotId}
+                    onChange={e => setSelectedBotId(e.target.value)}
+                  >
+                    {bots.map(bot => (
+                      <option key={bot.id} value={bot.id}>{bot.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {activeTab === 'vector' && (
+                <div className="flex gap-2">
+                  <FilterChip 
+                    label="Long-term Memory" 
                     active={vectorSubTab === 'memory'} 
                     onClick={() => setVectorSubTab('memory')}
                   />
                   <FilterChip 
-                    label="QA Semantic Cache" 
+                    label="Semantic Cache" 
                     active={vectorSubTab === 'qa'} 
                     onClick={() => setVectorSubTab('qa')}
                   />
-                </>
+                </div>
+              )}
+              {['learned', 'vector'].includes(activeTab) && (
+                <div className="text-[9px] font-black text-primary/60 uppercase tracking-widest px-4 py-2 bg-primary/5 rounded-lg border border-primary/20 flex items-center gap-2">
+                  <Activity className="size-3 animate-pulse" />
+                  Live Cluster Active
+                </div>
               )}
             </div>
-            {activeTab !== 'manual' && (
-              <div className="text-[10px] font-black text-primary/60 uppercase tracking-[0.2em] px-4 py-2 bg-primary/5 rounded-lg ghost-border border-primary/20 flex items-center gap-2">
-                <div className="size-1.5 rounded-full bg-primary animate-pulse" />
-                Live Vector Stream Shard Active
-              </div>
-            )}
-          </div>
+        </div>
 
         <div className="flex gap-8 relative">
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-            {loading ? (
-              <div className="col-span-2 py-40 flex flex-col items-center justify-center gap-4">
-                <Loader2 className="size-10 text-primary animate-spin" />
-                <p className="text-outline font-bold uppercase tracking-widest text-sm">Accessing Knowledge Core...</p>
-              </div>
-            ) : filteredEntries.map((entry) => (
-              <div 
-                key={entry.id}
-                onClick={() => {
-                  setSelectedEntry(entry);
-                  setShowPreview(true);
-                }}
-                className={cn(
-                  "group p-6 rounded-xl bg-white/5 ghost-border hover:bg-white/8 transition-all cursor-pointer relative",
-                  selectedEntry?.id === entry.id && showPreview && "border-primary/40 bg-primary/5"
-                )}
-              >
-                <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); console.log('Edit', entry.id); }}
-                    className="p-2 rounded-lg bg-surface-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                  >
-                    <Edit2 className="size-3.5" />
-                  </button>
-                  <button 
-                    onClick={(e) => handleDelete(entry.id, e)}
-                    className="p-2 rounded-lg bg-surface-highest text-error/60 hover:text-error transition-colors"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      "size-10 rounded-xl flex items-center justify-center shrink-0",
-                      entry.priority >= 5 ? "bg-primary/20 text-primary" : "bg-surface-highest text-outline"
-                    )}>
-                      {activeTab === 'vector' ? <Cpu className="size-5" /> : 
-                       activeTab === 'learned' ? <History className="size-5" /> :
-                       <Database className="size-5" />}
+          <div className="flex-1">
+            {activeTab === 'ingest' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
+                        <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                            <ExternalLink size={240} className="text-primary" />
+                        </div>
+                        <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Crawl Intelligence</h3>
+                        <p className="text-outline text-sm mb-10 font-medium max-w-xs">Index any website or support documentation directly into the neural cluster.</p>
+                        <div className="flex gap-4">
+                          <input
+                            type="text"
+                            placeholder="https://example.com/docs"
+                            value={ingestUrl}
+                            onChange={(e) => setIngestUrl(e.target.value)}
+                            className="flex-1 bg-surface-highest ghost-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50"
+                          />
+                          <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                            <button
+                              onClick={handleIngest}
+                              disabled={ingestLoading || !ingestUrl.trim()}
+                              className="px-8 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-lg disabled:opacity-50 disabled:grayscale transition-all active:scale-95 flex items-center gap-2"
+                            >
+                              {ingestLoading ? <Loader2 className="size-4 animate-spin" /> : <PlusCircle className="size-4" />}
+                              Sync URL
+                            </button>
+                          </PermissionGuard>
+                        </div>
                     </div>
-                    <span className="text-xs font-bold text-primary tracking-widest uppercase">{entry.topic}</span>
+
+                    <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
+                        <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                            <Database size={240} className="text-primary" />
+                        </div>
+                        <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Shard Ingestion</h3>
+                        <p className="text-outline text-sm mb-10 font-medium max-w-xs">Upload manual PDF shards to expand the distributed vector knowledge base.</p>
+                        <input 
+                          type="file" id="pdf-ingest" className="hidden" accept=".pdf" 
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              try { await api.ingestPdf(file); alert('Knowledge shard uploaded!'); } catch(e) { alert('Upload failed'); }
+                            }
+                          }}
+                        />
+                        <label 
+                          htmlFor="pdf-ingest"
+                          className="w-full h-14 rounded-xl ghost-border bg-surface-highest hover:bg-surface-high transition-all text-outline font-black uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer border-dashed border-2"
+                        >
+                            <PlusCircle size={20} />
+                            Ingest PDF Shard
+                        </label>
+                    </div>
+                </div>
+            ) : activeTab === 'tools' ? (
+              <div className="space-y-6">
+                 <div className="p-10 rounded-3xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-10">
+                      <div className="flex flex-col gap-1">
+                        <h3 className="font-headline text-lg font-bold">External Knowledge Tools</h3>
+                        <p className="text-sm text-outline">Connect real-time API endpoints for dynamic retrieval.</p>
+                      </div>
+                      <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                        <button
+                          onClick={() => setIsToolModalOpen(true)}
+                          className="px-6 py-2.5 rounded-xl bg-surface-high border border-outline-variant/20 font-bold text-xs hover:bg-surface-highest transition-all flex items-center gap-2"
+                        >
+                          <PlusCircle className="size-4" />
+                          Add Tool
+                        </button>
+                      </PermissionGuard>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {tools.map(tool => (
+                            <div key={tool.id} className="p-6 rounded-2xl bg-surface-highest ghost-border hover:border-primary/30 transition-all group relative">
+                                <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button className="p-1.5 rounded-lg bg-surface hover:text-primary"><Edit2 size={12} /></button>
+                                </div>
+                                <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6 shadow-inner ring-1 ring-primary/20">
+                                    <Cpu size={22} />
+                                </div>
+                                <h4 className="font-bold text-on-surface text-lg mb-1 leading-tight">{tool.name}</h4>
+                                <p className="text-[11px] text-outline line-clamp-2 leading-relaxed mb-6 font-medium">{tool.description}</p>
+                                <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                                    <span className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-outline uppercase tracking-wider">{tool.type}</span>
+                                    <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5">
+                                        <div className="size-1 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                        Verified
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 </div>
+              </div>
+            ) : (
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {loading ? (
+                       <div className="col-span-2 py-40 flex flex-col items-center justify-center gap-4">
+                         <Loader2 className="size-10 text-primary animate-spin" />
+                         <p className="text-outline font-black uppercase tracking-[0.3em] text-[10px]">Accessing Distributed Core...</p>
+                       </div>
+                     ) : (
+                       <>
+                         {filteredEntries.map((entry) => (
+                           <div 
+                             key={entry.id}
+                             onClick={() => { setSelectedEntry(entry); setShowPreview(true); }}
+                             className={cn(
+                               "group p-6 rounded-2xl bg-white/3 ghost-border hover:bg-white/7 transition-all cursor-pointer relative",
+                               selectedEntry?.id === entry.id && showPreview && "border-primary/50 bg-primary/5 ring-1 ring-primary/20 shadow-xl"
+                             )}
+                           >
+                             <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                               <button onClick={(e) => handleDelete(entry.id, e)} className="p-2 rounded-lg bg-surface-highest text-error/60 hover:text-error transition-colors shadow-lg"><Trash2 className="size-3.5" /></button>
+                             </div>
+                             <div className="flex justify-between items-start mb-6">
+                               <div className="flex items-center gap-3">
+                                 <div className={cn(
+                                    "size-12 rounded-2xl bg-linear-to-br flex items-center justify-center border border-outline-variant/20",
+                                    entry.priority === 3 ? "from-red-500/10 to-transparent text-red-500" :
+                                      entry.priority === 2 ? "from-primary/10 to-transparent text-primary" :
+                                        "from-emerald-500/10 to-transparent text-emerald-500"
+                                  )}>
+                                    {activeTab === 'vector' ? <Cpu className="size-5" /> : activeTab === 'learned' ? <History className="size-5" /> : <Database className="size-5" />}
+                                 </div>
+                                 <div>
+                                   <p className="text-[10px] font-black text-primary/80 uppercase tracking-widest">{entry.topic}</p>
+                                   <p className="text-[11px] text-outline font-bold mt-0.5">Priority {entry.priority}</p>
+                                 </div>
+                               </div>
+                             </div>
+                             <h4 className="text-lg font-bold text-on-surface mb-3 leading-tight font-headline tracking-tight">{entry.question}</h4>
+                             <p className="text-outline text-sm line-clamp-2 leading-relaxed font-medium opacity-80">{entry.answer}</p>
+                           </div>
+                         ))}
+                         {filteredEntries.length === 0 && (
+                           <div className="col-span-2 py-32 text-center bg-surface-low/50 rounded-3xl ghost-border border-dashed">
+                             <Database className="size-16 text-outline/10 mx-auto mb-6" />
+                             <p className="text-on-surface font-headline font-bold text-lg mb-2">No Clusters Found</p>
+                             <p className="text-outline text-sm max-w-xs mx-auto">No knowledge shards matching your search parameters were found in the current cluster.</p>
+                           </div>
+                         )}
+                       </>
+                     )}
+                </div>
+            )}
+
+            {/* Preview Pane */}
+            {showPreview && selectedEntry && !['ingest', 'tools'].includes(activeTab) && (
+              <div className="w-96 shrink-0 glass-panel p-10 rounded-3xl ghost-border border-white/5 sticky top-24 h-[calc(100vh-14rem)] overflow-y-auto custom-scrollbar shadow-2xl z-20">
+                <div className="flex items-center justify-between mb-10">
+                  <h3 className="text-2xl font-black text-on-surface tracking-tighter uppercase ls-tight">Shard Data</h3>
+                  <button onClick={() => setShowPreview(false)} className="size-8 rounded-full bg-white/5 flex items-center justify-center text-outline hover:text-on-surface hover:bg-white/10 transition-all"><X className="size-4" /></button>
+                </div>
+                <div className="space-y-10">
+                  <div>
+                    <p className="text-[10px] font-black text-outline uppercase tracking-[0.3em] mb-4">Neural Vector Payload</p>
+                    <div className="p-6 rounded-2xl bg-white/4 text-sm text-on-surface/80 leading-relaxed border-l-4 border-primary shadow-inner font-medium">
+                      {selectedEntry.answer}
+                    </div>
                   </div>
-                  <div className="bg-surface-highest px-2 py-1 rounded text-[10px] font-bold text-outline drop-shadow-sm uppercase">
-                    {activeTab === 'vector' ? (vectorSubTab === 'memory' ? 'Vector Shard' : 'QA Store') : `Priority ${entry.priority}`}
+                  <div>
+                    <p className="text-[10px] font-black text-outline uppercase tracking-[0.3em] mb-4">Attribute Cluster</p>
+                    <div className="space-y-5">
+                      <MetaItem label="Shard Hash" value={selectedEntry.id} mono />
+                      <MetaItem label="Time Scoped" value={new Date((selectedEntry.created_at || 0) * 1000).toLocaleDateString()} />
+                      <MetaItem label="Neural Collection" value={selectedEntry.topic} />
+                      {activeTab === 'vector' && selectedEntry.rawMetadata && (
+                        <div className="pt-6 space-y-4 border-t border-white/10">
+                           <p className="text-[10px] font-black text-primary/60 uppercase tracking-[0.3em]">Raw Vector Attributes</p>
+                           <div className="grid grid-cols-1 gap-2">
+                              {Object.entries(selectedEntry.rawMetadata).map(([k, v]: [string, any]) => (
+                                 <div key={k} className="p-3 bg-black/30 rounded-xl border border-white/5">
+                                    <p className="text-[9px] font-black text-outline uppercase tracking-widest mb-1">{k}</p>
+                                    <p className="text-[10px] font-mono text-primary/80 truncate font-bold">{String(v)}</p>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <h4 className="text-lg font-bold text-on-surface mb-2 leading-tight flex items-center gap-2 font-mono">
-                  {activeTab === 'vector' && <Terminal className="size-4 text-primary/60" />}
-                  {entry.question}
-                </h4>
-                <p className="text-outline text-sm line-clamp-2 mb-4 leading-relaxed font-medium">
-                  {entry.answer}
-                </p>
-                {activeTab === 'vector' && entry.rawMetadata && (
-                   <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-white/5">
-                      {Object.entries(entry.rawMetadata).map(([k, v]: [string, any]) => (
-                        <span key={k} className="text-[9px] bg-surface-highest px-1.5 py-0.5 rounded text-outline/80 border border-white/5">
-                          {k}: {String(v)}
-                        </span>
-                      ))}
-                   </div>
-                )}
-              </div>
-            ))}
-            {!loading && filteredEntries.length === 0 && (
-              <div className="col-span-2 py-20 text-center bg-surface-low rounded-xl ghost-border">
-                <Database className="size-12 text-outline/20 mx-auto mb-4" />
-                <p className="text-outline font-medium">No knowledge entries found matching your criteria.</p>
               </div>
             )}
           </div>
-
-          {/* Preview Pane */}
-          {showPreview && selectedEntry && (
-            <div className="w-96 shrink-0 glass-panel p-8 rounded-xl ghost-border border-white/5 sticky top-24 h-[calc(100vh-14rem)] overflow-y-auto custom-scrollbar">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-bold text-on-surface tracking-tight">Entry Details</h3>
-                <button 
-                  onClick={() => setShowPreview(false)}
-                  className="text-outline hover:text-on-surface"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-              <div className="space-y-8">
-                <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-[0.2em] mb-3">Full Answer Text</p>
-                  <div className="p-4 rounded-xl bg-white/3 text-sm text-on-surface/70 leading-relaxed border-l-2 border-primary">
-                    {selectedEntry.answer}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-[0.2em] mb-4">Metadata Explorer</p>
-                  <div className="space-y-4">
-                    <MetaItem label="Entry ID" value={selectedEntry.id} mono />
-                    <MetaItem label="Created" value={new Date(selectedEntry.created_at * 1000).toLocaleDateString()} />
-                    <MetaItem label="Topic/Collection" value={selectedEntry.topic} />
-                    {selectedEntry.bot_id && (
-                       <MetaItem label="Linked Bot" value={selectedEntry.bot_id} mono />
-                    )}
-                    {activeTab === 'vector' && (
-                      <div className="pt-4 space-y-2 border-t border-white/5">
-                        <p className="text-[10px] font-bold text-primary/60 uppercase tracking-[0.2em]">Raw Attributes</p>
-                        <pre className="text-[10px] font-mono text-outline/80 bg-black/20 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
-                          {JSON.stringify(selectedEntry.rawMetadata || { bot_id: selectedEntry.bot_id }, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="pt-6">
-                  <button 
-                    className="w-full mt-4 py-3 rounded-xl bg-white/5 border border-white/10 text-on-surface text-sm font-bold hover:bg-white/8 transition-all flex items-center justify-center gap-2"
-                  >
-                    <ExternalLink className="size-4" />
-                    View Audit Logs
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* New Entry Modal */}
+      {/* New Q&A Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
-            <div className="absolute inset-0 bg-primary/2 blur-[100px] -z-10 animate-pulse"></div>
-          </div>
-          <div className="bg-surface-low w-full max-w-2xl rounded-3xl ghost-border p-8 relative z-10 shadow-2xl">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-headline font-bold">Create Knowledge Entry</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-outline hover:text-on-surface"><X className="size-6" /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" onClick={() => setIsModalOpen(false)}></div>
+          <div className="bg-surface-low w-full max-w-2xl rounded-[2.5rem] border border-white/10 p-12 relative z-10 shadow-3xl">
+            <div className="flex justify-between items-center mb-10">
+              <h3 className="text-4xl font-headline font-black uppercase tracking-tighter">Forge Entry</h3>
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                className="size-10 rounded-full bg-white/5 flex items-center justify-center text-outline hover:text-on-surface transition-all"
+              >
+                <X className="size-6" />
+              </button>
             </div>
-            <form className="space-y-6" onSubmit={handleAdd}>
+            <form className="space-y-8" onSubmit={handleAdd}>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-outline uppercase tracking-widest">Question / Trigger</label>
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Activation Query</label>
                 <input 
                   type="text" 
-                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 text-on-surface" 
-                  placeholder="e.g. What is your refund policy?" 
+                  className="w-full h-16 px-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-headline font-bold text-lg" 
+                  placeholder="e.g. Identity Disclosure Protocol" 
                   value={formData.question}
                   onChange={e => setFormData(prev => ({ ...prev, question: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-bold text-outline uppercase tracking-widest">Answer / Response</label>
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Neural Output</label>
                 <textarea 
-                  className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none focus:border-primary/50 h-32 text-on-surface" 
-                  placeholder="Provide the detailed answer here..."
+                  className="w-full p-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 h-40 text-on-surface font-medium leading-relaxed" 
+                  placeholder="Input detailed factual response payload..."
                   value={formData.answer}
                   onChange={e => setFormData(prev => ({ ...prev, answer: e.target.value }))}
                 ></textarea>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-outline uppercase tracking-widest">Topic</label>
+                  <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Collection</label>
                   <select 
-                    className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none text-on-surface"
+                    className="w-full h-16 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none text-on-surface font-bold text-sm uppercase tracking-widest cursor-pointer"
                     value={formData.topic}
                     onChange={e => setFormData(prev => ({ ...prev, topic: e.target.value }))}
                   >
                     <option>General</option>
                     <option>Policy</option>
-                    <option>Product</option>
                     <option>Technical</option>
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-outline uppercase tracking-widest">Priority</label>
+                  <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Priority Rank</label>
                   <select 
-                    className="w-full p-4 rounded-xl bg-surface-high ghost-border focus:outline-none text-on-surface"
+                    className="w-full h-16 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none text-on-surface font-bold text-sm uppercase tracking-widest cursor-pointer"
                     value={formData.priority}
                     onChange={e => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
                   >
-                    <option value={1}>1 (High)</option>
-                    <option value={2}>2 (Medium)</option>
-                    <option value={3}>3 (Low)</option>
+                    <option value={1}>Tier 1 (Critical)</option>
+                    <option value={2}>Tier 2 (Standard)</option>
+                    <option value={3}>Tier 3 (Informational)</option>
                   </select>
                 </div>
               </div>
-              <button type="submit" className="w-full py-4 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-xl active:scale-95 transition-all">
-                Save Knowledge Entry
+              <button type="submit" className="w-full h-20 rounded-2xl ember-gradient text-on-primary-fixed font-black uppercase tracking-[0.4em] text-sm shadow-2xl active:scale-95 transition-all mt-4">
+                Commit to Memory
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tool Forge Modal */}
+      {isToolModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" onClick={() => setIsToolModalOpen(false)}></div>
+          <div className="bg-surface-low w-full max-w-2xl rounded-[2.5rem] border border-white/10 p-12 relative z-10 shadow-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-10">
+              <div>
+                <h3 className="text-4xl font-headline font-black uppercase tracking-tighter">Forge Tool</h3>
+                <p className="text-outline text-[11px] font-bold mt-1">Define a new API capability for the bot's intelligence engine.</p>
+              </div>
+              <button onClick={() => setIsToolModalOpen(false)} className="size-10 rounded-full bg-white/5 flex items-center justify-center text-outline hover:text-on-surface transition-all">
+                <X className="size-6" />
+              </button>
+            </div>
+            <form className="space-y-6" onSubmit={handleToolForge}>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Tool Name <span className="text-primary">*</span></label>
+                  <input
+                    type="text" required
+                    placeholder="e.g. get_weather_update"
+                    className="w-full h-14 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-mono font-bold text-sm"
+                    value={toolData.name}
+                    onChange={e => setToolData(p => ({ ...p, name: e.target.value.replace(/\s+/g, '_').toLowerCase() }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">HTTP Method</label>
+                  <select
+                    className="w-full h-14 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none text-on-surface font-black text-sm uppercase tracking-widest cursor-pointer"
+                    value={toolData.method}
+                    onChange={e => setToolData(p => ({ ...p, method: e.target.value }))}
+                  >
+                    {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map(m => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Description <span className="text-primary">*</span></label>
+                <input
+                  type="text" required
+                  placeholder="e.g. Fetch live weather data for a given city."
+                  className="w-full h-14 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-medium text-sm"
+                  value={toolData.description}
+                  onChange={e => setToolData(p => ({ ...p, description: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">API Endpoint URL <span className="text-primary">*</span></label>
+                <input
+                  type="url" required
+                  placeholder="https://api.example.com/weather?city={city}"
+                  className="w-full h-14 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-mono font-bold text-sm"
+                  value={toolData.url}
+                  onChange={e => setToolData(p => ({ ...p, url: e.target.value }))}
+                />
+                <p className="text-[10px] text-outline/60 ml-2">Use {'{'}<span className="text-primary font-mono">param</span>{'}'} placeholders to inject values from bot context.</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Parameters Schema <span className="text-outline/50">(JSON)</span></label>
+                <textarea
+                  rows={3}
+                  className="w-full p-4 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-mono text-sm"
+                  value={toolData.parameters}
+                  onChange={e => setToolData(p => ({ ...p, parameters: e.target.value }))}
+                  placeholder='{"city": "string", "unit": "celsius|fahrenheit"}'
+                />
+                <p className="text-[10px] text-outline/60 ml-2">Define what the LLM must extract to call this tool.</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Request Headers <span className="text-outline/50">(optional JSON)</span></label>
+                <textarea
+                  rows={2}
+                  className="w-full p-4 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-mono text-sm"
+                  value={toolData.headers}
+                  onChange={e => setToolData(p => ({ ...p, headers: e.target.value }))}
+                  placeholder='{"Authorization": "Bearer YOUR_API_KEY"}'
+                />
+              </div>
+              <button type="submit" className="w-full h-16 rounded-2xl ember-gradient text-on-primary-fixed font-black uppercase tracking-[0.4em] text-sm shadow-2xl active:scale-95 transition-all mt-2">
+                ⚙️ Deploy Tool to Intelligence Engine
               </button>
             </form>
           </div>
@@ -452,12 +695,12 @@ export default function KnowledgeBase() {
 
 function FilterChip({ label, active, onClick }: any) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
         "px-5 py-2 rounded-full text-xs font-bold transition-all",
-        active 
-          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]" 
+        active
+          ? "bg-primary text-on-primary-fixed shadow-[0_0_15px_rgba(255,183,123,0.2)]"
           : "bg-surface text-outline hover:bg-surface-high ghost-border"
       )}
     >
@@ -468,9 +711,9 @@ function FilterChip({ label, active, onClick }: any) {
 
 function MetaItem({ label, value, mono }: any) {
   return (
-    <div className="flex justify-between items-center text-xs">
-      <span className="text-outline">{label}</span>
-      <span className={cn("text-on-surface font-medium", mono && "text-primary font-mono font-bold tracking-tight")}>{value}</span>
+    <div className="flex justify-between items-center text-[10px]">
+      <span className="text-outline font-black uppercase tracking-widest">{label}</span>
+      <span className={cn("text-on-surface font-bold", mono && "text-primary font-mono select-all tracking-tighter")}>{value}</span>
     </div>
   );
 }

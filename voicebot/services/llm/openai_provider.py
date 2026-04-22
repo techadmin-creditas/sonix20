@@ -19,9 +19,13 @@ import time
 from typing import Any, AsyncIterator, Optional, List
 from voicebot.shared.models.tools import ToolCall, ToolDefinition, LLMResponse
 
-from voicebot.shared.config import get_settings
+from voicebot.shared.logging.logger import setup_logger
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
-logger = logging.getLogger("llm-openai")
+from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
+
+logger = setup_logger("llm-openai", level="INFO")
 settings = get_settings()
 
 
@@ -46,6 +50,9 @@ class OpenAIStreamingProvider:
         temperature: float = 0.7,
     ):
         self.api_key = api_key or settings.openai_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         self.model = model or settings.openai_model or "gpt-4o"
         self.max_tokens = max_tokens or 1024
         self.provider = "openai"
@@ -55,6 +62,10 @@ class OpenAIStreamingProvider:
     async def _get_client(self):
         """Lazy-initialize the async OpenAI client."""
         if self._client is None:
+            if not is_valid_api_key(self.api_key):
+                logger.error("🚫 OpenAI API Key is invalid or a placeholder: %s", self.api_key)
+                raise AuthError(f"OpenAI API Key is a placeholder or invalid: {self.api_key}")
+                
             from openai import AsyncOpenAI
             self._client = AsyncOpenAI(api_key=self.api_key)
         return self._client
@@ -83,7 +94,37 @@ class OpenAIStreamingProvider:
 
         # Construct the full message list
         full_messages = [{"role": "system", "content": system_prompt}]
-        full_messages.extend(messages)
+        
+        # 🛡️ Message Transformation: Ensure OpenAI compatibility for tool calls in history
+        import json
+        transformed_messages = []
+        for m in messages:
+            new_msg = m.copy()
+            # 1. Format Assistant Tool Calls
+            if new_msg.get("role") == "assistant" and new_msg.get("tool_calls"):
+                legacy_calls = new_msg.pop("tool_calls")
+                new_calls = []
+                for tc in legacy_calls:
+                    # Map from internal flat model to OpenAI structured model
+                    new_calls.append({
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name"),
+                            "arguments": json.dumps(tc.get("arguments")) if isinstance(tc.get("arguments"), dict) else (tc.get("arguments") or "{}")
+                        }
+                    })
+                new_msg["tool_calls"] = new_calls
+            
+            # 2. Ensure Tool Results have correct fields
+            if new_msg.get("role") == "tool":
+                # OpenAI expects 'tool_call_id'
+                if "tool_call_id" not in new_msg and "id" in new_msg:
+                    new_msg["tool_call_id"] = new_msg.pop("id")
+            
+            transformed_messages.append(new_msg)
+
+        full_messages.extend(transformed_messages)
 
         start_time = time.time()
         first_token = True
@@ -170,8 +211,15 @@ class OpenAIStreamingProvider:
                     break
 
         except Exception as e:
-            logger.error("OpenAI streaming error: %s", e, exc_info=True)
-            yield LLMResponse(content="I'm sorry, I encountered an error. Could you repeat that?")
+            err_str = str(e).lower()
+            logger.error("OpenAI streaming error: %s", e)
+            
+            if "401" in err_str or "unauthorized" in err_str:
+                raise AuthError(f"OpenAI API Key invalid or expired: {e}")
+            if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+                raise ServiceExhaustedError("OpenAI rate limit reached or quota exhausted.")
+                
+            raise VoiceBotError(f"OpenAI reported an error: {str(e)[:100]}")
 
     async def complete(
         self,

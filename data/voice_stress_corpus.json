@@ -1,0 +1,36 @@
+{
+  "test_categories": [
+    {
+      "category": "Currency & Numbers",
+      "items": [
+        "Aapka outstanding balance pachas hazar do sau bees rupaye hai.",
+        "The EMI amount is exactly seventy-five thousand four hundred.",
+        "Total dues: 1,50,000 (Ek lakh pachas hazar)."
+      ]
+    },
+    {
+      "category": "Mixed Language (Hinglish)",
+      "items": [
+        "Hello, main Creditas se baat kar raha hoon aapka loan disbursement process complete ho gaya hai.",
+        "Kya aap apna interest rate check karna chahenge app par?",
+        "Please confirm your identity. Kya main aapka birth date jaan sakta hoon?"
+      ]
+    },
+    {
+      "category": "Technical Terms",
+      "items": [
+        "Server down hone ki wajah se request process nahi ho payi.",
+        "Authorization code aapke registered mobile number par bhej diya gaya hai.",
+        "Auto-debit setup karne ke liye process follow karein."
+      ]
+    },
+    {
+      "category": "Emotional / Urgent",
+      "items": [
+        "Sir, please listen carefully. Yeh bohot important call hai.",
+        "Nahi, main abhi payment nahi kar sakta, please help me with an extension.",
+        "Main aapki majboori samajhta hoon, let's find a solution together."
+      ]
+    }
+  ]
+}

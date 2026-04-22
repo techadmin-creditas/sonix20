@@ -19,7 +19,7 @@ import httpx
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
 
-async def talk_to_bot(host: str, port: int, input_device: int = None, debug: bool = False):
+async def talk_to_bot(host: str, port: int, input_device: int = None, debug: bool = False, stt_mode: str = None):
     import math
     import struct
     base_url = f"http://{host}:{port}"
@@ -50,7 +50,11 @@ async def talk_to_bot(host: str, port: int, input_device: int = None, debug: boo
     print("Agent is listening... (Speak into your microphone)\n")
 
     try:
-        async with websockets.connect(f"{ws_url}{ws_path}") as ws:
+        final_ws_url = f"{ws_url}{ws_path}"
+        if stt_mode:
+            final_ws_url += f"{'&' if '?' in final_ws_url else '?'}stt_mode={stt_mode}"
+            
+        async with websockets.connect(final_ws_url) as ws:
             
             # --- AUDIO SETUP ---
             p = pyaudio.PyAudio()
@@ -127,6 +131,13 @@ async def talk_to_bot(host: str, port: int, input_device: int = None, debug: boo
                         else:
                             sys.stdout.write(f"\r\033[94m[BOT]\033[0m {text}...")
                         sys.stdout.flush()
+                    elif data.get("type") == "audio_interrupt":
+                        # CRITICAL: Stop the local speaker immediately on interruption
+                        # to match server-side state.
+                        audio_out.stop_stream()
+                        audio_out.start_stream() # Re-start so it can take new chunks
+                        sys.stdout.write("\n\033[91m[STOPPED]\033[0m interruption detected\n")
+                        sys.stdout.flush()
 
             # Start tasks
             streamer = asyncio.create_task(audio_stream_task())
@@ -150,6 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--input-device", type=int, default=None, help="Input device index")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
+    parser.add_argument("--hinglish", action="store_true", help="Enable Hinglish (Romanized Hindi) output")
     args = parser.parse_args()
 
     if args.debug:
@@ -157,6 +169,12 @@ if __name__ == "__main__":
         print("\033[93m[DEBUG] Debug mode enabled.\033[0m")
 
     try:
-        asyncio.run(talk_to_bot(args.host, args.port, input_device=args.input_device, debug=args.debug))
+        asyncio.run(talk_to_bot(
+            args.host, 
+            args.port, 
+            input_device=args.input_device, 
+            debug=args.debug,
+            stt_mode="hinglish" if args.hinglish else None
+        ))
     except KeyboardInterrupt:
         pass

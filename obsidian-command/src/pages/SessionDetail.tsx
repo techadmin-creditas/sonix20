@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { api, SessionRecord, UserFact, SessionFeedback } from '../lib/api';
+import { api, UserFact } from '../lib/api';
 import { cn } from '../lib/utils';
-import { 
-  ArrowLeft, Play, Pause, Download, Share2, 
+import { getDispositionMeta } from '../lib/sessionDisposition';
+import {
+  ArrowLeft, Play, Pause, Download,
   MessageSquare, BarChart3, FileText, Lightbulb,
   Clock, Timer, Zap, ShieldCheck, Cpu,
-  User, Bot, Calendar, Smile, Loader2, Tags,
-  Star, CheckCircle2
+  User, Bot, Calendar, Smile, Loader2, Tags, Languages, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -18,115 +18,396 @@ const SENTIMENT_COLOR: Record<string, string> = {
   negative: 'bg-red-400',
 };
 
+/** Stored when no LLM summary exists yet — triggers bind to bot LLM via POST /summarize */
+const SUMMARY_PLACEHOLDERS = new Set([
+  'No summary generated for this session.',
+  'No meaningful conversation occurred.',
+]);
+
+const SUPPORTED_LANGUAGES = [
+  { code: 'hi', name: 'Hindi' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'bn', name: 'Bengali' },
+];
+
+function needsGeneratedSummary(summary: string | undefined): boolean {
+  const t = (summary ?? '').trim();
+  return !t || SUMMARY_PLACEHOLDERS.has(t);
+}
+
+function normalizeInsights(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (x): x is string => typeof x === 'string' && x.trim().length > 0
+  );
+}
+
+function formatPlaybackTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function toEpochSeconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  // Backend can emit epoch in either seconds or milliseconds.
+  return value > 1_000_000_000_000 ? value / 1000 : value;
+}
+
+function getActiveTranscriptIndex(
+  transcript: Array<{ atSec?: number }>,
+  playbackAbsoluteSec: number,
+): number {
+  if (!transcript.length || !Number.isFinite(playbackAbsoluteSec)) return -1;
+  for (let i = 0; i < transcript.length; i += 1) {
+    const curr = transcript[i]?.atSec;
+    const next = transcript[i + 1]?.atSec;
+    if (!Number.isFinite(curr as number)) continue;
+    if (!Number.isFinite(next as number)) {
+      if (playbackAbsoluteSec >= (curr as number)) return i;
+      continue;
+    }
+    if (playbackAbsoluteSec >= (curr as number) && playbackAbsoluteSec < (next as number)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function getActiveTranscriptIndexByPlayback(
+  transcript: Array<{ atSec?: number }>,
+  playbackCurrentSec: number,
+  playbackDurationSec: number,
+): number {
+  if (!transcript.length) return -1;
+  const timed = transcript
+    .map((t, i) => ({ i, atSec: t.atSec }))
+    .filter((t): t is { i: number; atSec: number } => typeof t.atSec === 'number' && Number.isFinite(t.atSec));
+
+  if (!timed.length) return -1;
+  if (timed.length === 1 || playbackDurationSec <= 0) return timed[0].i;
+
+  const first = timed[0].atSec;
+  const last = timed[timed.length - 1].atSec;
+  const span = Math.max(1e-6, last - first);
+
+  const markers = timed.map((t) => ({
+    i: t.i,
+    atPlaybackSec: ((t.atSec - first) / span) * playbackDurationSec,
+  }));
+
+  for (let k = 0; k < markers.length; k += 1) {
+    const curr = markers[k].atPlaybackSec;
+    const next = markers[k + 1]?.atPlaybackSec;
+    if (next == null) {
+      if (playbackCurrentSec >= curr) return markers[k].i;
+      continue;
+    }
+    if (playbackCurrentSec >= curr && playbackCurrentSec < next) {
+      return markers[k].i;
+    }
+  }
+
+  return markers[0].i;
+}
+
+/** UI label for user_facts.category (hides internal session_extracted.* prefix). */
+function formatEntityCategory(category: string | undefined): string {
+  if (!category) return '';
+  if (category.startsWith('session_extracted.')) {
+    return category.slice('session_extracted.'.length);
+  }
+  return category;
+}
+
+type LatencyMetrics = {
+  sttLatency: number | null;
+  llmLatency: number | null;
+  ttsLatency: number | null;
+  totalRtt: number | null;
+  metricsSampleCount: number;
+};
+
+/** Maps API session metadata (including tool_logs aggregates from GET /sessions/:id) to UI metrics. */
+function buildLatencyMetrics(meta: Record<string, unknown>): LatencyMetrics {
+  const countRaw = meta.metrics_turn_count;
+  const count = typeof countRaw === 'number' ? countRaw : null;
+
+  if (count === 0) {
+    return {
+      sttLatency: null,
+      llmLatency: null,
+      ttsLatency: null,
+      totalRtt: null,
+      metricsSampleCount: 0,
+    };
+  }
+
+  const pick = (avgKey: string, legacyKey: string): number | null => {
+    const v = (meta[avgKey] ?? meta[legacyKey]) as unknown;
+    if (v == null || v === '') return null;
+    return Math.round(Number(v));
+  };
+
+  if (count !== null && count > 0) {
+    return {
+      sttLatency: pick('avg_stt_ms', 'stt_ms'),
+      llmLatency: pick('avg_llm_ms', 'llm_ms'),
+      ttsLatency: pick('avg_tts_ms', 'tts_ms'),
+      totalRtt: pick('avg_total_ms', 'total_ms'),
+      metricsSampleCount: count,
+    };
+  }
+
+  const stt = pick('avg_stt_ms', 'stt_ms');
+  const llm = pick('avg_llm_ms', 'llm_ms');
+  const tts = pick('avg_tts_ms', 'tts_ms');
+  const total = pick('avg_total_ms', 'total_ms');
+  const any = [stt, llm, tts, total].some((x) => x != null);
+  if (!any) {
+    return {
+      sttLatency: null,
+      llmLatency: null,
+      ttsLatency: null,
+      totalRtt: null,
+      metricsSampleCount: 0,
+    };
+  }
+  return {
+    sttLatency: stt,
+    llmLatency: llm,
+    ttsLatency: tts,
+    totalRtt: total,
+    metricsSampleCount: 0,
+  };
+}
+
+const DISPOSITION_TONE_CLASS: Record<string, string> = {
+  success: 'text-emerald-500',
+  warning: 'text-amber-500',
+  danger: 'text-red-500',
+  neutral: 'text-outline',
+};
+
 export default function SessionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [facts, setFacts] = useState<UserFact[]>([]);
-  const [existingFeedback, setExistingFeedback] = useState<SessionFeedback | null>(null);
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [feedbackSaving, setFeedbackSaving] = useState(false);
-  const [feedbackData, setFeedbackData] = useState<SessionFeedback>({
-    outcome: 'resolved',
-    csat_score: 5,
-    notes: '',
-  });
-  
+
   const [isPlaying, setIsPlaying] = useState(false);
+  const [recordingUnavailable, setRecordingUnavailable] = useState(false);
+  const [playbackCurrentSec, setPlaybackCurrentSec] = useState(0);
+  const [playbackDurationSec, setPlaybackDurationSec] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'insights' | 'stats' | 'entities'>('transcript');
+  const [sessionAnalysisBinding, setSessionAnalysisBinding] = useState(false);
+  const [targetLanguage, setTargetLanguage] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [originalTranscript, setOriginalTranscript] = useState<any[]>([]);
+  const [translationCache, setTranslationCache] = useState<Record<string, any[]>>({});
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const routeSessionIdRef = useRef<string | undefined>(undefined);
+  routeSessionIdRef.current = id;
 
   useEffect(() => {
-    async function loadData() {
-      if (!id) return;
-      try {
-        const [details, transcript, factsData] = await Promise.all([
-          api.getSessionDetails(id),
-          api.getSessionTranscript(id),
-          api.getSessionFacts(id).catch(() => [] as UserFact[]),
-        ]);
+    let cancelled = false;
+    const routeId = id;
+    if (!routeId) return;
 
-        // Try to get stored feedback without breaking on 404
-        const feedbackRes = await api.getSessionFacts(id).catch(() => null);
-        try {
-          const fbRaw = await fetch(`/api/v1/sessions/${id}/feedback`);
-          if (fbRaw.ok) {
-            const fbJson = await fbRaw.json();
-            if (fbJson.feedback) {
-              setExistingFeedback(fbJson.feedback);
-              setFeedbackSubmitted(true);
-            }
-          }
-        } catch { /* ignore */ }
+    setLoading(true);
+    setSession(null);
+    setIsPlaying(false);
+    setPlaybackCurrentSec(0);
+    setPlaybackDurationSec(0);
+    setTranslationCache({});
+
+    async function loadData() {
+      let details: Awaited<ReturnType<typeof api.getSessionDetails>> | null = null;
+      try {
+        const [d, transcript, factsData] = await Promise.all([
+          api.getSessionDetails(routeId),
+          api.getSessionTranscript(routeId),
+          api.getSessionFacts(routeId).catch(() => [] as UserFact[]),
+        ]);
+        if (
+          cancelled ||
+          routeSessionIdRef.current !== routeId ||
+          d.id !== routeId
+        ) {
+          return;
+        }
+        details = d;
 
         setFacts(factsData);
 
-        // Parse latency from session metadata (populated by log_turn_metrics)
         const meta = details.metadata || {};
-        const sttLatency = Math.round(meta.avg_stt_ms ?? meta.stt_ms ?? 0);
-        const llmLatency = Math.round(meta.avg_llm_ms ?? meta.llm_ms ?? 0);
-        const ttsLatency = Math.round(meta.avg_tts_ms ?? meta.tts_ms ?? 0);
-        const totalRtt   = Math.round(meta.avg_total_ms ?? meta.total_ms ?? 0);
-
+        const metrics = buildLatencyMetrics(meta);
         const sentimentScore = meta.sentiment_score ?? null;
 
-        const stData = {
-           id: details.id,
-           user_id: details.user_id,
-           bot: details.bot_name || 'System',
-           date: new Date(details.started_at * 1000).toLocaleDateString(),
-           time: new Date(details.started_at * 1000).toLocaleTimeString(),
-           duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
-           transcript: transcript.map((msg: any) => ({
-             role: msg.role === 'assistant' ? 'bot' : msg.role,
-             content: msg.content,
-             timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-             sentiment: (msg.metadata as any)?.sentiment as string | undefined,
-           })),
-           summary: meta.summary || 'No summary generated for this session.',
-           intent: meta.intent || 'Unknown Intent',
-           insights: [],
-           turns: details.turn_count || 0,
-           sentimentScore,
-           metrics: { sttLatency, llmLatency, ttsLatency, totalRtt }
+        setRecordingUnavailable(false);
+        const processedTranscript = transcript.map((msg: any) => {
+          const atSec = toEpochSeconds(msg.timestamp);
+          return ({
+            role: msg.role === 'assistant' ? 'bot' : msg.role,
+            content: msg.content,
+            atSec,
+            timestamp: new Date((atSec ?? 0) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            sentiment: (msg.metadata as any)?.sentiment as string | undefined,
+          });
+        });
+
+        const sessionObj = {
+          id: details.id,
+          user_id: details.user_id,
+          startedAtSec: toEpochSeconds(details.started_at),
+          bot: details.bot_name || 'System',
+          date: new Date(details.started_at * 1000).toLocaleDateString(),
+          time: new Date(details.started_at * 1000).toLocaleTimeString(),
+          duration: details.ended_at ? `${Math.round(details.ended_at - details.started_at)}s` : 'Active',
+          transcript: processedTranscript,
+          summary: meta.summary || 'No summary generated for this session.',
+          intent: meta.intent || 'Unknown Intent',
+          insights: normalizeInsights(meta.insights),
+          disposition: meta.disposition || 'unknown',
+          recordingUrl: (meta.recording_url as string | undefined) || undefined,
+          turns: details.turn_count || 0,
+          sentimentScore,
+          metrics,
         };
-        setSession(stData);
+
+        setOriginalTranscript(processedTranscript);
+        setSession(sessionObj);
       } catch (e) {
         console.error("Failed to load session details", e);
+        details = null;
+        if (routeSessionIdRef.current === routeId) {
+          setSession(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled && routeSessionIdRef.current === routeId) {
+          setLoading(false);
+        }
+      }
+
+      if (cancelled || !details || routeSessionIdRef.current !== routeId) return;
+
+      const metaAfter = details.metadata || {};
+      const hasLlmAnalysis = typeof metaAfter.llm_analysis_at === 'number';
+      const needSummary = needsGeneratedSummary(metaAfter.summary as string | undefined);
+      const nlpVersion =
+        typeof metaAfter.session_nlp_version === 'number'
+          ? metaAfter.session_nlp_version
+          : 0;
+      const shouldRunSessionNlp =
+        (details.turn_count || 0) > 1 &&
+        (!hasLlmAnalysis || needSummary || nlpVersion < 2);
+
+      if (shouldRunSessionNlp) {
+        setSessionAnalysisBinding(true);
+        try {
+          const out = await api.summarizeSession(routeId);
+          if (
+            !cancelled &&
+            routeSessionIdRef.current === routeId
+          ) {
+            setSession((prev) =>
+              prev && prev.id === routeId
+                ? {
+                  ...prev,
+                  summary: out.summary,
+                  intent: out.intent || prev.intent,
+                  insights: normalizeInsights(out.insights),
+                }
+                : prev
+            );
+            try {
+              const refreshedFacts = await api.getSessionFacts(routeId);
+              if (!cancelled && routeSessionIdRef.current === routeId) {
+                setFacts(refreshedFacts);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch (e) {
+          console.error('Failed to generate session analysis with bot LLM', e);
+        } finally {
+          if (!cancelled && routeSessionIdRef.current === routeId) {
+            setSessionAnalysisBinding(false);
+          }
+        }
       }
     }
-    loadData();
+    void loadData();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
-  const handleSubmitFeedback = async () => {
-    if (!id) return;
-    setFeedbackSaving(true);
-    try {
-      await api.submitFeedback(id, feedbackData);
-      setFeedbackSubmitted(true);
-      setExistingFeedback(feedbackData);
-    } catch (e) {
-      console.error('Failed to submit feedback', e);
-    } finally {
-      setFeedbackSaving(false);
-    }
-  };
+  // Live refresh Latency & Performance while the session is still active and the stats tab is open.
+  useEffect(() => {
+    if (!id || activeTab !== 'stats') return;
+    const isActive = session?.duration === 'Active';
+    if (!isActive) return;
+
+    const tick = async () => {
+      try {
+        const details = await api.getSessionDetails(id);
+        const meta = details.metadata || {};
+        const metrics = buildLatencyMetrics(meta);
+        setSession((prev: Record<string, unknown> | null) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            duration: details.ended_at
+              ? `${Math.round(details.ended_at - details.started_at)}s`
+              : 'Active',
+            turns: details.turn_count ?? (prev.turns as number),
+            metrics,
+            sentimentScore: meta.sentiment_score ?? (prev.sentimentScore as number | null),
+          };
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const t = window.setInterval(tick, 4000);
+    void tick();
+    return () => window.clearInterval(t);
+  }, [id, activeTab, session?.duration]);
 
   const togglePlayback = () => {
+    if (!session?.recordingUrl) return;
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        void audioRef.current.play().catch(() => {
+          setIsPlaying(false);
+        });
       }
       setIsPlaying(!isPlaying);
     }
   };
 
   const handleExport = () => {
+    if (session?.recordingUrl) {
+      const a = document.createElement('a');
+      a.href = session.recordingUrl;
+      a.download = `session-${session.id}-recording.wav`;
+      a.click();
+      return;
+    }
     const data = JSON.stringify(session, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -134,11 +415,7 @@ export default function SessionDetail() {
     a.href = url;
     a.download = `session-${session.id}-log.json`;
     a.click();
-  };
-
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert('Session link copied to clipboard!');
+    URL.revokeObjectURL(url);
   };
 
   const handleEscalate = () => {
@@ -147,9 +424,85 @@ export default function SessionDetail() {
     }
   };
 
+  const handleTranslate = async (langName: string) => {
+    if (!langName) {
+      setTargetLanguage('');
+      setSession((prev: any) => ({ ...prev, transcript: originalTranscript }));
+      return;
+    }
+
+    if (!id) return;
+
+    // Abort existing if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const cached = translationCache[langName];
+    if (cached) {
+      setTargetLanguage(langName);
+      setSession((prev: any) => ({ ...prev, transcript: cached }));
+      return;
+    }
+
+    setTargetLanguage(langName);
+    setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const translatedRaw = await api.translateSession(id, langName, controller.signal);
+      let translatedTexts: string[] = [];
+
+      try {
+        const cleanJson = translatedRaw.replace(/```json|```/g, '').trim();
+        translatedTexts = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.error("Translation JSON parse failed", parseErr, translatedRaw);
+        translatedTexts = translatedRaw.split('\n').filter(l => l.trim()).map(l => l.replace(/^[-\*\s]+/, '').trim());
+      }
+
+      if (Array.isArray(translatedTexts)) {
+        let translatedIdx = 0;
+        const newTranscript = session.transcript.map((msg: any) => {
+          const checkRole = msg.role === 'bot' ? 'assistant' : msg.role;
+          if (['user', 'assistant', 'bot'].includes(checkRole) && translatedIdx < translatedTexts.length) {
+            const newContent = translatedTexts[translatedIdx];
+            translatedIdx++;
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+        setTranslationCache(prev => ({ ...prev, [langName]: newTranscript }));
+        setSession((prev: any) => ({ ...prev, transcript: newTranscript }));
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
+      console.error(e);
+      alert('Translation failed.');
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsTranslating(false);
+      setTargetLanguage('');
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col ">
         <Header title="Loading Session..." subtitle="Please wait" />
         <div className="flex items-center justify-center p-20 flex-col gap-4">
           <Loader2 className="size-8 text-primary animate-spin" />
@@ -161,28 +514,70 @@ export default function SessionDetail() {
 
   if (!session) {
     return (
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col ">
         <Header title="404" subtitle="Session not found" />
         <div className="p-8">Session not found.</div>
       </div>
     );
   }
 
+  const dispositionMeta = getDispositionMeta(session.disposition);
+  const dispositionToneClass = DISPOSITION_TONE_CLASS[dispositionMeta.statusTone];
+  const timedTurns = ((session?.transcript || []) as Array<{ atSec?: number }>)
+    .map((t) => t.atSec)
+    .filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
+  const firstTurnSec = timedTurns.length ? timedTurns[0] : undefined;
+  const lastTurnSec = timedTurns.length ? timedTurns[timedTurns.length - 1] : undefined;
+
+  let playbackAbsoluteSec =
+    typeof session?.startedAtSec === 'number'
+      ? session.startedAtSec + playbackCurrentSec
+      : NaN;
+
+  // Fallback for sessions where absolute alignment drifts (or missing start time):
+  // map current playback position proportionally across transcript time range.
+  if (
+    Number.isFinite(firstTurnSec) &&
+    Number.isFinite(lastTurnSec) &&
+    playbackDurationSec > 0 &&
+    (
+      !Number.isFinite(playbackAbsoluteSec) ||
+      playbackAbsoluteSec < (firstTurnSec as number) - 2 ||
+      playbackAbsoluteSec > (lastTurnSec as number) + 2
+    )
+  ) {
+    const progress = Math.min(1, Math.max(0, playbackCurrentSec / playbackDurationSec));
+    playbackAbsoluteSec = (firstTurnSec as number) + progress * ((lastTurnSec as number) - (firstTurnSec as number));
+  }
+  const absoluteMappedIndex = getActiveTranscriptIndex(
+    (session?.transcript || []) as Array<{ atSec?: number }>,
+    playbackAbsoluteSec,
+  );
+  const playbackMappedIndex = getActiveTranscriptIndexByPlayback(
+    (session?.transcript || []) as Array<{ atSec?: number }>,
+    playbackCurrentSec,
+    playbackDurationSec,
+  );
+  const activeTranscriptIndex =
+    playbackMappedIndex >= 0 ? playbackMappedIndex : absoluteMappedIndex;
+  const recordingDurationLabel =
+    playbackDurationSec > 0 ? formatPlaybackTime(playbackDurationSec) : session.duration;
+
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
-      <Header 
-        title={`Session ${session.id}`} 
+    <div className="flex-1 flex flex-col ">
+      <Header
+        title={`Session ${session.id}`}
         subtitle={`Conversation with ${session.bot}`}
         actions={
           <div className="flex gap-3">
-            <button 
+            <button
               onClick={() => navigate('/sessions')}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface-low ghost-border text-xs font-bold hover:bg-surface-high transition-all"
             >
               <ArrowLeft className="size-4" />
               Back to List
             </button>
-            <button 
+            <button
               onClick={handleExport}
               className="flex items-center gap-2 px-4 py-2 rounded-xl ember-gradient text-on-primary-fixed text-xs font-bold shadow-lg active:scale-95 transition-all"
             >
@@ -206,17 +601,11 @@ export default function SessionDetail() {
                 </div>
                 <div>
                   <h4 className="font-headline font-bold text-lg">Session Recording</h4>
-                  <p className="text-outline text-sm">Recorded on {session.date} · {session.duration}</p>
+                  <p className="text-outline text-sm">Recorded on {session.date} · {recordingDurationLabel}</p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button 
-                  onClick={handleShare}
-                  className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
-                >
-                  <Share2 className="size-5" />
-                </button>
-                <button 
+                <button
                   onClick={handleExport}
                   className="p-2 rounded-xl bg-surface-highest text-outline hover:text-primary transition-colors"
                 >
@@ -226,23 +615,63 @@ export default function SessionDetail() {
             </div>
 
             <div className="relative z-10 flex items-center gap-6 bg-surface-high/50 p-6 rounded-2xl">
-              <button 
+              <button
                 onClick={togglePlayback}
-                className="size-14 rounded-full ember-gradient flex items-center justify-center text-on-primary-fixed shadow-xl shadow-primary/20 active:scale-95 transition-all"
+                disabled={!session.recordingUrl}
+                className={cn(
+                  "size-14 rounded-full ember-gradient flex items-center justify-center text-on-primary-fixed shadow-xl shadow-primary/20 active:scale-95 transition-all",
+                  !session.recordingUrl && "opacity-50 cursor-not-allowed"
+                )}
               >
                 {isPlaying ? <Pause className="size-6" /> : <Play className="size-6 fill-current" />}
               </button>
               <div className="flex-1 flex flex-col gap-2">
-                <div className="h-1.5 bg-surface-highest rounded-full overflow-hidden relative">
-                  <div className="absolute inset-0 bg-primary/20 animate-pulse"></div>
-                  <div className="h-full bg-primary w-1/3 relative z-10"></div>
-                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(playbackDurationSec, 0)}
+                  step={0.1}
+                  value={Math.min(playbackCurrentSec, playbackDurationSec || 0)}
+                  onChange={(e) => {
+                    const nextSec = Number(e.target.value);
+                    if (!audioRef.current || !Number.isFinite(nextSec)) return;
+                    audioRef.current.currentTime = nextSec;
+                    setPlaybackCurrentSec(nextSec);
+                  }}
+                  disabled={!session.recordingUrl || playbackDurationSec <= 0}
+                  className="w-full accent-primary cursor-pointer disabled:cursor-not-allowed"
+                  aria-label="Seek recording"
+                />
                 <div className="flex justify-between text-[10px] font-bold text-outline uppercase tracking-widest">
-                  <span>01:22</span>
-                  <span>{session.duration}</span>
+                  <span>{formatPlaybackTime(playbackCurrentSec)}</span>
+                  <span>{formatPlaybackTime(playbackDurationSec)}</span>
                 </div>
+                {(recordingUnavailable || !session.recordingUrl) && (
+                  <span className="text-[10px] text-outline">Recording unavailable for this session.</span>
+                )}
               </div>
-              <audio ref={audioRef} src={session.recordingUrl} onEnded={() => setIsPlaying(false)} />
+              <audio
+                ref={audioRef}
+                src={session.recordingUrl}
+                preload="none"
+                onLoadedMetadata={(e) => {
+                  const dur = e.currentTarget.duration;
+                  setPlaybackDurationSec(Number.isFinite(dur) ? dur : 0);
+                }}
+                onTimeUpdate={(e) => {
+                  setPlaybackCurrentSec(e.currentTarget.currentTime || 0);
+                }}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => {
+                  setIsPlaying(false);
+                  setPlaybackCurrentSec(playbackDurationSec || 0);
+                }}
+                onError={() => {
+                  setIsPlaying(false);
+                  setRecordingUnavailable(true);
+                }}
+              />
             </div>
           </div>
 
@@ -260,8 +689,8 @@ export default function SessionDetail() {
                 onClick={() => setActiveTab(tab.id as any)}
                 className={cn(
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all",
-                  activeTab === tab.id 
-                    ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20" 
+                  activeTab === tab.id
+                    ? "bg-primary text-on-primary-fixed shadow-lg shadow-primary/20"
                     : "text-outline hover:bg-surface-highest"
                 )}
               >
@@ -280,40 +709,78 @@ export default function SessionDetail() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="p-8 flex flex-col gap-8"
+                  className="flex flex-col h-[calc(100vh-250px)]"
                 >
-                  {session.transcript.map((msg: any, i: number) => (
-                    <div key={i} className={cn(
-                      "flex gap-4 max-w-[80%]",
-                      msg.role === 'bot' ? "self-start" : "self-end flex-row-reverse"
-                    )}>
-                      <div className={cn(
-                        "size-10 rounded-xl flex items-center justify-center shrink-0",
-                        msg.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-highest text-outline"
-                      )}>
-                        {msg.role === 'bot' ? <Bot className="size-5" /> : <User className="size-5" />}
+                  <div className="sticky top-0 z-10 bg-surface-low p-5">
+                    <div className="flex items-center justify-between bg-surface-high/50 p-4 rounded-2xl ghost-border">
+                      <div className="flex items-center gap-2">
+                        {isTranslating ? (
+                          <Loader2 className="size-4 text-primary animate-spin" />
+                        ) : (
+                          <Languages className="size-4 text-primary" />
+                        )}
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">Transcript Translation</span>
                       </div>
-                      <div className="flex flex-col gap-1.5">
-                        <div className={cn(
-                          "p-4 rounded-2xl text-sm leading-relaxed",
-                          msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium"
-                        )}>
-                          {msg.content}
-                        </div>
-                        <div className={cn("flex items-center gap-2 px-1", msg.role === 'user' && "flex-row-reverse")}>
-                          <span className="text-[10px] font-bold text-outline uppercase tracking-widest">
-                            {msg.timestamp}
-                          </span>
-                          {msg.sentiment && (
-                            <div
-                              className={cn("size-1.5 rounded-full", SENTIMENT_COLOR[msg.sentiment] ?? 'bg-outline')}
-                              title={`Sentiment: ${msg.sentiment}`}
-                            />
-                          )}
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <select
+                          value={targetLanguage}
+                          onChange={(e) => handleTranslate(e.target.value)}
+                          disabled={isTranslating}
+                          className="bg-surface-low border-none text-[10px] font-bold py-1 px-3 rounded-lg outline-none focus:ring-1 focus:ring-primary transition-all cursor-pointer"
+                        >
+                          <option value="">Original Language</option>
+                          {SUPPORTED_LANGUAGES.map(l => (
+                            <option key={l.code} value={l.name}>{l.name}</option>
+                          ))}
+                        </select>
+                        {isTranslating && (
+                          <button
+                            onClick={cancelTranslate}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                          >
+                            <X className="size-3" />
+                            Cancel
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-8 custom-scrollbar pt-4">
+                    {session.transcript.map((msg: any, i: number) => (
+                      <div key={i} className={cn(
+                        "flex gap-4 max-w-[98%]",
+                        msg.role === 'bot' ? "self-start" : "self-end flex-row-reverse"
+                      )}>
+                        <div className={cn(
+                          "size-10 rounded-xl flex items-center justify-center shrink-0",
+                          msg.role === 'bot' ? "bg-primary/10 text-primary" : "bg-surface-highest text-outline"
+                        )}>
+                          {msg.role === 'bot' ? <Bot className="size-5" /> : <User className="size-5" />}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className={cn(
+                            "p-4 rounded-2xl text-sm leading-relaxed transition-all",
+                            msg.role === 'bot' ? "bg-surface-high border border-outline-variant/10" : "bg-primary text-on-primary-fixed font-medium",
+                            i === activeTranscriptIndex && "ring-2 ring-primary/70 shadow-lg shadow-primary/15"
+                          )}>
+                            {msg.content}
+                          </div>
+                          <div className={cn("flex items-center gap-2 px-1", msg.role === 'user' && "flex-row-reverse")}>
+                            <span className="text-[10px] font-bold text-outline uppercase tracking-widest">
+                              {msg.timestamp}
+                            </span>
+                            {msg.sentiment && (
+                              <div
+                                className={cn("size-1.5 rounded-full", SENTIMENT_COLOR[msg.sentiment] ?? 'bg-outline')}
+                                title={`Sentiment: ${msg.sentiment}`}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </motion.div>
               )}
 
@@ -325,22 +792,39 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <FileText className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Conversation Summary</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <FileText className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Conversation Summary</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Summary and intent are produced with the same LLM provider and model configured for &quot;{session.bot}&quot;.
+                    </p>
                   </div>
                   <div className="p-8 rounded-2xl bg-surface-high/50 border border-outline-variant/10 text-on-surface-variant leading-loose text-lg font-medium italic">
                     "{session.summary}"
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div className="p-6 rounded-2xl bg-surface-low ghost-border">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Primary Intent</p>
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Topic (Intent)</p>
                       <p className="text-lg font-bold text-primary">{session.intent}</p>
                     </div>
                     <div className="p-6 rounded-2xl bg-surface-low ghost-border">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Resolution Status</p>
-                      <p className="text-lg font-bold text-emerald-500">Completed</p>
+                      <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Session Outcome</p>
+                      <p className={cn("text-lg font-bold", dispositionToneClass)}>{dispositionMeta.label}</p>
+                      <p className="text-xs text-on-surface-variant mt-1">{dispositionMeta.description}</p>
                     </div>
+                  </div>
+                  <div className="p-6 rounded-2xl bg-surface-low ghost-border">
+                    <p className="text-[10px] font-bold text-outline uppercase tracking-widest mb-3">Suggested Next Steps</p>
+                    <ul className="list-disc pl-5 space-y-1.5 text-sm text-on-surface-variant">
+                      {dispositionMeta.nextSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
                   </div>
                 </motion.div>
               )}
@@ -353,20 +837,39 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <Lightbulb className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">AI-Generated Insights</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <Lightbulb className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">AI-Generated Insights</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Generated with the same LLM as &quot;{session.bot}&quot; (one pass after summary and intent).
+                    </p>
                   </div>
-                  <div className="flex flex-col gap-4">
-                    {session.insights.map((insight, i) => (
-                      <div key={i} className="flex gap-4 p-6 rounded-2xl bg-surface-high/50 border border-outline-variant/10 group hover:border-primary/30 transition-all">
-                        <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0 group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
-                          <Zap className="size-5" />
+                  {session.insights.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 opacity-40">
+                      <Lightbulb className="size-10 text-outline mb-4" />
+                      <p className="text-sm font-medium text-center max-w-sm">
+                        {sessionAnalysisBinding
+                          ? 'Generating insights…'
+                          : 'No insights yet. Open a session with at least two transcript turns.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {session.insights.map((insight: string, i: number) => (
+                        <div key={i} className="flex gap-4 p-6 rounded-2xl bg-surface-high/50 border border-outline-variant/10 group hover:border-primary/30 transition-all">
+                          <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0 group-hover:bg-primary group-hover:text-on-primary-fixed transition-colors">
+                            <Zap className="size-5" />
+                          </div>
+                          <p className="text-on-surface-variant font-medium leading-relaxed">{insight}</p>
                         </div>
-                        <p className="text-on-surface-variant font-medium leading-relaxed">{insight}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -378,14 +881,26 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-6"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <Tags className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Extracted Entities</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <Tags className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Extracted Entities</h4>
+                      {sessionAnalysisBinding && (
+                        <Loader2 className="size-5 text-primary animate-spin ml-1" aria-hidden />
+                      )}
+                    </div>
+                    <p className="text-outline text-xs font-medium max-w-xl">
+                      Includes facts from the live <code className="text-primary/80">remember_user_fact</code> tool plus entities inferred from the transcript with the same LLM as &quot;{session.bot}&quot; (saved when you open this page or after a call ends).
+                    </p>
                   </div>
                   {facts.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 opacity-40">
                       <Tags className="size-10 text-outline mb-4" />
-                      <p className="text-sm font-medium">No entities extracted for this session.</p>
+                      <p className="text-sm font-medium text-center max-w-sm">
+                        {sessionAnalysisBinding
+                          ? 'Extracting entities…'
+                          : 'No entities for this session yet.'}
+                      </p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -394,7 +909,7 @@ export default function SessionDetail() {
                           <div className="flex items-center justify-between">
                             {fact.category && (
                               <span className="text-[9px] font-bold uppercase tracking-widest bg-primary/10 text-primary px-2 py-0.5 rounded">
-                                {fact.category}
+                                {formatEntityCategory(fact.category)}
                               </span>
                             )}
                             <span className="text-[9px] text-outline font-mono ml-auto">
@@ -417,9 +932,33 @@ export default function SessionDetail() {
                   exit={{ opacity: 0, x: -20 }}
                   className="p-10 flex flex-col gap-8"
                 >
-                  <div className="flex items-center gap-3 text-primary">
-                    <BarChart3 className="size-6" />
-                    <h4 className="font-headline font-bold text-xl">Latency & Performance</h4>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-3 text-primary">
+                      <BarChart3 className="size-6" />
+                      <h4 className="font-headline font-bold text-xl">Latency & Performance</h4>
+                    </div>
+                    <p className="text-outline text-xs font-medium leading-relaxed max-w-xl">
+                      {(() => {
+                        const m = session.metrics;
+                        const hasNumbers = [m.sttLatency, m.llmLatency, m.ttsLatency, m.totalRtt].some(
+                          (x) => x != null && !Number.isNaN(x)
+                        );
+                        if (m.metricsSampleCount > 0) {
+                          return `Averages over ${m.metricsSampleCount} completed turn${m.metricsSampleCount === 1 ? '' : 's'} (STT → LLM → TTS pipeline).`;
+                        }
+                        if (hasNumbers) {
+                          return 'Pipeline averages from stored session data.';
+                        }
+                        if (session.duration === 'Active') {
+                          return 'Waiting for completed turns. Values refresh every few seconds while the call is live.';
+                        }
+                        return 'No per-turn latency samples were recorded for this session.';
+                      })()}
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-surface-high/50 border border-outline-variant/10 flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-widest text-outline">Session Outcome</p>
+                    <span className={cn("text-sm font-bold", dispositionToneClass)}>{dispositionMeta.label}</span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <LatencyCard label="Avg STT" value={session.metrics.sttLatency} icon={Clock} color="text-indigo-500" />
@@ -439,89 +978,6 @@ export default function SessionDetail() {
                     </div>
                     <span className="text-emerald-500 font-bold text-sm">99.9% Uptime</span>
                   </div>
-
-                  {/* CSAT Feedback Form */}
-                  <div className="p-8 rounded-2xl bg-surface-high/50 border border-outline-variant/10 flex flex-col gap-6">
-                    <div className="flex items-center gap-3">
-                      <Star className="size-5 text-primary" />
-                      <h5 className="font-headline font-bold text-lg">Session Feedback</h5>
-                      {feedbackSubmitted && (
-                        <span className="ml-auto flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                          <CheckCircle2 className="size-4" /> Feedback saved
-                        </span>
-                      )}
-                    </div>
-
-                    {feedbackSubmitted ? (
-                      <div className="flex flex-col gap-4 opacity-70">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-outline uppercase tracking-widest">CSAT Score:</span>
-                          <div className="flex gap-1">
-                            {[1,2,3,4,5].map(n => (
-                              <Star key={n} className={cn("size-4", n <= (existingFeedback?.csat_score ?? 0) ? "text-amber-400 fill-amber-400" : "text-outline")} />
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-outline uppercase tracking-widest">Outcome:</span>
-                          <span className="text-sm font-bold capitalize">{existingFeedback?.outcome}</span>
-                        </div>
-                        {existingFeedback?.notes && (
-                          <p className="text-xs text-on-surface-variant italic">"{existingFeedback.notes}"</p>
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Rating</label>
-                          <div className="flex gap-2">
-                            {([1,2,3,4,5] as const).map(n => (
-                              <button
-                                key={n}
-                                onClick={() => setFeedbackData(p => ({ ...p, csat_score: n }))}
-                                className={cn("size-10 rounded-xl flex items-center justify-center transition-all border", 
-                                  feedbackData.csat_score >= n 
-                                    ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
-                                    : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/30"
-                                )}
-                              >
-                                <Star className={cn("size-4", feedbackData.csat_score >= n && "fill-amber-400")} />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Outcome</label>
-                          <select
-                            value={feedbackData.outcome}
-                            onChange={e => setFeedbackData(p => ({ ...p, outcome: e.target.value as any }))}
-                            className="bg-surface-container-highest border-none rounded-xl p-3 text-sm font-medium text-on-surface focus:ring-1 focus:ring-primary/30"
-                          >
-                            <option value="resolved">Resolved</option>
-                            <option value="escalated">Escalated</option>
-                            <option value="abandoned">Abandoned</option>
-                          </select>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Notes (optional)</label>
-                          <textarea
-                            value={feedbackData.notes}
-                            onChange={e => setFeedbackData(p => ({ ...p, notes: e.target.value }))}
-                            placeholder="Any additional comments about this session..."
-                            className="bg-surface-container-highest border-none rounded-xl p-3 text-sm text-on-surface resize-none h-20 focus:ring-1 focus:ring-primary/30"
-                          />
-                        </div>
-                        <button
-                          onClick={handleSubmitFeedback}
-                          disabled={feedbackSaving}
-                          className="self-start px-8 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg shadow-primary/10 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
-                        >
-                          {feedbackSaving ? <Loader2 className="size-4 animate-spin" /> : <Star className="size-4" />}
-                          {feedbackSaving ? 'Saving...' : 'Submit Feedback'}
-                        </button>
-                      </>
-                    )}
-                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -532,14 +988,14 @@ export default function SessionDetail() {
         <div className="flex flex-col gap-8">
           <div className="bg-surface-low p-8 rounded-3xl ghost-border flex flex-col gap-8">
             <h4 className="font-headline font-bold text-lg">Session Metadata</h4>
-            
+
             <div className="flex flex-col gap-6">
               <MetaItem icon={Calendar} label="Date" value={session.date} />
               <MetaItem icon={Clock} label="Time" value={session.time} />
               <MetaItem icon={Timer} label="Duration" value={session.duration} />
               <MetaItem icon={MessageSquare} label="Total Turns" value={session.turns.toString()} />
               <MetaItem icon={Smile} label="Sentiment" value={
-                session.sentimentScore != null 
+                session.sentimentScore != null
                   ? `${(session.sentimentScore * 100).toFixed(0)}% Positive`
                   : '—'
               } />
@@ -564,19 +1020,19 @@ export default function SessionDetail() {
             </div>
           </div>
 
-          <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
+          {/* <div className="bg-primary p-8 rounded-3xl shadow-xl shadow-primary/20 flex flex-col gap-4 text-on-primary-fixed">
             <div className="size-12 rounded-2xl bg-white/20 flex items-center justify-center">
               <Zap className="size-6" />
             </div>
             <h4 className="font-headline font-bold text-xl">Action Required?</h4>
             <p className="text-sm opacity-80 leading-relaxed">This session had high sentiment but unresolved intent. Would you like to escalate this to a human agent for follow-up?</p>
-            <button 
+            <button
               onClick={handleEscalate}
               className="mt-4 w-full py-3 rounded-xl bg-white text-primary font-bold text-sm hover:bg-opacity-90 transition-all active:scale-95"
             >
               Escalate to Human
             </button>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
@@ -597,7 +1053,20 @@ function MetaItem({ icon: Icon, label, value }: any) {
   );
 }
 
-function LatencyCard({ label, value, icon: Icon, color }: any) {
+function LatencyCard({
+  label,
+  value,
+  icon: Icon,
+  color,
+}: {
+  label: string;
+  value: number | null;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  const display = value == null || Number.isNaN(value) ? '—' : String(value);
+  const barPct =
+    value != null && !Number.isNaN(value) ? Math.min(100, (value / 1000) * 100) : 0;
   return (
     <div className="p-6 rounded-2xl bg-surface-low ghost-border flex flex-col gap-4">
       <div className="flex justify-between items-start">
@@ -608,12 +1077,12 @@ function LatencyCard({ label, value, icon: Icon, color }: any) {
       </div>
       <div>
         <p className="text-[10px] font-bold text-outline uppercase tracking-widest">{label}</p>
-        <h3 className="text-2xl font-headline font-extrabold mt-1">{value}</h3>
+        <h3 className="text-2xl font-headline font-extrabold mt-1 tabular-nums">{display}</h3>
       </div>
       <div className="w-full h-1 bg-surface-highest rounded-full overflow-hidden">
-        <div 
-          className={cn("h-full", color.replace('text-', 'bg-'))} 
-          style={{ width: `${Math.min(100, (value / 1000) * 100)}%` }}
+        <div
+          className={cn("h-full transition-[width] duration-500", color.replace('text-', 'bg-'))}
+          style={{ width: `${barPct}%` }}
         ></div>
       </div>
     </div>

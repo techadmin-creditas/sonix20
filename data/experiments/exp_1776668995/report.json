@@ -1,0 +1,24 @@
+{
+  "text": "Namaste! Main Creditas se bol raha hoon. Kya aap mujhe sun sakte hain?",
+  "timestamp": "Mon Apr 20 12:40:17 2026",
+  "results": [
+    {
+      "name": "Sarah Hindi",
+      "provider": "elevenlabs",
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "init_ms": 2143.33,
+      "generation_ms": 15627.41,
+      "size_bytes": 146004,
+      "file": "data/experiments/exp_1776668995/sarah_hindi.wav"
+    },
+    {
+      "name": "Deepgram Hinglish",
+      "provider": "deepgram_ws",
+      "voice_id": "aura-stella-en",
+      "init_ms": 2462.58,
+      "generation_ms": 1550.3,
+      "size_bytes": 131516,
+      "file": "data/experiments/exp_1776668995/deepgram_hinglish.wav"
+    }
+  ]
+}

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Header } from '../components/Header';
-import { 
-  Activity, 
-  Settings2, 
-  Download, 
-  Terminal, 
-  StopCircle, 
+import {
+  Activity,
+  Settings2,
+  Download,
+  Terminal,
+  StopCircle,
   XCircle,
   Search,
   ChevronDown,
@@ -20,12 +21,24 @@ import {
   UserCircle2,
   Tags,
   Brain,
+  Languages,
+  Users,
+  Star,
+  Zap as ZapIcon,
+  ArrowRight,
+  Sparkles,
+  UserRound,
+  Edit2,
+  Trash2,
+  Activity as ActivityIcon,
+  ChevronRight
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { PERSONAS } from '../constants';
 import { Room as LiveKitRoom, createLocalAudioTrack } from 'livekit-client';
-import { api, Bot, getVoiceWebSocketUrl } from '../lib/api';
+import { api, Bot, getVoiceWebSocketUrl, AiPersona } from '../lib/api';
+import { TelemetryCharts } from '../components/TelemetryCharts';
+
 
 type SentimentLabel = 'positive' | 'neutral' | 'negative';
 interface Entity { key: string; value: string; }
@@ -37,13 +50,28 @@ interface TranscriptEntry {
   sentiment?: SentimentLabel;
 }
 
+const SUPPORTED_LANGUAGES = [
+  { code: 'hi', name: 'Hindi' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ta', name: 'Tamil' },
+  { code: 'bn', name: 'Bengali' },
+];
+
 export default function SessionControl() {
+  const location = useLocation();
   const [availableBots, setAvailableBots] = useState<Bot[]>([]);
   const [selectedBot, setSelectedBot] = useState<Bot | null>(null);
+  const [availablePersonas, setAvailablePersonas] = useState<AiPersona[]>([]);
+  const [selectedPersona, setSelectedPersona] = useState<AiPersona | null>(null);
   const [isBotSelectorOpen, setIsBotSelectorOpen] = useState(false);
+  const [isPersonaSelectorOpen, setIsPersonaSelectorOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // Real-time state
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -56,9 +84,9 @@ export default function SessionControl() {
   const [metrics, setMetrics] = useState({ stt: 0, llm: 0, tts: 0, total: 0 });
   const [infra, setInfra] = useState({
     redis: 'unavailable',
-    stt:   'unavailable',
-    llm:   'unavailable',
-    tts:   'unavailable',
+    stt: 'unavailable',
+    llm: 'unavailable',
+    tts: 'unavailable',
     uptime: '--',
     stt_provider: 'STT',
     llm_provider: 'LLM',
@@ -66,9 +94,11 @@ export default function SessionControl() {
   });
   const [tokenPulse, setTokenPulse] = useState(false);
   const [sessionTokens, setSessionTokens] = useState({ input: 0, output: 0, total: 0 });
+  const [historicalMetrics, setHistoricalMetrics] = useState<any[]>([]);
+
   const [modelLimits, setModelLimits] = useState<any[]>([]);
   const [toolSuccessRate, setToolSuccessRate] = useState(100.0);
-  
+
   // Caller identity & cross-session memory
   const [userId, setUserId] = useState('');
   // Live sentiment
@@ -76,56 +106,167 @@ export default function SessionControl() {
   const [negativeSentimentCount, setNegativeSentimentCount] = useState(0);
   // Entity extraction
   const [entities, setEntities] = useState<Entity[]>([]);
-  
+
+  // User selection (for Caller ID)
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [isUserSelectorOpen, setIsUserSelectorOpen] = useState(false);
+
+  // Translation
+  const [targetLanguage, setTargetLanguage] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [originalTranscripts, setOriginalTranscripts] = useState<TranscriptEntry[]>([]);
+  const [translationCache, setTranslationCache] = useState<Record<string, TranscriptEntry[]>>({});
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
   const transcriptRef = React.useRef<HTMLDivElement>(null);
   const logRef = React.useRef<HTMLDivElement>(null);
   const livekitRoomRef = React.useRef<LiveKitRoom | null>(null);
-  
+
+  // [PERFORMANCE] Memoized transcription list (capped at last 50 for DOM stability)
+  const optimizedTranscripts = React.useMemo(() => {
+    return transcripts.slice(-50);
+  }, [transcripts]);
+
+  const optimizedLogs = React.useMemo(() => {
+    return logs.slice(-100);
+  }, [logs]);
+
   // Session Config State
   const [config, setConfig] = useState({
     autoRecording: true,
     noiseSuppression: true,
     latencyMode: 'ultra-low',
     temperature: 0.7,
-    maxDuration: 30
+    maxDuration: 30,
+    testInterruption: false
   });
+
+  const personaRef = React.useRef<HTMLDivElement>(null);
+  const botRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      // Use a small delay for bot selector to avoid immediate close when clicking the toggle button
+      if (personaRef.current && !personaRef.current.contains(e.target as Node)) {
+        setIsPersonaSelectorOpen(false);
+      }
+      if (botRef.current && !botRef.current.contains(e.target as Node)) {
+        setIsBotSelectorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     api.getBots().then(bots => {
       setAvailableBots(bots);
-      if (bots.length > 0) setSelectedBot(bots[0]);
+      const state = location.state as { initialBotName?: string } | null;
+      if (bots.length > 0) {
+        if (state?.initialBotName) {
+          const preSelected = bots.find(b => b.name === state.initialBotName);
+          setSelectedBot(preSelected || bots[0]);
+        } else {
+          setSelectedBot(bots[0]);
+        }
+      }
+    });
+
+    api.listAiPersonas().then(personas => {
+      setAvailablePersonas(personas);
+      if (personas.length > 0) setSelectedPersona(personas[0]);
     });
     // Fetch real-time model capability data
     api.getModels()
       .then(models => setModelLimits(models || []))
       .catch(err => console.error("Failed to load model specs:", err));
+
+    api.listUsers().then(users => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        users.forEach(u => {
+          if (!merged.find(m => m.id === u.id)) {
+            merged.push({ id: u.id, username: u.username, source: 'auth' });
+          }
+        });
+        return merged;
+      });
+    }).catch(() => { });
+
+    api.getTestCustomers().then(customers => {
+      setAvailableUsers(prev => {
+        const merged = [...prev];
+        customers.forEach(c => {
+          // Use customer_name and account_number
+          if (!merged.find(m => m.id === c.account_number)) {
+            merged.push({
+              id: c.account_number,
+              username: `${c.customer_name} (Lead)`,
+              source: 'db'
+            });
+          }
+        });
+        return merged;
+      });
+    }).catch(err => {
+      console.warn("Failed to load test customers:", err);
+      // Fallback only if both fail and list is empty
+      setAvailableUsers(prev => prev.length > 0 ? prev : [
+        { id: 'vaibhav', username: 'Vaibhav (Lead)' },
+        { id: 'rahul', username: 'Rahul (Test)' },
+        { id: 'priya', username: 'Priya (Customer)' },
+      ]);
+    });
+
+    // Cleanup on page exit: Ensure all session handles are closed immediately
+    return () => {
+      console.log("Cleanup: User navigating away, terminating active voice sessions...");
+      if (wsRef.current) {
+        wsRef.current.close(1000, "User navigated away");
+        wsRef.current = null;
+      }
+      if (livekitRoomRef.current) {
+        livekitRoomRef.current.disconnect();
+        livekitRoomRef.current = null;
+      }
+      // Re-use existing audio stop logic (don't close context to avoid React strict mode issues, just disconnect)
+      if (processorRef.current) processorRef.current.disconnect();
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    };
   }, []);
 
   // Audio Processing Refs
   const audioContextRef = React.useRef<AudioContext | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
-  const processorRef = React.useRef<ScriptProcessorNode | null>(null);
+  const processorRef = React.useRef<any>(null);
   const analyzerRef = React.useRef<AnalyserNode | null>(null);
   const nextScheduledTimeRef = React.useRef<number>(0);
   /** Coalesce small PCM frames and add lookahead before first play to reduce underruns/gaps. */
   const botPcmAccumRef = React.useRef<Uint8Array | null>(null);
   const botPlaybackPrimedRef = React.useRef(false);
+  /** Track scheduled sources to allow immediate cancellation on interrupt. */
+  const scheduledSourcesRef = React.useRef<AudioBufferSourceNode[]>([]);
   /** Flush tail PCM after a short idle gap (binary stopped) so samples are not held until the next segment. */
-  const botPcmIdleFlushRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const BOT_LOOKAHEAD_BYTES = 4800; // ~150ms @ 16kHz mono int16
+  const botPcmIdleFlushRef = React.useRef<any>(null);
+  const BOT_LOOKAHEAD_BYTES_MIN = 3200; // ~100ms
+  const BOT_LOOKAHEAD_BYTES_MAX = 9600; // ~300ms
+  const dynamicLookaheadRef = React.useRef(4800); // Start at 150ms
   /** Larger post-prime chunks → fewer scheduled AudioBufferSource nodes → less scheduling jitter. */
   const BOT_FLUSH_MIN_BYTES = 4096; // ~128ms @ 16kHz mono int16
   const BOT_IDLE_FLUSH_MS = 72;
-  const [micActivity, setMicActivity] = useState(0);
   const [sessionTransport, setSessionTransport] = useState<'websocket' | 'webrtc'>('websocket');
   const [livekitHint, setLivekitHint] = useState<string | null>(null);
+  const [isHandoffAnimating, setIsHandoffAnimating] = useState(false);
+  /** Stable reference to the active socket for cleanup on unmount/page exit. */
+  const wsRef = React.useRef<WebSocket | null>(null);
+  const activeGainsRef = React.useRef<GainNode[]>([]);
 
   // Audio Player Logic
   const initAudio = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       nextScheduledTimeRef.current = audioContextRef.current.currentTime;
-      
+
       // Create analyzer for visualization
       const analyzer = audioContextRef.current.createAnalyser();
       analyzer.fftSize = 256;
@@ -147,6 +288,35 @@ export default function SessionControl() {
     clearBotPcmIdleFlush();
     botPcmAccumRef.current = null;
     botPlaybackPrimedRef.current = false;
+
+    // Stop and clear all currently scheduled audio sources with micro-fades to prevent pops
+    const now = audioContextRef.current ? audioContextRef.current.currentTime : 0;
+
+    activeGainsRef.current.forEach(gain => {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        // [MICRO-FADE] 10ms ramp to 0 to eliminate DC offset pops
+        gain.gain.linearRampToValueAtTime(0, now + 0.01);
+      } catch (e) { /* already disconnected */ }
+    });
+
+    // Short delay before stopping/disconnecting to allow the ramp to execute
+    const sourcesToStop = [...scheduledSourcesRef.current];
+    const gainsToClear = [...activeGainsRef.current];
+
+    setTimeout(() => {
+      sourcesToStop.forEach(source => {
+        try { source.stop(); source.disconnect(); } catch (e) { }
+      });
+      gainsToClear.forEach(g => {
+        try { g.disconnect(); } catch (e) { }
+      });
+    }, 15);
+
+    scheduledSourcesRef.current = [];
+    activeGainsRef.current = [];
+
     if (audioContextRef.current) {
       nextScheduledTimeRef.current = audioContextRef.current.currentTime;
     } else {
@@ -154,7 +324,7 @@ export default function SessionControl() {
     }
   };
 
-  const schedulePcmBuffer = (arrayBuffer: ArrayBuffer) => {
+  const schedulePcmBuffer = (arrayBuffer: ArrayBuffer, options: { fadeInMs?: number } = {}) => {
     if (!audioContextRef.current) {
       initAudio();
     }
@@ -175,13 +345,44 @@ export default function SessionControl() {
 
       const source = audioContextRef.current!.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(audioContextRef.current!.destination);
+
+      const gainNode = audioContextRef.current!.createGain();
+
+      const startTime = Math.max(nextScheduledTimeRef.current, audioContextRef.current!.currentTime);
+
+      // [NEURAL SHIFT] Crossfade optimization: Linear fadeIn for incoming real response
+      if (options.fadeInMs) {
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(1, startTime + (options.fadeInMs / 1000));
+      }
+
+      gainNode.connect(audioContextRef.current!.destination);
+      source.connect(gainNode);
 
       if (analyzerRef.current) {
         source.connect(analyzerRef.current);
       }
 
-      const startTime = Math.max(nextScheduledTimeRef.current, audioContextRef.current!.currentTime);
+      // Track source and gain for potential cancellation or crossfade
+      scheduledSourcesRef.current.push(source);
+      activeGainsRef.current.push(gainNode);
+
+      source.onended = () => {
+        // [DYNAMIC JITTER BUFFER] Detect underrun
+        const now = audioContextRef.current?.currentTime || 0;
+        if (nextScheduledTimeRef.current <= now + 0.02) {
+          // If we finished playing and the next chunk isn't ready or just barely ready,
+          // increase lookahead to prevent the next gap.
+          dynamicLookaheadRef.current = Math.min(BOT_LOOKAHEAD_BYTES_MAX, dynamicLookaheadRef.current + 800);
+        } else {
+          // Gradually decay back to minimum for best latency
+          dynamicLookaheadRef.current = Math.max(BOT_LOOKAHEAD_BYTES_MIN, dynamicLookaheadRef.current - 160);
+        }
+
+        scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
+        activeGainsRef.current = activeGainsRef.current.filter(g => g !== gainNode);
+      };
+
       source.start(startTime);
       nextScheduledTimeRef.current = startTime + audioBuffer.duration;
     } catch (e) {
@@ -225,7 +426,10 @@ export default function SessionControl() {
     }
     const acc = botPcmAccumRef.current!;
     const primed = botPlaybackPrimedRef.current;
-    const threshold = primed ? BOT_FLUSH_MIN_BYTES : BOT_LOOKAHEAD_BYTES;
+
+    // Use the dynamic lookahead for the first chunk to ensure stable start
+    const threshold = primed ? BOT_FLUSH_MIN_BYTES : dynamicLookaheadRef.current;
+
     if (acc.byteLength >= threshold) {
       const copy = acc.slice().buffer;
       botPcmAccumRef.current = new Uint8Array(0);
@@ -243,36 +447,26 @@ export default function SessionControl() {
       initAudio();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
-      const source = audioContextRef.current!.createMediaStreamSource(stream);
-      const processor = audioContextRef.current!.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      
-      // Connect to analyzer for mic visualization
-      source.connect(analyzerRef.current!);
-      
-      processor.onaudioprocess = (e) => {
-        if (socket.readyState !== WebSocket.OPEN) return;
-        
-        const inputData = e.inputBuffer.getChannelData(0);
-        
-        // Calculate visualization activity
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
-        }
-        setMicActivity(Math.sqrt(sum / inputData.length) * 100);
 
-        // Convert to linear16 PCM
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-        }
-        socket.send(pcmData.buffer);
+      // [GEMINI-GRADE] AudioWorklet Migration
+      // Offloads mic processing to a separate high-priority thread to avoid UI main-thread jank.
+      await audioContextRef.current!.audioWorklet.addModule('/audio-processors/vocal-processor.js');
+      const micWorkletNode = new AudioWorkletNode(audioContextRef.current!, 'vocal-processor');
+
+      const source = audioContextRef.current!.createMediaStreamSource(stream);
+      source.connect(micWorkletNode);
+
+      // Connect to analyzer for mic visualization
+      micWorkletNode.connect(analyzerRef.current!);
+
+      micWorkletNode.port.onmessage = (e) => {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        const { audio, rms } = e.data;
+        socket.send(audio);
+        // setMicActivity is removed as high-frequency state updates cause Infinite Re-renders
       };
-      
-      source.connect(processor);
-      processor.connect(audioContextRef.current!.destination);
+
+      processorRef.current = micWorkletNode; // Store it for cleanup
     } catch (err) {
       console.error('Mic access failed:', err);
     }
@@ -295,10 +489,96 @@ export default function SessionControl() {
         audioContextRef.current = null;
       });
     }
-    setMicActivity(0);
   };
 
-  const startSession = async () => {
+  const handleTranslate = async (langName: string) => {
+    if (!langName) {
+      setTargetLanguage('');
+      if (originalTranscripts.length > 0) {
+        setTranscripts(originalTranscripts);
+      }
+      return;
+    }
+
+    if (!sessionId) {
+      alert('Start a session first to translate.');
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const cached = translationCache[langName];
+    // Only use cache if the length matches (live session transcripts might have grown)
+    if (cached && cached.length === transcripts.length) {
+      setTargetLanguage(langName);
+      setTranscripts(cached);
+      return;
+    }
+
+    setTargetLanguage(langName);
+    setIsTranslating(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Keep a copy of originals if not already kept
+    if (originalTranscripts.length === 0) {
+      setOriginalTranscripts(transcripts);
+    }
+
+    try {
+      const translatedRaw = await api.translateSession(sessionId, langName, controller.signal);
+      let translatedTexts: string[] = [];
+      try {
+        const cleanJson = translatedRaw.replace(/```json|```/g, '').trim();
+        translatedTexts = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.error("Translation JSON parse failed", parseErr, translatedRaw);
+        translatedTexts = translatedRaw.split('\n').filter(l => l.trim()).map(l => l.replace(/^[-\*\s]+/, '').trim());
+      }
+
+      if (Array.isArray(translatedTexts)) {
+        let translatedIdx = 0;
+        const newTranscripts = transcripts.map((t) => {
+          // In live sessions, we filter manually during translation prep in backend
+          const role = t.role.toLowerCase();
+          if (['user', 'bot', 'assistant'].includes(role) && translatedIdx < translatedTexts.length) {
+            const newText = translatedTexts[translatedIdx];
+            translatedIdx++;
+            return { ...t, text: newText };
+          }
+          return t;
+        });
+        setTranslationCache(prev => ({ ...prev, [langName]: newTranscripts }));
+        setTranscripts(newTranscripts);
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.log('Translation cancelled.');
+        return;
+      }
+      console.error(e);
+      alert('Translation failed.');
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setIsTranslating(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  const cancelTranslate = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsTranslating(false);
+      setTargetLanguage('');
+    }
+  };
+
+  const startSession = async (isTestModeArg: any = false) => {
+    const isTestMode = isTestModeArg === true;
     if (!selectedBot) return;
     setIsConnecting(true);
     setStatus('Initializing...');
@@ -308,19 +588,21 @@ export default function SessionControl() {
     setCurrentSentiment('neutral');
     setNegativeSentimentCount(0);
     setEntities([]);
-    
+    setTranslationCache({});
+    setTargetLanguage('');
+
     const handleIncomingMessage = async (msg: any) => {
       if (msg.type === 'status') {
         setStatus(msg.state || msg.message);
       } else if (msg.type === 'transcript' || msg.type === 'bot_transcript') {
         if (!msg.text || msg.text.trim() === '') return;
-        
+
         const role = msg.type === 'transcript' ? 'User' : 'Bot';
-        
+
         setTranscripts(prev => {
           const last = prev[prev.length - 1];
           const isUpdate = last && last.role === role && !last.isFinal;
-          
+
           if (isUpdate) {
             const updated = [...prev];
             updated[updated.length - 1] = {
@@ -411,20 +693,31 @@ export default function SessionControl() {
           tts: msg.tts || 0,
           total: msg.total || 0
         });
-        
+
+        // 📈 [TELEMETRY] Append to historical timeline
+        setHistoricalMetrics((prev: any[]) => [...prev, {
+          turn: prev.length + 1,
+          stt: msg.stt || 0,
+          llm: msg.llm || 0,
+          tts: msg.tts || 0,
+          total: msg.total || 0,
+          sentiment: msg.sentiment_score ?? 0,
+          interruptType: msg.interrupt_type
+        }]);
+
         if (msg.tool_success_rate !== undefined) {
           setToolSuccessRate(msg.tool_success_rate);
         }
-        
+
         // Handle Token Consumption (Cognitive Load)
         if (msg.tokens_output > 0 || msg.tokens_input > 0) {
-           setTokenPulse(true);
-           setTimeout(() => setTokenPulse(false), 2000); // 2s glow duration
-           setSessionTokens(prev => ({
-             input: msg.session_tokens_input || (prev.input + msg.tokens_input),
-             output: msg.session_tokens_output || (prev.output + msg.tokens_output),
-             total: msg.session_tokens_total || (prev.total + msg.tokens_total)
-           }));
+          setTokenPulse(true);
+          setTimeout(() => setTokenPulse(false), 2000); // 2s glow duration
+          setSessionTokens(prev => ({
+            input: msg.session_tokens_input || (prev.input + msg.tokens_input),
+            output: msg.session_tokens_output || (prev.output + msg.tokens_output),
+            total: msg.session_tokens_total || (prev.total + msg.tokens_total)
+          }));
         }
       } else if (msg.type === 'session_ended') {
         setStatus(`Call ended${msg.reason ? ` · ${msg.reason}` : ''}`);
@@ -437,7 +730,7 @@ export default function SessionControl() {
             color: 'text-primary',
           },
         ]);
-        
+
         // Special alert for inactivity timeout
         if (msg.reason === 'inactivity_timeout') {
           setLogs((prev) => [
@@ -450,13 +743,28 @@ export default function SessionControl() {
             },
           ]);
         }
-        
+
         setIsLive(false);
         stopAudio();
         setWs(null);
       } else if (msg.type === 'audio_interrupt') {
         // Backend confirmed interruption — flush any pre-scheduled audio immediately.
         resetBotPlaybackCoalesce();
+      } else if (msg.type === 'audio_handoff') {
+        // Trigger smooth volume ramp-down of any currently playing "filler" audio
+        if (audioContextRef.current) {
+          const now = audioContextRef.current.currentTime;
+          setIsHandoffAnimating(true);
+          setTimeout(() => setIsHandoffAnimating(false), 800);
+
+          activeGainsRef.current.forEach(gain => {
+            // Quick 250ms fade-out to hand over to the real response
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+          });
+          // Note: we don't clear the array, onended will handle it.
+          // Adjust next scheduled time to minimize gap during handoff
+          nextScheduledTimeRef.current = now + 0.15;
+        }
       } else if (msg.type === 'error') {
         setStatus('Neural Error');
         setLogs(prev => [...prev, {
@@ -491,7 +799,7 @@ export default function SessionControl() {
         livekitRoomRef.current = room;
         try {
           await room.connect(res.livekit.url, res.livekit.token);
-          
+
           // Use high-quality constraints for the microphone
           const micTrack = await createLocalAudioTrack({
             echoCancellation: true,
@@ -533,15 +841,18 @@ export default function SessionControl() {
         : websocket_url;
       const socket = new WebSocket(getVoiceWebSocketUrl(wsUrl));
       socket.binaryType = 'arraybuffer';
-      
+
       socket.onopen = () => {
         resetBotPlaybackCoalesce();
         setIsLive(true);
         setIsConnecting(false);
         setStatus('Connecting...');
         startMic(socket);
+        if (isTestMode && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'test_interruption' }));
+        }
       };
-      
+
       socket.onmessage = async (event) => {
         if (typeof event.data === 'string') {
           const msg = JSON.parse(event.data);
@@ -550,17 +861,7 @@ export default function SessionControl() {
           playAudioChunk(event.data);
         }
       };
-      
-      socket.onclose = (event) => {
-        setIsLive(false);
-        setIsConnecting(false);
-        setStatus(event.code === 4000 ? 'Init Failed' : 'Disconnected');
-        setWs(null);
-        stopAudio();
-      };
-      
-      setWs(socket);
-      
+
       socket.onclose = (event) => {
         setIsLive(false);
         setIsConnecting(false);
@@ -578,10 +879,12 @@ export default function SessionControl() {
           setStatus('Disconnected');
         }
         setWs(null);
+        wsRef.current = null;
         stopAudio();
       };
-      
+
       setWs(socket);
+      wsRef.current = socket;
     } catch (err) {
       console.error('Failed to start session:', err);
       setIsConnecting(false);
@@ -619,6 +922,10 @@ export default function SessionControl() {
       livekitRoomRef.current.disconnect();
       livekitRoomRef.current = null;
     }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     if (ws) {
       ws.close();
     }
@@ -655,76 +962,382 @@ export default function SessionControl() {
       setIsExporting(false);
     }, 1500);
   };
-
   return (
-    <div className="flex-1 flex flex-col min-h-screen relative">
-      <Header 
-        title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'} 
+    <div className="flex-1 flex flex-col  relative">
+      <Header
+        title={selectedBot ? `Session Control: ${selectedBot.name}` : 'Session Control'}
         subtitle={isLive ? 'Live Operations • Session Active' : 'Standby Mode'}
+        hideGlass={isPersonaSelectorOpen || isBotSelectorOpen}
+        className={isPersonaSelectorOpen || isBotSelectorOpen ? "bg-surface-lowest" : ""}
         actions={
           <>
             {/* ── Bot Selector ────────────────────────────────── */}
-            <div className="relative">
+            <div className="relative" ref={botRef}>
               <button
                 onClick={() => setIsBotSelectorOpen(!isBotSelectorOpen)}
                 disabled={isConnecting || isLive}
-                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] sm:max-w-none"
+                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] w-90 sm:max-w-none"
               >
                 <BotIcon className="size-4 text-primary shrink-0" />
                 <span className="truncate hidden xs:inline sm:inline">{selectedBot?.name || 'Select Agent'}</span>
                 <ChevronDown className={cn("size-3.5 shrink-0 text-outline transition-transform", isBotSelectorOpen && "rotate-180")} />
               </button>
 
-              {isBotSelectorOpen && (
-                <div className="absolute top-full right-0 mt-2 w-60 glass-panel rounded-2xl p-2 z-100 shadow-2xl animate-in fade-in slide-in-from-top-2 border border-white/5">
-                  <div className="text-[10px] font-bold text-outline uppercase tracking-widest px-2 py-1.5 mb-1">
-                    Select Persona
-                  </div>
-                  {availableBots.map((persona) => (
-                    <button
-                      key={persona.id}
-                      onClick={() => {
-                        setSelectedBot(persona);
-                        setIsBotSelectorOpen(false);
-                        if (ws?.readyState === WebSocket.OPEN) {
-                          ws.send(JSON.stringify({ type: 'switch_bot', bot_id: persona.id }));
-                        }
-                      }}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left",
-                        selectedBot?.id === persona.id
-                          ? "bg-primary/10 text-primary"
-                          : "hover:bg-surface-highest text-on-surface-variant"
-                      )}
+              <AnimatePresence>
+                {isBotSelectorOpen && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-110 bg-black/2 backdrop-blur-[2px] pointer-events-none"
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                      className="absolute top-full right-0 mt-4 max-w-[60vw] bg-surface-lowest rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
                     >
-                      <div className="size-7 rounded-lg flex items-center justify-center bg-primary/20 text-primary shrink-0">
-                        <BotIcon className="size-3.5" />
+                      {/* Ambient Background Glows */}
+                      <div className="absolute -top-24 -left-24 size-96 bg-primary/5 blur-[100px] pointer-events-none" />
+                      <div className="absolute -bottom-24 -left-24 size-96 bg-violet-500/5 blur-[100px] pointer-events-none" />
+
+                      <div className="relative flex items-center justify-between mb-8 px-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="size-4 text-primary animate-pulse" />
+                            <h4 className="text-2xl font-headline font-black text-on-surface tracking-tighter uppercase">Bot <span className="text-primary">Factory</span></h4>
+                          </div>
+                          <p className="text-[10px] text-outline uppercase tracking-[0.3em] font-black opacity-60">Deployed Neural Voice Agents</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 px-4 py-1.5 rounded-2xl">
+                            <div className="size-2 rounded-full bg-primary animate-ping" />
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest">{availableBots.filter(b => b.is_active).length} Active Nodes</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-bold truncate">{persona.name}</span>
-                        <span className="text-[10px] opacity-60 truncate">{persona.role}</span>
+
+                      <div className="relative group/slider">
+                        <div className="flex gap-6 overflow-x-auto pb-8 snap-x snap-mandatory custom-scrollbar-horizontal select-none">
+                          {availableBots.map((bot) => (
+                            <motion.div
+                              key={bot.id}
+                              whileHover={{ y: -6 }}
+                              className={cn(
+                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
+                                selectedBot?.id === bot.id && "ring-2 ring-primary/10"
+                              )}
+                            >
+                              {/* Card Header */}
+                              <div className="flex justify-between items-center mb-4 border-b border-outline-variant/4 pb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="size-12 shrink-0 rounded-[18px] bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary/40 shadow-inner group-hover:bg-primary/5 transition-colors">
+                                    <BotIcon className="size-6" />
+                                  </div>
+                                  <div>
+                                    <h3 className="text-lg font-headline font-black text-on-surface tracking-tight leading-tight">{bot.name}</h3>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <p className="text-[9px] font-black text-primary uppercase tracking-[0.12em]">{bot.default_language?.toUpperCase() || 'EN'}</p>
+                                      {bot.is_active && (
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                          <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                                          <span className="text-[7px] font-black text-emerald-600 uppercase tracking-widest leading-none">Active</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-4">
+                                {/* <p className="text-[11px] font-bold text-outline/60 tracking-tight">{bot.role}</p> */}
+
+                                <div className="p-4 rounded-[20px] bg-surface-low/50 border border-outline-variant/5 transition-colors h-20 overflow-hidden">
+                                  <p className="text-xs leading-relaxed italic text-on-surface-variant font-medium line-clamp-3">
+                                    &ldquo;{bot.description || bot.persona}&rdquo;
+                                  </p>
+                                </div>
+
+
+                                <button
+                                  onClick={() => {
+                                    setSelectedBot(bot);
+                                    setIsBotSelectorOpen(false);
+                                    if (ws?.readyState === WebSocket.OPEN) {
+                                      ws.send(JSON.stringify({ type: 'switch_bot', bot_id: bot.id }));
+                                    }
+                                  }}
+                                  className={cn(
+                                    "w-full flex items-center justify-between p-3 rounded-2xl transition-all group/btn border",
+                                    selectedBot?.id === bot.id
+                                      ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                                      : "bg-surface-low hover:bg-primary text-primary hover:text-white border-outline-variant/5"
+                                  )}
+                                >
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em]">Select Bot</span>
+                                  {selectedBot?.id === bot.id ? (
+                                    <Check className="size-3.5" />
+                                  ) : (
+                                    <ChevronRight className="size-3.5 transition-transform group-hover/btn:translate-x-1" />
+                                  )}
+                                </button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+
+                        {/* Slider Overlay Navigation Hints */}
+                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-surface-lowest to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-surface-lowest to-transparent pointer-events-none z-10" />
                       </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+
+                      <div className="mt-2 flex items-center justify-between px-2">
+                        <div className="flex items-center gap-6">
+                          <div className="flex gap-1.5">
+                            {[0, 1, 2].map(i => (
+                              <div key={i} className={cn("size-1.5 rounded-full transition-all duration-300", i === 0 ? "w-4 bg-primary" : "bg-outline-variant/30")} />
+                            ))}
+                          </div>
+                          <p className="text-[9px] font-bold text-outline uppercase tracking-widest">Swipe to explore bot profiles</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* ── Persona Selector ────────────────────────────── */}
+            <div className="relative" ref={personaRef}>
+              <button
+                onClick={() => setIsPersonaSelectorOpen(!isPersonaSelectorOpen)}
+                className="bg-surface-high text-on-surface pl-3 pr-2.5 py-2 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-1.5 border border-outline-variant/10 shadow-sm disabled:opacity-70 max-w-[160px] w-90 sm:max-w-none"
+
+              >
+                <Users className="size-4 text-primary shrink-0" />
+                <span className="truncate hidden xs:inline sm:inline">
+                  {selectedPersona ? `${selectedPersona.name} (${selectedPersona.language})` : 'Personas'}
+                </span>
+                <ChevronDown className={cn("size-3.5 shrink-0 text-outline transition-transform", isPersonaSelectorOpen && "rotate-180")} />
+              </button>
+
+              <AnimatePresence>
+                {isPersonaSelectorOpen && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-110 bg-black/2 backdrop-blur-[2px] pointer-events-none"
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                      className="absolute top-full right-0 mt-4 max-w-[70vw] bg-surface-lowest rounded-[40px] p-10 z-120 shadow-[0_40px_80px_-20px_rgba(0,0,0,0.2)] border border-outline-variant/10 overflow-hidden"
+                    >
+                      {/* Ambient Background Glows */}
+                      <div className="absolute -top-24 -left-24 size-96 bg-primary/5 blur-[100px] pointer-events-none" />
+                      <div className="absolute -bottom-24 -right-24 size-96 bg-violet-500/5 blur-[100px] pointer-events-none" />
+
+                      <div className="relative flex items-center justify-between mb-8 px-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="size-4 text-primary animate-pulse" />
+                            <h4 className="text-2xl font-headline font-black text-on-surface tracking-tighter uppercase">Persona <span className="text-primary">Library</span></h4>
+                          </div>
+                          <p className="text-[10px] text-outline uppercase tracking-[0.3em] font-black opacity-60">High-fidelity Neural Identity Profiles</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 px-4 py-1.5 rounded-2xl">
+                            <div className="size-2 rounded-full bg-primary animate-ping" />
+                            <span className="text-[10px] font-black text-primary uppercase tracking-widest">{availablePersonas.filter(p => p.isDeployed).length} Active Nodes</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative group/slider">
+                        <div className="flex gap-6 overflow-x-auto pb-8 snap-x snap-mandatory custom-scrollbar-horizontal select-none">
+                          {availablePersonas.filter(p => p.isDeployed).map((p) => (
+                            <motion.div
+                              key={p.id}
+                              whileHover={{ y: -6 }}
+                              className={cn(
+                                "flex flex-col p-6 rounded-[32px] min-w-[320px] snap-center transition-all duration-500 text-left overflow-hidden bg-surface-lowest border border-outline-variant/10 shadow-[0_8px_20px_-10px_rgba(0,0,0,0.05)] hover:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.1)]",
+                                selectedPersona?.id === p.id && "ring-2 ring-primary/10"
+                              )}
+                            >
+                              {/* Card Header */}
+                              <div className="flex justify-between items-center mb-4 border-b border-outline-variant/4 pb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="size-12 shrink-0 rounded-[18px] bg-surface-low border border-outline-variant/5 flex items-center justify-center text-primary/40 shadow-inner group-hover:bg-primary/5 transition-colors">
+                                    <UserRound className="size-6" />
+                                  </div>
+                                  <div>
+                                    <h3 className="text-lg font-headline font-black text-on-surface tracking-tight leading-tight">{p.name}</h3>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <p className="text-[9px] font-black text-primary uppercase tracking-[0.12em]">{p.language.toUpperCase()}</p>
+                                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                        <div className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span className="text-[7px] font-black text-emerald-600 uppercase tracking-widest leading-none">Active</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* <div className="flex gap-2">
+                                  <button className="p-2.5 rounded-xl bg-surface-low hover:bg-surface-high text-outline transition-all border border-outline-variant/10">
+                                    <Edit2 className="size-4" />
+                                  </button>
+                                  <button className="p-2.5 rounded-xl bg-surface-low hover:bg-error/10 text-outline hover:text-error transition-all border border-outline-variant/10">
+                                    <Trash2 className="size-4" />
+                                  </button>
+                                </div> */}
+                              </div>
+
+                              <div className="space-y-4">
+                                <p className="text-[11px] font-bold text-outline/60 tracking-tight">{p.tone} · {p.useCase}</p>
+
+                                <div className="p-4 rounded-[20px] bg-surface-low/50 border border-outline-variant/5 transition-colors">
+                                  <p className="text-xs leading-relaxed italic text-on-surface-variant font-medium">
+                                    &ldquo;{p.psychology || p.emotion}&rdquo;
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div className="p-3 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+                                    <p className="text-[7px] font-black text-outline uppercase mb-1.5 flex items-center gap-1 opacity-60">
+                                      <ActivityIcon className="size-2.5" /> Urgency
+                                    </p>
+                                    <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                                      <motion.div
+                                        initial={{ width: 0 }}
+                                        whileInView={{ width: `${p.urgency}%` }}
+                                        className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.2)] transition-all"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="p-3 rounded-xl bg-surface-low/50 border border-outline-variant/5">
+                                    <p className="text-[7px] font-black text-outline uppercase mb-1.5 flex items-center gap-1 opacity-60">
+                                      <Sparkles className="size-2.5" /> Empathy
+                                    </p>
+                                    <div className="h-1 w-full bg-surface-low rounded-full overflow-hidden">
+                                      <motion.div
+                                        initial={{ width: 0 }}
+                                        whileInView={{ width: `${p.empathy}%` }}
+                                        className="h-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.2)] transition-all"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => {
+                                    setSelectedPersona(p);
+                                    setIsPersonaSelectorOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full flex items-center justify-between p-3 rounded-2xl transition-all group/btn border",
+                                    selectedPersona?.id === p.id
+                                      ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                                      : "bg-surface-low hover:bg-primary text-primary hover:text-white border-outline-variant/5"
+                                  )}
+                                >
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em]">Use Persona</span>
+                                  {selectedPersona?.id === p.id ? (
+                                    <Check className="size-3.5" />
+                                  ) : (
+                                    <ChevronRight className="size-3.5 transition-transform group-hover/btn:translate-x-1" />
+                                  )}
+                                </button>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+
+                        {/* Slider Overlay Navigation Hints */}
+                        <div className="absolute inset-y-0 -left-4 w-12 bg-linear-to-r from-surface-lowest to-transparent pointer-events-none z-10" />
+                        <div className="absolute inset-y-0 -right-4 w-12 bg-linear-to-l from-surface-lowest to-transparent pointer-events-none z-10" />
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between px-2">
+                        <div className="flex items-center gap-6">
+                          <div className="flex gap-1.5">
+                            {[0, 1, 2].map(i => (
+                              <div key={i} className={cn("size-1.5 rounded-full transition-all duration-300", i === 0 ? "w-4 bg-primary" : "bg-outline-variant/30")} />
+                            ))}
+                          </div>
+                          <p className="text-[9px] font-bold text-outline uppercase tracking-widest">Swipe to explore neural nodes</p>
+                        </div>
+                        {/* <button
+                          onClick={() => setIsPersonaSelectorOpen(false)}
+                          className="group relative flex items-center gap-2 bg-on-surface text-surface-lowest px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-primary transition-all shadow-xl shadow-black/10 active:scale-95 overflow-hidden"
+                        >
+                          <span className="relative z-10">Access Console</span>
+                          <ArrowRight className="size-3 relative z-10 group-hover:translate-x-1 transition-transform" />
+                          <div className="absolute inset-0 bg-primary translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                        </button> */}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* ── Pre-live: setup controls ─────────────────────── */}
             {!isLive ? (
               <>
                 {/* Caller ID + Transport — grouped as a pill pair on sm+, stacked on xs */}
-                <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl overflow-hidden px-1">
+                {/* <div className="hidden sm:flex items-center gap-1.5 bg-surface-high border border-outline-variant/20 rounded-xl px-1 relative">
                   <UserCircle2 className="size-3.5 text-on-surface-variant ml-2 shrink-0" />
-                  <input
-                    type="text"
-                    placeholder="Caller ID"
-                    value={userId}
-                    onChange={e => setUserId(e.target.value)}
-                    disabled={isConnecting}
-                    title="Enables cross-session memory. Leave blank for anonymous session."
-                    className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
-                  />
+                  <div className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Caller ID"
+                      value={userId}
+                      onChange={e => setUserId(e.target.value)}
+                      onFocus={() => setIsUserSelectorOpen(true)}
+                      onBlur={() => setTimeout(() => setIsUserSelectorOpen(false), 200)}
+                      disabled={isConnecting}
+                      title="Enables cross-session memory. Leave blank for anonymous session."
+                      className="bg-transparent text-on-surface py-2 text-sm font-medium w-28 lg:w-36 disabled:opacity-60 outline-none placeholder:text-outline/50"
+                    />
+
+                    {isUserSelectorOpen && availableUsers.length > 0 && !isLive && (
+                      <div className="absolute top-full left-0 mt-2 w-56 glass-panel rounded-xl p-1.5 z-110 shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center justify-between px-2 py-1 mb-1">
+                          <span className="text-[10px] font-bold text-outline uppercase tracking-wider">Select User</span>
+                          <button onClick={() => setIsUserSelectorOpen(false)} className="text-outline hover:text-on-surface">
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                          {availableUsers.map((u) => (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                setUserId(u.id);
+                                setIsUserSelectorOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-white/5 text-left transition-colors group"
+                            >
+                              <div className="size-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold group-hover:bg-primary/20">
+                                {(u.username || u.id).charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-semibold truncate text-on-surface">
+                                  {u.username || u.id}
+                                </span>
+                                <span className="text-[9px] text-outline truncate">{u.id}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="w-px h-5 bg-outline-variant/20 mx-0.5 shrink-0" />
                   <select
                     value={sessionTransport}
@@ -737,10 +1350,18 @@ export default function SessionControl() {
                     <option value="webrtc">WebRTC</option>
                   </select>
                 </div>
+                <button
+                  onClick={() => setIsConfigOpen(true)}
+                  title="Session Config"
+                  className="bg-surface-high text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
+                >
+                  <Settings2 className="size-4 shrink-0" />
+                  <span className="hidden md:inline">Config</span>
+                </button> */}
 
                 {/* Initialize Bridge CTA */}
                 <button
-                  onClick={startSession}
+                  onClick={() => startSession()}
                   disabled={!selectedBot || isConnecting}
                   className="ember-gradient text-on-primary-fixed px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >
@@ -752,23 +1373,34 @@ export default function SessionControl() {
                   ) : (
                     <>
                       <Zap className="size-4" />
-                      <span className="hidden sm:inline">Initialize Bridge</span>
+                      <span className="hidden sm:inline">Initialize Session</span>
                       <span className="sm:hidden">Init</span>
                     </>
                   )}
                 </button>
+                {config.testInterruption && sessionTransport === 'websocket' && (
+                  <button
+                    onClick={() => startSession(true)}
+                    disabled={!selectedBot || isConnecting}
+                    className="ml-2 bg-primary/10 text-primary border border-primary/20 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-sm hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    <Zap className="size-4" />
+                    <span className="hidden sm:inline">Test Interruption</span>
+                    <span className="sm:hidden">Test</span>
+                  </button>
+                )}
               </>
             ) : (
               /* ── Live: session controls ──────────────────────── */
               <>
-                <button
+                {/* <button
                   onClick={() => setIsConfigOpen(true)}
                   title="Session Config"
                   className="bg-surface-high text-on-surface px-2.5 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-sm hover:bg-surface-highest transition-all flex items-center gap-2 border border-outline-variant/10"
                 >
                   <Settings2 className="size-4 shrink-0" />
                   <span className="hidden md:inline">Config</span>
-                </button>
+                </button> */}
                 <button
                   onClick={handleExportLogs}
                   disabled={isExporting}
@@ -800,14 +1432,14 @@ export default function SessionControl() {
       <AnimatePresence>
         {isConfigOpen && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsConfigOpen(false)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-200"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -819,7 +1451,7 @@ export default function SessionControl() {
                   <h2 className="font-headline text-2xl font-extrabold text-on-surface">Session <span className="text-primary">Config</span></h2>
                   <p className="text-xs text-outline uppercase tracking-widest mt-1">Runtime Parameters</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setIsConfigOpen(false)}
                   className="size-10 rounded-full hover:bg-surface-highest flex items-center justify-center transition-all"
                 >
@@ -828,20 +1460,28 @@ export default function SessionControl() {
               </div>
 
               <div className="flex-1 space-y-8 overflow-y-auto pr-2 custom-scrollbar">
-                <ConfigToggle 
+                <ConfigToggle
                   icon={ShieldCheck}
-                  label="Auto-Recording" 
+                  label="Auto-Recording"
                   description="Save audio stream to cloud storage"
                   active={config.autoRecording}
                   onToggle={() => setConfig(prev => ({ ...prev, autoRecording: !prev.autoRecording }))}
                 />
-                
-                <ConfigToggle 
+
+                <ConfigToggle
                   icon={Volume2}
-                  label="Noise Suppression" 
+                  label="Noise Suppression"
                   description="Filter background noise in real-time"
                   active={config.noiseSuppression}
                   onToggle={() => setConfig(prev => ({ ...prev, noiseSuppression: !prev.noiseSuppression }))}
+                />
+
+                <ConfigToggle
+                  icon={Zap}
+                  label="Test Interruption"
+                  description="Enable barge-in testing button in logs"
+                  active={config.testInterruption}
+                  onToggle={() => setConfig(prev => ({ ...prev, testInterruption: !prev.testInterruption }))}
                 />
 
                 <div className="space-y-4">
@@ -856,8 +1496,8 @@ export default function SessionControl() {
                         onClick={() => setConfig(prev => ({ ...prev, latencyMode: mode }))}
                         className={cn(
                           "py-3 rounded-xl text-xs font-bold uppercase tracking-widest border transition-all",
-                          config.latencyMode === mode 
-                            ? "bg-primary/10 border-primary text-primary" 
+                          config.latencyMode === mode
+                            ? "bg-primary/10 border-primary text-primary"
                             : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/30"
                         )}
                       >
@@ -875,11 +1515,11 @@ export default function SessionControl() {
                     </div>
                     <span className="text-primary font-mono font-bold">{config.temperature}</span>
                   </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="1" 
-                    step="0.1" 
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
                     value={config.temperature}
                     onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
                     className="w-full h-1.5 bg-surface-highest rounded-lg appearance-none cursor-pointer accent-primary"
@@ -892,7 +1532,7 @@ export default function SessionControl() {
               </div>
 
               <div className="mt-auto pt-10">
-                <button 
+                <button
                   onClick={() => setIsConfigOpen(false)}
                   className="w-full py-4 rounded-2xl ember-gradient text-on-primary-fixed font-bold shadow-lg shadow-primary/20 active:scale-95 transition-all"
                 >
@@ -911,27 +1551,71 @@ export default function SessionControl() {
             <div className="glass-panel rounded-3xl p-6 sm:p-10 lg:p-12 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] lg:min-h-[460px] relative overflow-hidden">
               {/* Voice Orb Animation */}
               <div className="absolute inset-0 bg-primary/5 blur-[100px]"></div>
-              
+
               <div className="relative size-48 sm:size-56 lg:size-64 flex items-center justify-center">
-                <motion.div 
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                  className="absolute inset-0 border border-primary/20 rounded-full"
-                />
-                <motion.div 
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
-                  className="absolute inset-10 border border-primary/40 rounded-full"
-                />
-                <div className="size-32 sm:size-36 lg:size-40 rounded-full bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600 shadow-[0_0_60px_rgba(6,182,212,0.4)] flex items-center justify-center border border-white/10">
-                  <Activity className="size-10 sm:size-12 lg:size-16 text-white" />
-                </div>
+                {/* [SENTIMENT-AWARE] Glow logic: Cyan (positive), Red (negative), Amber (neutral) */}
+
+                {isLive && (
+                  <>
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.2, 1],
+                        borderColor: currentSentiment === 'positive' ? 'rgba(52, 211, 153, 0.4)' :
+                          currentSentiment === 'negative' ? 'rgba(248, 113, 113, 0.4)' : 'rgba(251, 191, 36, 0.4)'
+                      }}
+                      transition={{ duration: 3, repeat: Infinity }}
+                      className="absolute inset-0 border rounded-full blur-xs"
+                    />
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.1, 1],
+                        borderColor: currentSentiment === 'positive' ? 'rgba(52, 211, 153, 0.6)' :
+                          currentSentiment === 'negative' ? 'rgba(248, 113, 113, 0.6)' : 'rgba(251, 191, 36, 0.6)'
+                      }}
+                      transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+                      className="absolute inset-10 border rounded-full"
+                    />
+                  </>
+                )}
+
+                <motion.div
+                  animate={{
+                    boxShadow: currentSentiment === 'positive' ? '0 0 60px rgba(52, 211, 153, 0.5)' :
+                      currentSentiment === 'negative' ? '0 0 60px rgba(248, 113, 113, 0.5)' : '0 0 40px rgba(251, 191, 36, 0.3)',
+                    scale: isLive ? 1 : 0.9,
+                    rotate: isLive ? 360 : 0
+                  }}
+                  transition={{
+                    boxShadow: { duration: 1 },
+                    rotate: isLive ? { duration: 20, repeat: Infinity, ease: "linear" } : 0
+                  }}
+                  className={cn(
+                    "size-32 sm:size-36 lg:size-40 rounded-full flex items-center justify-center border border-white/10 relative overflow-hidden",
+                    currentSentiment === 'positive' ? "bg-linear-to-tr from-emerald-900 via-teal-800 to-emerald-600" :
+                      currentSentiment === 'negative' ? "bg-linear-to-tr from-red-900 via-rose-800 to-red-600 shadow-red-500/20" :
+                        "bg-linear-to-tr from-indigo-900 via-cyan-800 to-indigo-600"
+                  )}
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]" />
+                  <Activity className="size-10 sm:size-12 lg:size-16 text-white relative z-10" />
+                </motion.div>
               </div>
 
               <div className="mt-8 text-center z-10">
                 <h3 className="font-headline text-2xl font-bold text-on-surface uppercase tracking-widest">
                   {status}
                 </h3>
+                {isHandoffAnimating && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-2"
+                  >
+                    <span className="bg-primary/20 text-primary px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border border-primary/30">
+                      Neural Shift
+                    </span>
+                  </motion.div>
+                )}
                 <p className={cn(
                   "font-label text-xs uppercase tracking-[0.2em] mt-2",
                   isLive ? "text-primary animate-pulse" : "text-outline"
@@ -942,14 +1626,14 @@ export default function SessionControl() {
 
               {isLive && (
                 <div className="mt-6 sm:mt-10 flex flex-wrap justify-center gap-3 z-10 animate-in fade-in slide-in-from-bottom-4">
-                  <button 
+                  <button
                     onClick={sendInterrupt}
                     className="bg-red-900/40 hover:bg-red-800/60 text-red-100 border border-red-500/30 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
                     <StopCircle className="size-4 sm:size-5" />
                     Interrupt
                   </button>
-                  <button 
+                  <button
                     onClick={endSession}
                     className="bg-surface-highest/60 hover:bg-surface-highest text-on-surface border border-outline-variant/20 px-5 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold transition-all backdrop-blur-md flex items-center gap-2 sm:gap-3 active:scale-95 text-sm"
                   >
@@ -965,6 +1649,11 @@ export default function SessionControl() {
               <MetricCard label="LLM TTFT" value={metrics.llm.toString()} unit="ms" color="border-cyan-500/40" />
               <MetricCard label="TTS Latency" value={metrics.tts.toString()} unit="ms" color="border-indigo-500/40" />
               <MetricCard label="Total RTT" value={metrics.total.toString()} unit="ms" color="border-white/20" highlight />
+            </div>
+
+            {/* Real-time Performance Visualization */}
+            <div className="mt-4 sm:mt-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <TelemetryCharts data={historicalMetrics} />
             </div>
           </div>
 
@@ -982,7 +1671,7 @@ export default function SessionControl() {
                 <StatusBadge label={infra.tts_provider || "TTS"} status={infra.tts} />
               </div>
             </div>
-            
+
             {/* Cognitive Load Widget */}
             {/* <div className={cn(
               "glass-panel rounded-3xl p-4 sm:p-6 transition-all duration-700 shrink-0",
@@ -1026,8 +1715,8 @@ export default function SessionControl() {
                   </p>
                 </div>
               </div> */}
-              
-              {/* <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
+
+            {/* <div className="mt-4 pt-4 border-t border-white/5 space-y-4">
                  <div className="flex items-center justify-between">
                     <div className="flex flex-col">
                         <span className="text-[9px] font-black text-outline uppercase tracking-widest">Efficiency</span>
@@ -1047,8 +1736,8 @@ export default function SessionControl() {
                     </div>
                  </div> */}
 
-                 {/* Token Headroom / Context Window Progress */}
-                 {/* {(() => {
+            {/* Token Headroom / Context Window Progress */}
+            {/* {(() => {
                     const model = modelLimits.find(m => m.id === (selectedBot?.llm_model || 'llama-3.3-70b-versatile'));
                     if (!model) return null;
                     const percent = Math.min(100, (sessionTokens.total / (model.context_window || 128000)) * 100);
@@ -1075,7 +1764,7 @@ export default function SessionControl() {
               </div> */}
             {/* </div> */}
 
-            <div className="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col flex-1 min-h-[320px] max-h-[550px] overflow-hidden">
+            <div className="glass-panel rounded-3xl p-4 sm:p-6 flex flex-col flex-1 min-h-[320px] max-h-[calc(100vh-250px)] overflow-hidden">
               {/* Transcript Header */}
               <div className="flex items-center justify-between mb-3 shrink-0">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Live Transcript</h4>
@@ -1085,13 +1774,42 @@ export default function SessionControl() {
                       <div className={cn(
                         "size-2 rounded-full",
                         currentSentiment === 'positive' ? "bg-emerald-400" :
-                        currentSentiment === 'negative' ? "bg-red-400 animate-pulse" : "bg-yellow-400"
+                          currentSentiment === 'negative' ? "bg-red-400 animate-pulse" : "bg-yellow-400"
                       )} />
                       <span className={cn(
                         "text-[10px] font-bold uppercase",
                         currentSentiment === 'positive' ? "text-emerald-400" :
-                        currentSentiment === 'negative' ? "text-red-400" : "text-yellow-400"
+                          currentSentiment === 'negative' ? "text-red-400" : "text-yellow-400"
                       )}>{currentSentiment}</span>
+                    </div>
+                  )}
+                  {isLive && (
+                    <div className="flex items-center gap-1.5 bg-surface-highest/30 px-2 py-1 rounded-lg ghost-border">
+                      {isTranslating ? (
+                        <Loader2 className="size-3 text-primary animate-spin" />
+                      ) : (
+                        <Languages className="size-3 text-outline" />
+                      )}
+                      <select
+                        value={targetLanguage}
+                        onChange={(e) => handleTranslate(e.target.value)}
+                        disabled={isTranslating}
+                        className="bg-transparent border-none text-[9px] font-bold uppercase tracking-wider outline-none focus:ring-0 cursor-pointer"
+                      >
+                        <option value="" className="bg-surface-low text-on-surface">Original</option>
+                        {SUPPORTED_LANGUAGES.map(l => (
+                          <option key={l.code} value={l.name} className="bg-surface-low text-on-surface">{l.name}</option>
+                        ))}
+                      </select>
+                      {isTranslating && (
+                        <button
+                          onClick={cancelTranslate}
+                          className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-0.5 rounded transition-all ml-1"
+                          title="Cancel Translation"
+                        >
+                          <X className="size-2.5" />
+                        </button>
+                      )}
                     </div>
                   )}
                   {isLive && (
@@ -1113,7 +1831,7 @@ export default function SessionControl() {
               )}
 
               {/* Scrollable transcript body — min-h-0 is required for overflow-y to engage in a flex column */}
-              <div 
+              <div
                 ref={transcriptRef}
                 className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 sm:pr-2 custom-scrollbar scroll-smooth"
               >
@@ -1125,7 +1843,7 @@ export default function SessionControl() {
                     <p className="text-sm font-medium">Waiting for communication...</p>
                   </div>
                 ) : (
-                  transcripts.map((t, i) => (
+                  optimizedTranscripts.map((t, i) => (
                     <div key={i} className={cn(
                       "flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300",
                       t.role === 'User' ? "items-end pl-6 sm:pl-10" : "items-start pr-6 sm:pr-10"
@@ -1145,7 +1863,7 @@ export default function SessionControl() {
                             className={cn(
                               "size-1.5 rounded-full",
                               t.sentiment === 'positive' ? "bg-emerald-400" :
-                              t.sentiment === 'negative' ? "bg-red-400" : "bg-yellow-400"
+                                t.sentiment === 'negative' ? "bg-red-400" : "bg-yellow-400"
                             )}
                             title={`Sentiment: ${t.sentiment}`}
                           />
@@ -1154,8 +1872,8 @@ export default function SessionControl() {
 
                       <div className={cn(
                         "px-3 sm:px-4 py-2.5 sm:py-3 rounded-2xl text-sm shadow-sm transition-all relative",
-                        t.role === 'User' 
-                          ? "bg-surface-highest text-on-surface rounded-tr-none border border-white/5" 
+                        t.role === 'User'
+                          ? "bg-surface-highest text-on-surface rounded-tr-none border border-white/5"
                           : "bg-primary/10 border border-primary/20 text-on-surface rounded-tl-none"
                       )}>
                         {t.text}
@@ -1169,7 +1887,7 @@ export default function SessionControl() {
               {/* Simulator text input */}
               {isLive && (
                 <div className="mt-3 pt-3 border-t border-white/5 shrink-0">
-                  <form 
+                  <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       const input = e.currentTarget.elements.namedItem('query') as HTMLInputElement;
@@ -1180,9 +1898,9 @@ export default function SessionControl() {
                     }}
                     className="relative"
                   >
-                    <input 
+                    <input
                       name="query"
-                      type="text" 
+                      type="text"
                       placeholder="Type a message (Simulator Mode)..."
                       className="w-full bg-surface-highest border border-white/5 rounded-xl py-2.5 pl-4 pr-11 text-sm focus:outline-none focus:border-primary/40 transition-all text-on-surface"
                     />
@@ -1196,9 +1914,19 @@ export default function SessionControl() {
 
             <div className="surface-lowest rounded-3xl p-4 sm:p-6 font-mono text-[10px] h-[220px] sm:h-[260px] lg:h-[300px] flex flex-col shrink-0 border border-outline-variant/5">
               <div className="flex items-center justify-between mb-4 border-b border-outline-variant/10 pb-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <Terminal className="size-4 text-primary" />
                   <span className="uppercase tracking-widest font-bold text-on-surface-variant">Neural Logs</span>
+                  {isLive && config.testInterruption && sessionTransport === 'websocket' && (
+                    <button
+                      onClick={() => ws?.send(JSON.stringify({ type: 'test_interruption' }))}
+                      className="ml-2 px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/20 transition-all flex items-center gap-1 shadow-sm"
+                      title="Test barge-in logic without LLM latency"
+                    >
+                      <Zap className="size-2.5" />
+                      Test Interruption
+                    </button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <TabButton active={activeLogTab === 'neural'} onClick={() => setActiveLogTab('neural')}>Pathway</TabButton>
@@ -1209,12 +1937,20 @@ export default function SessionControl() {
                   </TabButton>
                 </div>
               </div>
-              
-              <div 
+
+              <div
                 ref={logRef}
                 className="flex-1 overflow-y-auto space-y-1 custom-scrollbar"
               >
-                {activeLogTab === 'entities' ? (
+                {activeLogTab === 'vitals' ? (
+                  <div className="py-2 flex flex-col items-center justify-center h-full text-outline/30 space-y-2">
+                    <Zap className="size-8 opacity-20" />
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-center">
+                      Telemetry Active<br />
+                      <span className="font-normal normal-case">Charts moved to primary status display</span>
+                    </p>
+                  </div>
+                ) : activeLogTab === 'entities' ? (
                   entities.length === 0 ? (
                     <div className="text-outline/40 italic flex items-center justify-center h-full pt-10">
                       {isLive ? 'Listening for entities...' : 'No entities extracted yet'}
@@ -1231,10 +1967,9 @@ export default function SessionControl() {
                   )
                 ) : (
                   (() => {
-                    const filtered = logs.filter(log => {
-                      if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]'].includes(log.tag);
+                    const filtered = optimizedLogs.filter(log => {
+                      if (activeLogTab === 'neural') return ['[STATE]', '[BRAIN]', '[VOICE]', '[EARS]', '[THINKING]'].includes(log.tag);
                       if (activeLogTab === 'tools') return ['[TOOL]', '[RESULT]', '[PLAN]'].includes(log.tag);
-                      if (activeLogTab === 'vitals') return ['[STT]', '[STREAM]', '[METRIC]'].includes(log.tag);
                       return true;
                     });
 
@@ -1247,7 +1982,7 @@ export default function SessionControl() {
                     }
 
                     return filtered.map((log, i) => (
-                      <LogLine 
+                      <LogLine
                         key={i}
                         time={log.time}
                         tag={log.tag}
@@ -1262,29 +1997,38 @@ export default function SessionControl() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }
 
 function MetricCard({ label, value, unit, color, highlight }: any) {
   return (
-    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2", color)}>
-      <p className="text-[10px] uppercase tracking-wider text-outline mb-1">{label}</p>
-      <p className={cn("text-2xl font-headline font-extrabold", highlight && "text-primary")}>
-        {value}<span className="text-xs font-normal text-outline ml-1">{unit}</span>
-      </p>
+    <div className={cn("bg-surface-low rounded-2xl p-6 border-l-2 transition-all duration-300", color, "hover:bg-surface-high")}>
+      <p className="text-[10px] uppercase tracking-wider text-outline/60 mb-1.5 font-bold">{label}</p>
+      <div className="flex items-baseline gap-1.5">
+        <motion.span
+          key={value}
+          initial={{ scale: 1.15, opacity: 0.8 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
+          className={cn("text-2xl font-headline font-black", highlight ? "text-primary" : "text-on-surface")}
+        >
+          {value}
+        </motion.span>
+        <span className="text-xs font-bold text-outline uppercase tracking-tighter">{unit}</span>
+      </div>
     </div>
   );
 }
 
 function StatusBadge({ label, status = 'online' }: any) {
   const cfg: Record<string, { dot: string; border: string; pill: string; hint: string }> = {
-    online:      { dot: 'bg-green-500',  border: 'border-green-500/20',  pill: '',                          hint: 'Online'     },
-    offline:     { dot: 'bg-red-500',    border: 'border-red-500/30',    pill: 'bg-red-500/10 text-red-400', hint: 'Offline'    },
-    simulator:   { dot: 'bg-yellow-400', border: 'border-yellow-400/30', pill: 'bg-yellow-400/10 text-yellow-400', hint: 'Simulator' },
-    degraded:    { dot: 'bg-orange-400', border: 'border-orange-400/30', pill: 'bg-orange-400/10 text-orange-400', hint: 'Degraded' },
-    unavailable: { dot: 'bg-zinc-500',   border: 'border-zinc-500/20',   pill: 'bg-zinc-500/10 text-zinc-400', hint: 'N/A'      },
+    online: { dot: 'bg-green-500', border: 'border-green-500/20', pill: '', hint: 'Online' },
+    offline: { dot: 'bg-red-500', border: 'border-red-500/30', pill: 'bg-red-500/10 text-red-400', hint: 'Offline' },
+    simulator: { dot: 'bg-yellow-400', border: 'border-yellow-400/30', pill: 'bg-yellow-400/10 text-yellow-400', hint: 'Simulator' },
+    degraded: { dot: 'bg-orange-400', border: 'border-orange-400/30', pill: 'bg-orange-400/10 text-orange-400', hint: 'Degraded' },
+    unavailable: { dot: 'bg-zinc-500', border: 'border-zinc-500/20', pill: 'bg-zinc-500/10 text-zinc-400', hint: 'N/A' },
   };
   const s = cfg[status] ?? cfg.offline;
   return (
@@ -1321,7 +2065,7 @@ function LogLine({ time, tag, content, color }: any) {
 
 function TabButton({ active, children, onClick }: any) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
         "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-tighter transition-all",
@@ -1348,14 +2092,14 @@ function ConfigToggle({ icon: Icon, label, description, active, onToggle }: any)
           <p className="text-[10px] text-outline uppercase tracking-wider">{description}</p>
         </div>
       </div>
-      <button 
+      <button
         onClick={onToggle}
         className={cn(
           "w-12 h-6 rounded-full relative transition-all",
           active ? "bg-primary" : "bg-surface-highest"
         )}
       >
-        <motion.div 
+        <motion.div
           animate={{ x: active ? 24 : 4 }}
           className="absolute top-1 size-4 rounded-full bg-white shadow-sm"
         />

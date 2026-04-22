@@ -58,6 +58,7 @@ class DeepgramTTSProvider:
     async def stream_speech(
         self,
         text: str,
+        **kwargs,
     ) -> AsyncIterator[bytes]:
         """
         Stream audio chunks for the given text.

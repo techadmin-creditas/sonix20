@@ -99,11 +99,10 @@ class VectorMemoryProvider:
         fact: str,
         source: Optional[str] = None,
         category: str = "general",
+        **kwargs
     ) -> str:
         """
-        Store a summarized knowledge fact from an external source (like Google)
-        into the persistent vector store.
-        Returns the unique fact_id (MD5 hash of the content).
+        Store a summarized knowledge fact into the persistent vector store.
         """
         if not self._available or not self._collection or not fact.strip():
             return ""
@@ -116,6 +115,10 @@ class VectorMemoryProvider:
                 "type": "fact",
                 "timestamp": str(logging.time.time()),
             }
+            # Add any extra kwargs to metadata
+            for k, v in kwargs.items():
+                metadata[k] = str(v)
+
             self._collection.upsert(
                 ids=[fact_id],
                 documents=[fact],
@@ -182,6 +185,9 @@ class VectorMemoryProvider:
         """
         if not self._available or not self._collection or not query.strip():
             return []
+        
+        logger.info("🔍 Vector Search: query='%s', bot_id=%s", query[:60], bot_id)
+        
         try:
             where_filter = {"bot_id": bot_id} if bot_id else None
             results = self._collection.query(
@@ -206,8 +212,11 @@ class VectorMemoryProvider:
                         "score": round(score, 4),
                         "id": meta.get("id", ""),
                     })
+                    logger.debug("  ✅ Match: score=%.4f, content='%s...'", score, doc[:50])
+                else:
+                    logger.debug("  ❌ Low-score skip: score=%.4f < %.2f", score, min_score)
             
-            logger.debug("Search knowledge: '%s' -> %d matches above threshold %.2f", query[:50], len(output), min_score)
+            logger.info("📦 Vector Search COMPLETE: %d results found above threshold %.2f", len(output), min_score)
             return output
         except Exception as e:
             logger.warning("Search knowledge failed: %s", e)

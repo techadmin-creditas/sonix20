@@ -26,8 +26,10 @@ import time
 from typing import Any, AsyncIterator, List, Optional
 
 from voicebot.shared.config import get_settings
+from voicebot.shared.utils.validation import is_valid_api_key
 from voicebot.shared.logging.logger import setup_logger
 from voicebot.shared.models.tools import LLMResponse, ToolCall, ToolDefinition
+from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
 
 logger = setup_logger("llm-openrouter", level="INFO")
 settings = get_settings()
@@ -61,6 +63,9 @@ class OpenRouterStreamingProvider:
         temperature: float = 0.7,
     ):
         self.api_key = api_key or settings.openrouter_api_key
+        # 🛡️ Robustness: Strip trailing comments/whitespace if accidentally loaded from .env
+        if self.api_key:
+            self.api_key = self.api_key.split('#')[0].split(' ')[0].strip()
         if self.api_key:
             logger.info(
                 "OpenRouter provider initialised  key=%s...%s  model=%s",
@@ -86,8 +91,9 @@ class OpenRouterStreamingProvider:
         if self._client is None:
             from openai import AsyncOpenAI
 
-            if not self.api_key:
-                raise ValueError("OPENROUTER_API_KEY is required — add it to your .env file.")
+            if not is_valid_api_key(self.api_key):
+                logger.error("🚫 OpenRouter API Key is invalid or a placeholder.")
+                raise AuthError(f"OpenRouter API Key is a placeholder or invalid.")
 
             extra_headers: dict[str, str] = {
                 "HTTP-Referer": APP_SITE_URL,
@@ -144,8 +150,37 @@ class OpenRouterStreamingProvider:
         else:
             system_msg = {"role": "system", "content": system_prompt}
 
+        # 🛡️ Message Transformation: Ensure OpenAI/OpenRouter compatibility for tool calls in history
+        import json
+        transformed_messages = []
+        for m in messages:
+            new_msg = m.copy()
+            # 1. Format Assistant Tool Calls
+            if new_msg.get("role") == "assistant" and new_msg.get("tool_calls"):
+                legacy_calls = new_msg.pop("tool_calls")
+                new_calls = []
+                for tc in legacy_calls:
+                    # Map from internal flat model to OpenAI structured model
+                    new_calls.append({
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name"),
+                            "arguments": json.dumps(tc.get("arguments")) if isinstance(tc.get("arguments"), dict) else (tc.get("arguments") or "{}")
+                        }
+                    })
+                new_msg["tool_calls"] = new_calls
+            
+            # 2. Ensure Tool Results have correct fields
+            if new_msg.get("role") == "tool":
+                # OpenAI/OpenRouter expects 'tool_call_id'
+                if "tool_call_id" not in new_msg and "id" in new_msg:
+                    new_msg["tool_call_id"] = new_msg.pop("id")
+            
+            transformed_messages.append(new_msg)
+
         full_messages = [system_msg]
-        full_messages.extend(messages)
+        full_messages.extend(transformed_messages)
 
         # Convert ToolDefinition → OpenAI function-calling schema
         openai_tools = []
@@ -233,59 +268,26 @@ class OpenRouterStreamingProvider:
                     break
 
         except Exception as e:
+            from voicebot.shared.exceptions import ServiceExhaustedError, AuthError, VoiceBotError
             err_str = str(e)
 
+            # ── 401 Authentication Failure ──────────────────────────────────────
+            if "401" in err_str or "unauthorized" in err_str.lower():
+                raise AuthError(f"OpenRouter authentication failed: {err_str}")
+
             # ── 402 Insufficient credits ───────────────────────────────────────
-            # OpenRouter error: "You requested up to N tokens, but can only afford M."
-            # Auto-retry once with M tokens so a low-credit free account degrades
-            # gracefully instead of hard-failing the turn.
-            if "402" in err_str and "can only afford" in err_str:
-                affordable = None
-                m = _re.search(r'can only afford (\d+)', err_str)
-                if m:
-                    affordable = max(64, int(m.group(1)) - 16)  # small safety margin
+            # Case 1: OpenRouter error "You requested up to N tokens, but can only afford M."
+            # We now bail instead of retrying to ensure the user knows their session is expired.
+            if "402" in err_str or "can only afford" in err_str:
+                raise ServiceExhaustedError("OpenRouter usage limit or credit quota reached.")
 
-                if affordable and affordable < (max_tokens or self.max_tokens):
-                    logger.warning(
-                        "OpenRouter 402: reducing max_tokens %d → %d and retrying (model=%s)",
-                        max_tokens or self.max_tokens, affordable, self.model,
-                    )
-                    try:
-                        retry_kwargs = dict(kwargs)
-                        retry_kwargs["max_tokens"] = affordable
-                        stream2 = await client.chat.completions.create(**retry_kwargs)
-                        async for chunk in stream2:
-                            if hasattr(chunk, "usage") and chunk.usage:
-                                yield LLMResponse(usage={
-                                    "prompt_tokens":     chunk.usage.prompt_tokens,
-                                    "completion_tokens": chunk.usage.completion_tokens,
-                                    "total_tokens":      chunk.usage.total_tokens,
-                                })
-                            if not chunk.choices:
-                                continue
-                            delta = chunk.choices[0].delta
-                            if delta and delta.content:
-                                if first_token:
-                                    ttft = (time.time() - start_time) * 1000
-                                    logger.info("OpenRouter TTFT (retry): %.0fms  model=%s", ttft, self.model)
-                                    first_token = False
-                                yield LLMResponse(content=delta.content)
-                            if chunk.choices[0].finish_reason:
-                                break
-                        return
-                    except Exception as retry_err:
-                        logger.error("OpenRouter retry also failed: %s", retry_err)
-
-                logger.error(
-                    "OpenRouter 402 — insufficient credits (model=%s). "
-                    "Add credits at https://openrouter.ai/settings/credits or switch to a free model.",
-                    self.model,
-                )
-                yield LLMResponse(content="I'm having trouble reaching my language model due to credit limits. Please try again shortly.")
-                return
+            # ── 429 Rate Limit / Global Usage Limit ──────────────────────────────
+            if "429" in err_str or "rate limit" in err_str.lower():
+                raise ServiceExhaustedError("OpenRouter rate limit or usage quota exceeded.")
 
             logger.error("OpenRouter streaming error: %s", e, exc_info=True)
-            yield LLMResponse(content="Error reaching OpenRouter. Check your API key and model name.")
+            # Forward generic errors as VoiceBotError to trigger UI closure
+            raise VoiceBotError(f"OpenRouter reported an error: {err_str[:100]}")
 
     async def complete(
         self,

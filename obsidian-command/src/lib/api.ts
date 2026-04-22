@@ -1,5 +1,50 @@
 /** REST API base (override with VITE_API_BASE, e.g. http://localhost:8000/api/v1) */
 const BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api/v1';
+const AUTH_TOKEN_KEY = 'voicebot.auth.token';
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  role: string;
+  permissions?: string[];
+  effective_permissions?: string[];
+  role_permissions?: string[];
+  overrides?: string[];
+  is_active?: number;
+};
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token: string) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+export function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+const nativeFetch = globalThis.fetch.bind(globalThis);
+
+async function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers || {});
+  const token = getAuthToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return nativeFetch(input, { ...(init || {}), headers });
+}
+const fetch = authedFetch;
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+  } catch { }
+  return fallback;
+}
 
 /** HTTP origin for the voice gateway (no /api/v1), used to build default ws:// URL */
 export function getApiOrigin(): string {
@@ -36,12 +81,15 @@ export interface Bot {
   name: string;
   description: string;
   persona: string;
+  /** Core system prompt used for voice turns (editable by DIY With AI). */
+  system_prompt?: string;
   role: string;
   icon: string;
   color: string;
   greeting?: string;
   tools_enabled: string[];
   llm_model: string;
+  llm_provider?: string;
   voice_id?: string;
   temperature?: number;
   max_tokens?: number;
@@ -64,11 +112,28 @@ export interface Bot {
   /** Min Deepgram confidence (0-1). Below this on short utterances, bot asks to repeat */
   min_stt_confidence?: number;
   tts_provider?: string;
+  tts_model?: string;
   default_language?: string;
   proactive_prompts?: string[];
   topic_restriction?: string;
   refuse_off_topic?: boolean;
+  is_landing_page_default?: boolean;
+  owner_user_id?: string;
+  show_on_dashboard?: boolean;
+  required_role?: string;
 }
+
+export type DiyPersonaDraft = {
+  title: string;
+  tags: string[];
+  default_language: 'en' | 'hi';
+  persona: string;
+  system_prompt: string;
+  tts_provider: string;
+  voice_id?: string;
+  voice_name?: string;
+  voice_provider?: string;
+};
 
 export interface SessionFeedback {
   outcome: 'resolved' | 'escalated' | 'abandoned';
@@ -104,12 +169,17 @@ export interface DashboardStats {
     totalSessions: number;
     activeBots: number;
     avgLatency: string;
+    totalTokens: string;
     successRate: string;
     avgDuration: string;
   };
   botUsage: { name: string; value: number }[];
   peakHours: { hour: string; sessions: number }[];
   sentiment: { positive: number; neutral: number; negative: number };
+  sessionHistory: { name: string; value: number }[];
+  toolUsage: { name: string; count: number }[];
+  botPerformance: { name: string; rate: number }[];
+  durationDistribution: { range: string; count: number }[];
 }
 
 export interface SessionRecord {
@@ -122,6 +192,52 @@ export interface SessionRecord {
   ended_at: number | null;
   turn_count: number;
   metadata?: any;
+}
+
+
+
+export interface SandboxStageResult {
+  original: string;
+  sanitized: string;
+  blocked: boolean;
+  block_rule: string | null;
+  block_message: string | null;
+  was_masked: boolean;
+}
+
+export interface RuleOption {
+  id: string;
+  label: string;
+  description: string;
+  requires?: string;
+}
+
+export interface GuardrailMetadata {
+  triggers: RuleOption[];
+  actions: RuleOption[];
+  scopes: RuleOption[];
+}
+
+export interface GuardrailRule {
+  id: string;
+  name: string;
+  description?: string;
+  scope: 'input' | 'output' | 'both';
+  trigger: string;
+  pattern: string;
+  action: string;
+  params: Record<string, any>;
+  is_active?: boolean;
+  priority?: number;
+}
+
+export interface GuardrailPolicy {
+  rules: GuardrailRule[];
+  injection_check_enabled?: boolean;
+  injection_action?: 'log' | 'block';
+  injection_block_message?: string;
+  kb_only_factual?: boolean;
+  semantic_cache_ttl_seconds?: number;
 }
 
 export interface KnowledgeEntry {
@@ -161,27 +277,124 @@ export interface QACacheEntry {
 }
 
 export const api = {
+  async login(username: string, password: string): Promise<{ access_token: string; token_type: string; user: AuthUser }> {
+    const res = await nativeFetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) throw new Error('Invalid username or password');
+    const data = await res.json();
+    if (data?.access_token) setAuthToken(data.access_token);
+    return data;
+  },
+
+  async me(): Promise<AuthUser> {
+    const res = await fetch(`${BASE_URL}/auth/me`);
+    if (!res.ok) throw new Error('Unauthorized');
+    return res.json();
+  },
+
+  async listUsers(): Promise<AuthUser[]> {
+    const res = await fetch(`${BASE_URL}/admin/users`);
+    if (!res.ok) throw new Error('Failed to fetch users');
+    const data = await res.json();
+    return data.users || [];
+  },
+
+  async getTestCustomers(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/test-customers`);
+    if (!res.ok) throw new Error('Failed to fetch test customers');
+    const data = await res.json();
+    return data.customers || [];
+  },
+
+  async createUser(data: { username: string; password: string; role?: string; permissions?: string[] }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create user'));
+    return res.json();
+  },
+
+  async updateUser(userId: string, data: { username?: string; role?: 'admin' | 'user'; is_active?: boolean; permissions?: string[] }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update user'));
+    return res.json();
+  },
+
+  async listRoles(): Promise<{ roles: { id: string; permissions: string[] }[] }> {
+    const res = await fetch(`${BASE_URL}/admin/roles`);
+    return res.json();
+  },
+
+  async updateRole(roleId: string, permissions: string[]): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/roles/${roleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permissions }),
+    });
+    return res.json();
+  },
+
+  async changeUserPassword(userId: string, password: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to change password'));
+    return res.json();
+  },
+  async deleteUser(userId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'));
+    return res.json();
+  },
+  
+  async resetUserPermissions(userId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/admin/users/${userId}/reset-permissions`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to reset permissions'));
+    return res.json();
+  },
+
+  async getLandingPageBot(): Promise<{ bot_id: string }> {
+    const res = await nativeFetch(`${BASE_URL}/bots/landing-default`);
+    if (!res.ok) throw new Error('Failed to fetch landing page bot');
+    return res.json();
+  },
+
   async getBots(): Promise<Bot[]> {
-    const res = await fetch(`${BASE_URL}/bots`);
+    const res = await authedFetch(`${BASE_URL}/bots`);
     if (!res.ok) throw new Error('Failed to fetch bots');
     const data = await res.json();
     return data.bots;
   },
-  
+
   async getBot(id: string): Promise<Bot> {
     const res = await fetch(`${BASE_URL}/bots/${id}`);
     if (!res.ok) throw new Error('Failed to fetch bot');
     return res.json();
   },
 
-  async getModels(): Promise<{id: string, name: string, provider: string}[]> {
+  async getModels(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/models`);
     if (!res.ok) throw new Error('Failed to fetch models');
     const data = await res.json();
     return data.models;
   },
 
-  async getVoices(): Promise<{id: string, name: string, provider: string}[]> {
+  async getVoices(): Promise<{ id: string, name: string, provider: string }[]> {
     const res = await fetch(`${BASE_URL}/metadata/voices`);
     if (!res.ok) throw new Error('Failed to fetch voices');
     const data = await res.json();
@@ -194,14 +407,36 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error('Failed to create bot');
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create bot'));
     return res.json();
+  },
+
+  async generateDiyPersona(input: {
+    objective: string;
+    domain?: string;
+    language?: 'en' | 'hi';
+    tone?: string;
+    constraints?: string;
+  }): Promise<{ persona: DiyPersonaDraft; llm_used: string; generated_at: number }> {
+    const res = await fetch(`${BASE_URL}/diy/persona`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to generate persona'));
+    const data = await res.json();
+    return {
+      persona: data.persona,
+      llm_used: data.llm_used,
+      generated_at: data.generated_at,
+    };
   },
 
   async createSession(
     botId?: string,
     transport: 'websocket' | 'webrtc' | 'livekit' = 'websocket',
-    userId?: string
+    userId?: string,
+    noAuth = false
   ): Promise<{
     session_id: string;
     websocket_url: string;
@@ -213,7 +448,10 @@ export const api = {
     if (botId) url.searchParams.append('bot_id', botId);
     url.searchParams.append('transport', transport);
     if (userId) url.searchParams.append('user_id', userId);
-    const res = await fetch(url.toString(), { method: 'POST' });
+    
+    // Choose between authed fetch and native fetch
+    const fetchFn = noAuth ? nativeFetch : fetch;
+    const res = await fetchFn(url.toString(), { method: 'POST' });
     if (!res.ok) throw new Error('Failed to create session');
     return res.json();
   },
@@ -252,6 +490,52 @@ export const api = {
     return res.json();
   },
 
+  async testTts(data: {
+    tts_provider: string;
+    voice_id: string;
+    tts_model?: string;
+    text: string;
+    language?: string;
+    emotion?: string;
+    stability?: number;
+    similarity_boost?: number;
+    style?: number;
+  }): Promise<Response> {
+    const res = await fetch(`${BASE_URL}/tts/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('TTS test failed');
+    return res;
+  },
+
+  async getTestingMetadata(): Promise<{
+    languages: any[];
+    tones: any[];
+    stress_corpus: any[];
+  }> {
+    const res = await fetch(`${BASE_URL}/metadata/testing`);
+    if (!res.ok) throw new Error('Failed to fetch testing metadata');
+    return res.json();
+  },
+
+  async cloneVoice(audioBlob: Blob, name: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'clone.wav');
+    formData.append('name', name);
+
+    const res = await fetch(`${BASE_URL}/metadata/clone`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown cloning error' }));
+        throw new Error(err.detail || 'Voice cloning failed');
+    }
+    return res.json();
+  },
+
   async getDashboardStats(): Promise<DashboardStats> {
     const res = await fetch(`${BASE_URL}/analytics/dashboard`);
     if (!res.ok) throw new Error('Failed to fetch dashboard stats');
@@ -276,6 +560,44 @@ export const api = {
     if (!res.ok) throw new Error('Failed to fetch session transcript');
     const data = await res.json();
     return data.turns;
+  },
+
+  /** Summary, intent, insights, and extracted entities via the session bot's configured LLM. */
+  async summarizeSession(id: string): Promise<{
+    summary: string;
+    intent: string;
+    insights: string[];
+    entities_saved?: number;
+    session_nlp_version?: number;
+    llm_analysis_at?: number;
+  }> {
+    const res = await fetch(`${BASE_URL}/sessions/${id}/summarize`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to generate session summary');
+    return res.json();
+  },
+
+  async recommendSession(
+    id: string,
+    data?: { goal?: string; constraints?: string }
+  ): Promise<{
+    session_id: string;
+    generated_at: number;
+    llm_used: string;
+    recommendations: {
+      recommended_prompt: string;
+      recommended_persona: string;
+      recommended_llm_provider: string;
+      recommended_llm_model: string;
+      why: string[];
+    };
+  }> {
+    const res = await fetch(`${BASE_URL}/sessions/${id}/recommend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data || {}),
+    });
+    if (!res.ok) throw new Error('Failed to generate recommendations');
+    return res.json();
   },
 
   async getKnowledgeEntries(limit = 100): Promise<KnowledgeEntry[]> {
@@ -316,7 +638,7 @@ export const api = {
     return res.json();
   },
 
-  async saveWorkflow(data: Partial<Workflow>): Promise<{status: string, id: string}> {
+  async saveWorkflow(data: Partial<Workflow>): Promise<{ status: string, id: string }> {
     const res = await fetch(`${BASE_URL}/workflows`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -326,14 +648,56 @@ export const api = {
     return res.json();
   },
 
-  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string): Promise<any> {
+  async testWorkflow(workflow_data: any, user_input: string, current_node_id?: string, node_visit_counts?: Record<string, number>, metadata?: any): Promise<any> {
     const res = await fetch(`${BASE_URL}/workflows/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflow_data, user_input, current_node_id }),
+      body: JSON.stringify({ workflow_data, user_input, current_node_id, node_visit_counts, metadata }),
     });
     if (!res.ok) throw new Error('Failed to test workflow');
     return res.json();
+  },
+
+  /** AI-powered suggestions for node content tone/intents */
+  async suggestAIContent(nodeType: string, currentText: string, tone: string, context?: string): Promise<string> {
+    const res = await fetch(`${BASE_URL}/workflows/ai-suggest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_type: nodeType, current_text: currentText, tone, context }),
+    });
+    if (!res.ok) throw new Error('AI suggestion failed');
+    const data = await res.json();
+    return data.suggestion;
+  },
+
+  /** Generate an entire bot workflow graph from a single prompt */
+  async generateWorkflowFromPrompt(prompt: string): Promise<Workflow> {
+    const res = await fetch(`${BASE_URL}/workflows/generate-from-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) throw new Error('Failed to generate magic workflow');
+    return res.json();
+  },
+
+  async architectAI(payload: {
+    operation_type: string;
+    current_node: any;
+    predecessors: any[];
+    successors: any[];
+    strategy_prompt?: string;
+    tone?: string;
+    workflow_goal?: string;
+  }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/workflows/ai-node-architect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('AI Architect failed');
+    const data = await res.json();
+    return data.suggestion;
   },
 
   async submitFeedback(sessionId: string, data: SessionFeedback): Promise<any> {
@@ -344,6 +708,16 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to submit feedback');
     return res.json();
+  },
+
+  async translateSession(sessionId: string, targetLang: string, signal?: AbortSignal): Promise<string> {
+    const response = await fetch(`${BASE_URL}/sessions/${sessionId}/translate?target_lang=${encodeURIComponent(targetLang)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+    });
+    const data = await response.json();
+    return data.translated_text || '';
   },
 
   async getSessionFacts(sessionId: string): Promise<UserFact[]> {
@@ -407,4 +781,242 @@ export const api = {
     const data = await res.json();
     return data.items;
   },
+
+  async getGuardrailSuggestions(botId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/bots/${botId}/suggest-rules`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to fetch guardrail suggestions');
+    return res.json();
+  },
+
+  async getGuardrailMetadata(): Promise<GuardrailMetadata> {
+    const res = await fetch(`${BASE_URL}/metadata/guardrails`);
+    if (!res.ok) throw new Error('Failed to fetch guardrail metadata');
+    return res.json();
+  },
+
+  async getScopes(): Promise<Record<string, string[]>> {
+    const res = await fetch(`${BASE_URL}/scopes`);
+    if (!res.ok) throw new Error('Failed to fetch scopes');
+    const data = await res.json();
+    return data.scopes;
+  },
+
+  /** STT test: DeepgramStreamingProvider (live WebSocket path), no LLM/TTS. */
+  async sttSandbox(
+    botId: string,
+    audioBlob: Blob,
+    filename = 'capture.pcm',
+    opts?: { rawPcm?: boolean }
+  ): Promise<{
+    transcript: string;
+    confidence: number | null;
+    resolved_stt_language: string;
+    default_language: string;
+    deepgram_query_params: Record<string, string>;
+  }> {
+    const url = new URL(`${BASE_URL}/bots/${botId}/stt-sandbox`);
+    if (opts?.rawPcm) url.searchParams.set('raw_pcm', 'true');
+    const fd = new FormData();
+    fd.append('file', audioBlob, filename);
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) {
+      let msg = 'STT sandbox failed';
+      try {
+        const j = await res.json();
+        if (j?.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+      } catch {
+        msg = (await res.text()) || msg;
+      }
+      throw new Error(msg);
+    }
+    return res.json();
+  },
+
+  async sandboxTest(payload: {
+    user_input: string;
+    guardrail_policy: Record<string, unknown>;
+    system_prompt: string;
+    llm_model: string;
+    llm_provider?: string;
+    temperature?: number;
+    max_tokens?: number;
+    test_mode: 'guardrail_only' | 'full_pipeline';
+  }): Promise<{
+    input_result: SandboxStageResult;
+    llm_result: { response?: string; error?: string } | null;
+    output_result: SandboxStageResult | null;
+    final_output: string | null;
+  }> {
+    const res = await fetch(`${BASE_URL}/guardrails/sandbox-test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Sandbox test failed');
+    return res.json();
+  },
+
+  async suggestDataAccessPolicy(botContext: {
+    name: string;
+    role: string;
+    system_prompt: string;
+    available_scopes: Record<string, string[]>;
+  }): Promise<{
+    enabled_scopes: string[];
+    appointments_match_session_user: boolean;
+    integrations: Record<string, { url_template: string; method: string }>;
+    reasoning: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/guardrails/suggest-data-access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(botContext),
+    });
+    if (!res.ok) throw new Error('Failed to get data access suggestions');
+    return res.json();
+  },
+
+  // ─── 🛡️ Dynamic Tools ───
+  async getCustomTools(): Promise<any[]> {
+    const res = await fetch(`${BASE_URL}/tools/custom`);
+    if (!res.ok) throw new Error('Failed to fetch custom tools');
+    const data = await res.json();
+    return data.tools;
+  },
+
+  async createCustomTool(data: any): Promise<any> {
+    const res = await fetch(`${BASE_URL}/tools/custom`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create custom tool');
+    return res.json();
+  },
+
+  // ─── 📚 Knowledge Ingestion ───
+  async ingestUrl(url: string, botId?: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/knowledge/ingest/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, bot_id: botId }),
+    });
+    if (!res.ok) throw new Error('Failed to ingest URL');
+    return res.json();
+  },
+
+  async ingestPdf(file: File, botId?: string): Promise<any> {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (botId) fd.append('bot_id', botId);
+    const res = await fetch(`${BASE_URL}/knowledge/ingest/upload`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!res.ok) throw new Error('Failed to upload PDF');
+    return res.json();
+  },
+
+  // ─── 🧠 AI Persona Builder ───
+  async listAiPersonas(): Promise<AiPersona[]> {
+    const res = await fetch(`${BASE_URL}/ai-personas`);
+    if (!res.ok) throw new Error('Failed to fetch AI personas');
+    const data = await res.json();
+    return data.personas || [];
+  },
+
+  async createAiPersona(data: Partial<AiPersona>): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create AI persona');
+    const body = await res.json();
+    return body.persona;
+  },
+
+  async updateAiPersona(id: string, data: Partial<AiPersona>): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update AI persona');
+    const body = await res.json();
+    return body.persona;
+  },
+
+  async deleteAiPersona(id: string): Promise<void> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete AI persona');
+  },
+
+  async toggleAiPersonaDeploy(id: string): Promise<AiPersona> {
+    const res = await fetch(`${BASE_URL}/ai-personas/${id}/toggle-deploy`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to toggle AI persona deployment');
+    const body = await res.json();
+    return body.persona;
+  },
+
+  /** Generic request helper for dynamic features */
+  async request(method: string, path: string, body?: any): Promise<any> {
+    const url = path.startsWith('http') ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(await readErrorMessage(res, `API ${method} ${path} failed`));
+    return res.json();
+  },
+
+  async suggestSystemPrompt(name: string, role: string, persona?: string, currentPrompt?: string): Promise<{
+    suggested_prompt?: string;
+    analysis?: string;
+    revised_prompt?: string;
+    provider?: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/bots/suggest-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, persona, current_prompt: currentPrompt }),
+    });
+    return res.json();
+  },
 };
+
+export interface AiPersona {
+  id: string;
+  name: string;
+  gender: 'Female' | 'Male' | 'Non-binary';
+  language: string;
+  tone: string;
+  useCase: string;
+  psychology: string;
+  emotion: string;
+  urgency: number;
+  empathy: number;
+  stability: number;
+  clarity: number;
+  styleExaggeration: number;
+  expressiveness: number;
+  baseModel: string;
+  selectedVoice: string;
+  themeColor: string;
+  isActive: boolean;
+  isDeployed: boolean;
+  owner_user_id?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+

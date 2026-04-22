@@ -8,21 +8,36 @@ We are moving away from the "SaaS-standard" white-and-grey box layouts. This sys
 ---
 
 ## 2. Colors & Surface Philosophy
-The palette is rooted in the depth of `Deep Black (#050608)` and energized by the smoldering warmth of amber and orange.
+The palette is designed for high-contrast legibility and cinematic depth, available in two primary configurations.
 
-### The Foundation
-*   **Core Canvas:** The absolute background is `#050608`. To prevent "flatness," apply a subtle mesh gradient in the corners using `Dark Amber (#1C0D02)`.
-*   **The "No-Line" Rule:** Explicitly prohibit the use of 1px solid borders for sectioning or layout containment. Structural boundaries must be defined solely through background color shifts. For example, a `surface-container-low (#1a1c1e)` section sitting on a `surface (#121316)` background creates a sophisticated, soft edge that feels integrated rather than walled off.
+### Configuration A: The Obsidian Command (Dark Mode)
+The default state, rooted in the depth of `Deep Black (#050608)` and energized by amber glows.
+*   **Core Canvas:** `#050608`. Subtle mesh gradients in corners using `Dark Amber (#1C0D02)`.
+*   **Hierarchy:** 
+    *   `surface-lowest`: `#0d0e11`
+    *   `surface`: `#121316`
+    *   `surface-low`: `#1a1c1e`
+    *   `surface-high`: `#292a2d`
+    *   `surface-highest`: `#343538`
+*   **Glass:** `bg-surface/70` with `backdrop-blur-3xl`.
 
-### Surface Hierarchy & Nesting
-Treat the UI as a physical stack of semi-transparent materials.
-*   **Lowest:** `surface-container-lowest (#0d0e11)` for background utility areas.
-*   **Base:** `surface (#121316)` for the general canvas.
-*   **Elevated:** `surface-container-high (#292a2d)` and `highest (#343538)` for active widgets and modular components.
+### Configuration B: The Alabaster Signal (Light Mode)
+A high-clarity alternative, using warm off-whites and soft amber shadows to maintain the premium feel.
+*   **Core Canvas:** `Sand (#fdf8f5)`. Subtle warm glows using `Soft Amber (#fff1e6)`.
+*   **Hierarchy:** 
+    *   `surface-lowest`: `#ffffff`
+    *   `surface`: `#fffbff`
+    *   `surface-low`: `#f7f3f1`
+    *   `surface-high`: `#f1edeb`
+    *   `surface-highest`: `#ebe7e5`
+*   **Glass:** `bg-surface/40` with `backdrop-blur-2xl`.
+
+### The "No-Line" Rule
+Explicitly prohibit the use of 1px solid borders for sectioning or layout containment in BOTH themes. Structural boundaries must be defined solely through background color shifts or subtle box-shadow layering.
 
 ### Signature Textures
-*   **Glassmorphism:** Use `glass-blur-3xl` for floating panels (modals, dropdowns). These must use a semi-transparent `surface` color to allow the underlying amber mesh to bleed through.
-*   **The Ember Gradient:** Main CTAs must use a 135-degree linear gradient from `primary-container (#fb8c00)` to `#B45309`. This provides a tactile, glowing "soul" to the interactive elements.
+*   **Glassmorphism:** Use `glass-blur-3xl` for floating panels. In Dark Mode, these allow underlying amber mesh to bleed through. In Light Mode, they create a soft depth without weighing down the interface.
+*   **The Ember Gradient:** Main CTAs use a 135-degree linear gradient from `primary-container` to a deeper amber. This provides a tactile, glowing "soul" that works as a light-source in Dark Mode and a high-contrast accent in Light Mode.
 
 ---
 
