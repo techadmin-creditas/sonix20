@@ -15,13 +15,17 @@ export function Sidebar({
   onLogout: () => void;
 }) {
   const { canRead, isAdmin } = useAuth();
-  
+
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0 z-50">
       <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="font-headline text-lg font-bold tracking-tight text-on-surface">SONIX 2.1</h1>
+
+            <h1 className="font-headline text-xl font-extrabold tracking-tight text-on-surface uppercase">
+              SONIX <span className="text-primary">2.0</span>
+            </h1>
+
           </div>
           {/* <ThemeToggle /> */}
         </div>
@@ -36,14 +40,14 @@ export function Sidebar({
                 className={({ isActive }) => cn(
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group",
                   isActive
-                    ? "bg-surface-highest text-primary border border-outline-variant/20 shadow-lg"
-                    : "text-on-surface-variant hover:bg-surface-high/50"
+                    ? "ember-gradient studio-glow shadow-lg"
+                    : "text-on-surface-variant hover:bg-surface-high/60"
                 )}
               >
                 {({ isActive }) => (
                   <>
-                    <item.icon className={cn("size-5", isActive ? "text-primary" : "text-outline group-hover:text-primary")} />
-                    <span className={cn("text-sm", isActive ? "font-bold" : "font-medium")}>{item.label}</span>
+                    <item.icon className={cn("size-5 transition-colors", isActive ? "" : "text-outline group-hover:text-primary")} />
+                    <span className={cn("text-sm transition-all", isActive ? "font-bold tracking-tight" : "font-medium")}>{item.label}</span>
                   </>
                 )}
               </NavLink>
@@ -75,8 +79,8 @@ export function Sidebar({
       <NavLink
         to="/profile"
         className={({ isActive }) => cn(
-          "p-6 border-t border-outline-variant/10 transition-all hover:bg-surface-high/50 cursor-pointer",
-          isActive && "bg-primary/5"
+          "p-6 border-t border-outline-variant/10 transition-all cursor-pointer group",
+          isActive ? "ember-gradient studio-glow" : "hover:bg-surface-high/60"
         )}
       >
         <div className="flex items-center gap-3">

@@ -84,14 +84,14 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
   //   path: '/profile',
   //   description: 'Personal account settings and preferences.'
   // },
-  {
-    id: 'users',
-    label: 'Users',
-    icon: ShieldCheck,
-    path: '/users',
-    description: 'Manage system identities and permissions.',
-    isAdminOnly: true
-  },
+  // {
+  //   id: 'users',
+  //   label: 'Users',
+  //   icon: ShieldCheck,
+  //   path: '/users',
+  //   description: 'Manage system identities and permissions.',
+  //   isAdminOnly: true
+  // },
   // {
   //   id: 'settings',
   //   label: 'Settings',
