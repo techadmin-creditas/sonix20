@@ -119,18 +119,18 @@ export default function HomeNewV1() {
     if (outgoing && prevIndex !== index) {
       gsap.set(outgoing, { zIndex: 10, pointerEvents: 'none' });
       tl.to(outgoing, {
-        y: index > prevIndex ? -150 : 150,
-        scale: 0.85,
+        y: index > prevIndex ? -100 : 100,
+        scale: 0.9,
         opacity: 0,
-        duration: 0.7,
-        ease: "power3.inOut"
+        duration: 0.8,
+        ease: "expo.inOut"
       }, 0);
       tl.set(outgoing, { visibility: 'hidden' });
     }
 
     tl.fromTo(incoming,
-      { y: index > prevIndex ? 150 : -150, scale: 1.15, opacity: 0 },
-      { y: 0, scale: 1, opacity: 1, duration: 0.7, ease: "power3.inOut" }, 0);
+      { y: index > prevIndex ? 100 : -100, scale: 1.1, opacity: 0 },
+      { y: 0, scale: 1, opacity: 1, duration: 0.8, ease: "expo.inOut" }, 0);
   };
 
   useEffect(() => {
@@ -163,6 +163,7 @@ export default function HomeNewV1() {
 
   return (
     <div id="smooth-wrapper" ref={wrapperRef} className="fixed inset-0 overflow-hidden bg-background text-on-surface selection:bg-primary/30 touch-none">
+      <SmoothScroll />
 
       <div className="bg-3d-wrapper pointer-events-none fixed inset-0 z-0 opacity-40">
         <MemoBackground />

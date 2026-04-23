@@ -168,7 +168,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         const lenis = (window as any).lenis;
         if (target && lenis) {
           lenis.scrollTo(target, {
-            duration: 1.2,
+            duration: 0.9,
             lock: true, // Use internal locking for the duration of the animation
             onComplete: () => {
               animatingRef.current = false;
@@ -242,7 +242,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
   return (
     <div className="relative w-full min-h-screen bg-background text-on-surface selection:bg-primary/30 scroll-smooth">
-
+      <SmoothScroll />
       {/* Unified Neural Atmosphere (Merged Mesh + Nodes) */}
       <div className="pointer-events-none fixed inset-0 z-0 opacity-40">
         <MemoBackground />
