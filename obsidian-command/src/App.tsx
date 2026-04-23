@@ -41,7 +41,14 @@ function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center text-sm text-on-surface-variant font-headline tracking-widest uppercase animate-pulse">Checking neural identity...</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-surface-lowest gap-8">
+        <img src="/images/logoSonix.png" alt="Sonix 2.0" className="w-40 h-auto animate-pulse opacity-90" />
+        {/* <div className="text-[10px] text-outline font-headline tracking-[0.4em] uppercase animate-pulse">
+          Checking neural identity
+        </div> */}
+      </div>
+    );
   }
 
   if (!currentUser) {
@@ -86,25 +93,25 @@ function AppContent() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/home" element={<HomeNew />} />
             <Route path="/hdfc" element={<HomeNew config={hdfcConfig} />} />
-            
+
             <Route path="/dashboard" element={
               <ProtectedRoute moduleId="dashboard">
                 <Dashboard />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/sessions" element={
               <ProtectedRoute moduleId="sessions">
                 <Sessions />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/sessions/live" element={
               <ProtectedRoute moduleId="sessions">
                 <SessionControl />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/sessions/:id" element={
               <ProtectedRoute moduleId="sessions">
                 <SessionDetail />
@@ -116,79 +123,79 @@ function AppContent() {
                 <Session2 />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/diy-with-ai" element={
               <ProtectedRoute moduleId="studio">
                 <DiyWithAI />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/diy-with-ai/personas" element={
               <ProtectedRoute moduleId="studio">
                 <DiyPersonaPresets />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/personas" element={
               <ProtectedRoute moduleId="personas">
                 <Personas />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/personas/create" element={
               <ProtectedRoute moduleId="personas">
                 <BotConfig />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/personas/:id/config" element={
               <ProtectedRoute moduleId="personas">
                 <BotConfig />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/personas/:id/config/debug" element={
               <ProtectedRoute moduleId="personas">
                 <BotConfig />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/personas/debug" element={
               <ProtectedRoute moduleId="personas" adminOnly>
                 <Personas debug />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/knowledge" element={
               <ProtectedRoute moduleId="knowledge">
                 <KnowledgeBase />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/workflows" element={
               <ProtectedRoute moduleId="workflows">
                 <Workflows />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/workflows/create" element={
               <ProtectedRoute moduleId="workflows">
                 <WorkflowEditor />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/workflows/:id/edit" element={
               <ProtectedRoute moduleId="workflows">
                 <WorkflowEditor />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/analytics" element={
               <ProtectedRoute moduleId="analytics">
                 <Analytics />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/profile" element={
               <ProtectedRoute moduleId="profile">
                 <Profile currentUser={currentUser} />
@@ -222,19 +229,19 @@ function AppContent() {
                 <Settings />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/users" element={
               <ProtectedRoute moduleId="users" adminOnly>
                 <UserManagement />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/test-users" element={
               <ProtectedRoute adminOnly>
                 <TestUserManagement />
               </ProtectedRoute>
             } />
-            
+
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

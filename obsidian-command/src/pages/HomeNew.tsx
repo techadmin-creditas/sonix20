@@ -24,6 +24,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Observer } from 'gsap/Observer';
 import Lenis from 'lenis';
 import { useLiveTalk } from '../hooks/useLiveTalk';
+import { SmoothScroll } from '../components/SmoothScroll';
 
 gsap.registerPlugin(ScrollTrigger, Observer);
 
@@ -32,25 +33,25 @@ const MemoBackground = React.memo(() => <NeuralBackground2D />);
 // ─── Static data ──────────────────────────────────────────────────────────────
 
 const AGENT_METRICS = [
-  { stat: '35% DSO ↓', tag: 'Recovery',   useCases: ['Debt Collection', 'Payment Plans'] },
+  { stat: '35% DSO ↓', tag: 'Recovery', useCases: ['Debt Collection', 'Payment Plans'] },
   { stat: '99.9% Uptime', tag: 'Fraud Shield', useCases: ['Fraud Detection', 'Risk Scoring'] },
-  { stat: '60% Faster',   tag: 'Lending',      useCases: ['Loan Advisory', 'EMI Mgmt'] },
-  { stat: 'Zero Friction', tag: 'KYC',          useCases: ['KYC / AML', 'Onboarding'] },
-  { stat: '94% CSAT',     tag: 'Support',       useCases: ['Wealth Mgmt', 'Portfolio'] },
+  { stat: '60% Faster', tag: 'Lending', useCases: ['Loan Advisory', 'EMI Mgmt'] },
+  { stat: 'Zero Friction', tag: 'KYC', useCases: ['KYC / AML', 'Onboarding'] },
+  { stat: '94% CSAT', tag: 'Support', useCases: ['Wealth Mgmt', 'Portfolio'] },
 ];
 
 const AGENT_SNIPPETS = [
-  { bot: '"Rohan ji, aapka payment..."',          user: '"Haan, kal tak kar deta hoon."' },
-  { bot: '"Unusual activity detected..."',         user: '"I didn\'t make that transaction."' },
-  { bot: '"Your EMI is ₹12,400 this month."',     user: '"Can I restructure the plan?"' },
-  { bot: '"Please confirm your PAN number."',      user: '"I\'ll complete it via the link."' },
-  { bot: '"Your portfolio dipped 2.1% today."',   user: '"Should I rebalance now?"' },
+  { bot: '"Rohan ji, aapka payment..."', user: '"Haan, kal tak kar deta hoon."' },
+  { bot: '"Unusual activity detected..."', user: '"I didn\'t make that transaction."' },
+  { bot: '"Your EMI is ₹12,400 this month."', user: '"Can I restructure the plan?"' },
+  { bot: '"Please confirm your PAN number."', user: '"I\'ll complete it via the link."' },
+  { bot: '"Your portfolio dipped 2.1% today."', user: '"Should I rebalance now?"' },
 ];
 
 const LIVE_CALL_SNIPPETS = [
-  { label: 'Astra → Debt Recovery',   bot: 'Rohan ji, ₹12,400 ka payment pending hai', user: 'Kal tak kar deta hoon', badge: 'PTP Recorded' },
-  { label: 'Nova → KYC Onboarding',   bot: 'Please upload your Aadhaar via secure link', user: 'Done, just uploaded it', badge: 'KYC Complete' },
-  { label: 'Midas → Fraud Shield',    bot: 'Unusual transaction detected on your card', user: "That wasn't me", badge: 'Card Blocked' },
+  { label: 'Astra → Debt Recovery', bot: 'Rohan ji, ₹12,400 ka payment pending hai', user: 'Kal tak kar deta hoon', badge: 'PTP Recorded' },
+  { label: 'Nova → KYC Onboarding', bot: 'Please upload your Aadhaar via secure link', user: 'Done, just uploaded it', badge: 'KYC Complete' },
+  { label: 'Midas → Fraud Shield', bot: 'Unusual transaction detected on your card', user: "That wasn't me", badge: 'Card Blocked' },
 ];
 
 const FLOAT_STATS = [
@@ -71,23 +72,23 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
   const isDark = theme === 'dark';
 
   // Refs
-  const contentRef      = useRef<HTMLDivElement>(null);
-  const sectionsRef     = useRef<(HTMLElement | null)[]>([]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sectionsRef = useRef<(HTMLElement | null)[]>([]);
   const currentIndexRef = useRef(0);
-  const animatingRef    = useRef(false);
+  const animatingRef = useRef(false);
 
   // UI state
-  const [isDemoMode,       setIsDemoMode]       = useState(false);
-  const [selectedAgent,    setSelectedAgent]    = useState(AGENTS[0]);
-  const [hoveredAgentIdx,  setHoveredAgentIdx]  = useState<number | null>(null);
-  const [showExplorer,     setShowExplorer]     = useState(false);
-  const [currentSection,   setCurrentSection]   = useState(0);
-  const [isVideoPlaying,   setIsVideoPlaying]   = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState(AGENTS[0]);
+  const [hoveredAgentIdx, setHoveredAgentIdx] = useState<number | null>(null);
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [currentSection, setCurrentSection] = useState(0);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
 
   // Hero state
-  const [industryTab,    setIndustryTab]    = useState(config.sections.hero.defaultIndustryTab);
+  const [industryTab, setIndustryTab] = useState(config.sections.hero.defaultIndustryTab);
   const [callSnippetIdx, setCallSnippetIdx] = useState(0);
-  const [callCharIdx,    setCallCharIdx]    = useState(0);
+  const [callCharIdx, setCallCharIdx] = useState(0);
 
   // Agent filter state
   const [agentFilter, setAgentFilter] = useState<'all' | 'fintech' | 'banking'>('all');
@@ -116,23 +117,6 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
 
   // ── GSAP snap-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
-    // ── Smooth Scroll setup with Lenis ───────────────────────────────────────
-    const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      smoothWheel: true,
-    });
-
-    // Connect Lenis to ScrollTrigger
-    lenis.on('scroll', ScrollTrigger.update);
-
-    // Use GSAP ticker to drive Lenis (recommended for sync)
-    gsap.ticker.lagSmoothing(0);
-    const tickerUpdate = (time: number) => {
-      lenis.raf(time * 1000);
-    };
-    gsap.ticker.add(tickerUpdate);
-
     // ── Entrance Animations for Sections ─────────────────────────────────────
     const ctx = gsap.context(() => {
       sectionsRef.current.forEach((section, index) => {
@@ -175,13 +159,14 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
       // ── One-Swipe Navigation ──────────────────────────────────────────────
       const gotoSection = (index: number) => {
         if (animatingRef.current || index < 0 || index >= sectionsRef.current.length) return;
-        
+
         animatingRef.current = true;
         currentIndexRef.current = index;
         setCurrentSection(index);
 
         const target = sectionsRef.current[index];
-        if (target) {
+        const lenis = (window as any).lenis;
+        if (target && lenis) {
           lenis.scrollTo(target, {
             duration: 1.2,
             lock: true, // Use internal locking for the duration of the animation
@@ -189,16 +174,19 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               animatingRef.current = false;
             }
           });
+        } else if (target) {
+          target.scrollIntoView({ behavior: 'smooth' });
+          animatingRef.current = false;
         }
       };
 
       const obs = Observer.create({
         type: "wheel,touch,pointer",
-        wheelSpeed: -1,
-        onDown: () => !animatingRef.current && gotoSection(currentIndexRef.current - 1),
-        onUp:   () => !animatingRef.current && gotoSection(currentIndexRef.current + 1),
-        tolerance: 80, // Refined tolerance for intentional swipes (prevents jitter)
-        preventDefault: false // Keep the browser 'alive' while auto-snapping
+        wheelSpeed: 1,
+        onDown: () => !animatingRef.current && gotoSection(currentIndexRef.current + 1),
+        onUp: () => !animatingRef.current && gotoSection(currentIndexRef.current - 1),
+        tolerance: 150, // Much higher tolerance to prevent skipping slides
+        preventDefault: true // Strict 1-slide-at-a-time navigation
       });
 
       return () => {
@@ -207,9 +195,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
     }, contentRef);
 
     return () => {
-      lenis.destroy();
       ctx.revert();
-      gsap.ticker.remove(tickerUpdate);
     };
   }, []);
 
@@ -274,13 +260,17 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
           </Link>
           <nav className="hidden md:flex items-center gap-8 text-body-base text-on-surface-variant">
             {config.header.navLinks.map(nl => (
-              <button 
-                key={nl.label} 
+              <button
+                key={nl.label}
                 className="hover:text-primary transition-colors font-medium"
                 onClick={() => {
                   if (nl.sectionIndex !== undefined) {
                     const el = sectionsRef.current[nl.sectionIndex];
-                    if (el) {
+                    const lenis = (window as any).lenis;
+                    if (el && lenis) {
+                      lenis.scrollTo(el);
+                      setCurrentSection(nl.sectionIndex);
+                    } else if (el) {
                       el.scrollIntoView({ behavior: 'smooth' });
                       setCurrentSection(nl.sectionIndex);
                     }
@@ -345,11 +335,10 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   <button
                     key={tab.key}
                     onClick={() => setIndustryTab(tab.key)}
-                    className={`px-4 py-2 rounded-xl text-label-sm transition-all ${
-                      industryTab === tab.key
-                        ? 'bg-primary text-on-primary-fixed shadow-lg shadow-primary/25 scale-105'
-                        : 'bg-surface-low border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary'
-                    }`}
+                    className={`px-4 py-2 rounded-xl text-label-sm transition-all ${industryTab === tab.key
+                      ? 'bg-primary text-on-primary-fixed shadow-lg shadow-primary/25 scale-105'
+                      : 'bg-surface-low border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary'
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -440,18 +429,18 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               {/* Orb with floating badges */}
               <div className="relative flex items-center justify-center w-full">
                 <div className="size-[320px] lg:size-[440px] flex items-center justify-center transition-all duration-700">
-                  <GradientOrb 
-                    isActive={liveStatus === 'active'} 
-                    isConnecting={liveStatus === 'connecting'} 
-                    isDark={isDark} 
+                  <GradientOrb
+                    isActive={liveStatus === 'active'}
+                    isConnecting={liveStatus === 'connecting'}
+                    isDark={isDark}
                     onClick={() => {
                       if (liveStatus === 'active') {
                         endSession();
                       } else if (liveStatus === 'standby' || liveStatus === 'error') {
                         startSession();
                       }
-                    }} 
-                    size={400} 
+                    }}
+                    size={400}
                   />
                 </div>
 
@@ -459,13 +448,13 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   <motion.div
                     key={i}
                     initial={{ opacity: 0, scale: 0.8, y: 0 }}
-                    animate={{ 
-                      opacity: 1, 
+                    animate={{
+                      opacity: 1,
                       scale: 1,
                       y: [0, -10, 0],
                     }}
                     whileHover={{ scale: 1.1, backgroundColor: 'rgba(var(--primary-rgb), 0.1)' }}
-                    transition={{ 
+                    transition={{
                       y: {
                         duration: 3 + i,
                         repeat: Infinity,
@@ -473,9 +462,9 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                         delay: fs.delay
                       },
                       default: {
-                        delay: fs.delay, 
-                        type: 'spring', 
-                        stiffness: 200 
+                        delay: fs.delay,
+                        type: 'spring',
+                        stiffness: 200
                       }
                     }}
                     className={`absolute ${fs.pos} flex items-center gap-2 px-4 py-2 rounded-full bg-surface/80 border border-outline-variant backdrop-blur-md text-label-xs text-on-surface shadow-lg shadow-black/5 select-none cursor-default z-10`}
@@ -490,7 +479,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
               <div className="w-full max-w-md lg:max-w-xl space-y-4">
                 <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
                   {[
-                    { label: 'STT', ms: 45,  pct: 10, cls: 'bg-sky-500' },
+                    { label: 'STT', ms: 45, pct: 10, cls: 'bg-sky-500' },
                     { label: 'LLM', ms: 280, pct: 63, cls: 'bg-primary' },
                     { label: 'TTS', ms: 120, pct: 27, cls: isDark ? 'bg-cyan-400' : 'bg-secondary' },
                   ].map((seg, i) => (
@@ -506,7 +495,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                 </div>
                 <div className="flex items-center justify-between text-label-sm text-on-surface-variant">
                   {[
-                    { label: 'STT', ms: '45ms',  cls: 'text-sky-400' },
+                    { label: 'STT', ms: '45ms', cls: 'text-sky-400' },
                     { label: 'LLM', ms: '280ms', cls: 'text-primary' },
                     { label: 'TTS', ms: '120ms', cls: isDark ? 'text-cyan-400' : 'text-secondary' },
                   ].map(seg => (
@@ -606,11 +595,10 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   <button
                     key={cat}
                     onClick={() => setAgentFilter(cat)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
-                      agentFilter === cat
-                        ? 'bg-primary text-on-primary-fixed shadow-md shadow-primary/20'
-                        : 'border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary'
-                    }`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${agentFilter === cat
+                      ? 'bg-primary text-on-primary-fixed shadow-md shadow-primary/20'
+                      : 'border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary'
+                      }`}
                   >
                     {cat === 'all' ? 'All ▾' : cat}
                   </button>
@@ -633,11 +621,10 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.9 }}
                       transition={{ delay: i * 0.06, type: 'spring', stiffness: 200, damping: 20 }}
-                      className={`group relative rounded-2xl border p-4 flex flex-col items-center gap-2 cursor-pointer transition-all duration-300 ${
-                        isDark
-                          ? 'bg-surface/60 border-outline-variant hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10'
-                          : 'bg-surface/80 border-outline-variant hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10'
-                      } hover:-translate-y-1`}
+                      className={`group relative rounded-2xl border p-4 flex flex-col items-center gap-2 cursor-pointer transition-all duration-300 ${isDark
+                        ? 'bg-surface/60 border-outline-variant hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10'
+                        : 'bg-surface/80 border-outline-variant hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10'
+                        } hover:-translate-y-1`}
                       onClick={() => handleTryDemo(agent)}
                       onMouseEnter={() => setHoveredAgentIdx(i)}
                       onMouseLeave={() => setHoveredAgentIdx(null)}
@@ -747,9 +734,8 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
                   <motion.div key={step.num}
                     initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.15, type: 'spring', stiffness: 150, damping: 20 }}
-                    className={`relative rounded-3xl border p-5 space-y-4 ${
-                      isDark ? 'bg-surface/60 border-outline-variant' : 'bg-surface/80 border-outline-variant shadow-xl shadow-black/5'
-                    }`}
+                    className={`relative rounded-3xl border p-5 space-y-4 ${isDark ? 'bg-surface/60 border-outline-variant' : 'bg-surface/80 border-outline-variant shadow-xl shadow-black/5'
+                      }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="size-12 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center">
@@ -782,9 +768,9 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             <div className="grid grid-cols-4 gap-2.5">
               {[
                 { val: '<800ms', label: 'Latency' },
-                { val: '35% ↓',  label: 'DSO Avg' },
-                { val: '10+',    label: 'Languages' },
-                { val: '99.9%',  label: 'Uptime' },
+                { val: '35% ↓', label: 'DSO Avg' },
+                { val: '10+', label: 'Languages' },
+                { val: '99.9%', label: 'Uptime' },
               ].map((m, i) => (
                 <motion.div key={m.val}
                   initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -802,7 +788,7 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
         {/* ─── SECTION 4: VIDEO SHOWCASE ─────────────────────────────────────────────── */}
         <section ref={el => { sectionsRef.current[3] = el; }} className={sectionBase}>
           <div className="relative z-10 w-full max-w-screen-2xl mx-auto space-y-12">
-            
+
             <div className="text-center space-y-3">
               <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/25">
                 <span className="text-label-sm text-primary uppercase tracking-widest">Visual Experience</span>
@@ -812,27 +798,27 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             </div>
 
             <div className="relative w-full max-w-5xl mx-auto aspect-video rounded-[3rem] overflow-hidden bg-surface-lowest border border-outline-variant shadow-2xl group cursor-pointer" onClick={() => setIsVideoPlaying(!isVideoPlaying)}>
-               {!isVideoPlaying ? (
-                 <>
+              {!isVideoPlaying ? (
+                <>
                   {/* Poster or placeholder */}
                   <img src="https://images.unsplash.com/photo-1633409361618-c73427e4e206?auto=format&fit=crop&q=80&w=2000" alt="Video Placeholder" className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity duration-700" />
                   <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors duration-700" />
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="size-24 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center group-hover:scale-110 group-hover:bg-white/20 transition-all duration-500 shadow-2xl">
-                        <Play className="size-10 text-white fill-white ml-2" />
+                      <Play className="size-10 text-white fill-white ml-2" />
                     </div>
                   </div>
-                 </>
-               ) : (
-                 <div className="w-full h-full bg-black flex flex-col items-center justify-center relative">
-                    <div className="absolute top-6 right-6">
-                        <button onClick={(e) => { e.stopPropagation(); setIsVideoPlaying(false); }} className="p-3 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur text-white transition-all">
-                            <X className="size-6" />
-                        </button>
-                    </div>
-                    <span className="text-white/50 text-xl font-bold uppercase tracking-widest">Video Player Placeholder</span>
-                 </div>
-               )}
+                </>
+              ) : (
+                <div className="w-full h-full bg-black flex flex-col items-center justify-center relative">
+                  <div className="absolute top-6 right-6">
+                    <button onClick={(e) => { e.stopPropagation(); setIsVideoPlaying(false); }} className="p-3 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur text-white transition-all">
+                      <X className="size-6" />
+                    </button>
+                  </div>
+                  <span className="text-white/50 text-xl font-bold uppercase tracking-widest">Video Player Placeholder</span>
+                </div>
+              )}
             </div>
 
           </div>
@@ -874,14 +860,14 @@ export default function HomeNew({ config = defaultConfig }: HomeNewProps) {
             <motion.div
               initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ type: 'spring', stiffness: 150 }}
-              className={`rounded-3xl border p-8 text-center space-y-6 max-w-5xl mx-auto ${
-                isDark
-                  ? 'bg-surface/40 border-primary/20 backdrop-blur-xl'
-                  : 'bg-white/70 border-primary/15 backdrop-blur-xl shadow-2xl shadow-primary/8'
-              }`}
-              style={{ background: isDark
-                ? 'linear-gradient(135deg, rgba(var(--primary-rgb,99,102,241),0.08) 0%, var(--surface) 50%, rgba(var(--secondary-rgb,139,92,246),0.06) 100%)'
-                : 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, #ffffff 50%, rgba(139,92,246,0.04) 100%)'
+              className={`rounded-3xl border p-8 text-center space-y-6 max-w-5xl mx-auto ${isDark
+                ? 'bg-surface/40 border-primary/20 backdrop-blur-xl'
+                : 'bg-white/70 border-primary/15 backdrop-blur-xl shadow-2xl shadow-primary/8'
+                }`}
+              style={{
+                background: isDark
+                  ? 'linear-gradient(135deg, rgba(var(--primary-rgb,99,102,241),0.08) 0%, var(--surface) 50%, rgba(var(--secondary-rgb,139,92,246),0.06) 100%)'
+                  : 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, #ffffff 50%, rgba(139,92,246,0.04) 100%)'
               }}
             >
               <div className="space-y-3">

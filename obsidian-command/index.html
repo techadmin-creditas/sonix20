@@ -1,25 +1,134 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <script>
-      (function () {
-        try {
-          var k = 'obsidian-command-theme';
-          var t = localStorage.getItem(k);
-          if (t === 'light') document.documentElement.classList.remove('dark');
-          else document.documentElement.classList.add('dark');
-        } catch (e) {
-          document.documentElement.classList.add('dark');
-        }
-      })();
-    </script>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sonix 2.0</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
 
+<head>
+  <script>
+    (function () {
+      try {
+        var k = 'obsidian-command-theme';
+        var t = localStorage.getItem(k);
+        if (t === 'light') document.documentElement.classList.remove('dark');
+        else document.documentElement.classList.add('dark');
+      } catch (e) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <title>Sonix 2.0</title>
+  <style>
+    #initial-loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      overflow: hidden;
+    }
+
+    .dark #initial-loader {
+      background: #0d0e11;
+      background-image:
+        radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.03) 0%, transparent 40%);
+    }
+
+    .light #initial-loader {
+      background: #ffffff;
+    }
+
+    .loading-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 40px;
+      animation: fadeIn 1s ease-out;
+    }
+
+    .logo-pulse {
+      width: 180px;
+      height: auto;
+      filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.1));
+      animation: logoPulse 3s infinite ease-in-out;
+    }
+
+    .loader-bar-container {
+      width: 220px;
+      height: 3px;
+      background: rgba(128, 128, 128, 0.08);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+    }
+
+    .loader-progress {
+      position: absolute;
+      width: 60%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, #3b82f6, #6366f1, transparent);
+      animation: loaderSwipe 2s infinite cubic-bezier(0.65, 0, 0.35, 1);
+    }
+
+    .light .loader-progress {
+      background: linear-gradient(90deg, transparent, #2563eb, #4f46e5, transparent);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes logoPulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.1));
+      }
+
+      50% {
+        transform: scale(1.03);
+        filter: drop-shadow(0 0 40px rgba(59, 130, 246, 0.25));
+      }
+    }
+
+    @keyframes loaderSwipe {
+      0% {
+        left: -100%;
+      }
+
+      100% {
+        left: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div id="initial-loader">
+      <div class="loading-content">
+        <img src="/images/logoSonix.png" alt="Sonix 2.0" class="logo-pulse">
+        <div class="loader-bar-container">
+          <div class="loader-progress"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>
