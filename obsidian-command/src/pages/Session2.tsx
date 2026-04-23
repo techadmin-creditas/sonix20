@@ -7,11 +7,12 @@ import { AgentCommandRail } from '../components/AgentCommandRail';
 import { CallDemoPanel } from '../components/home/CallDemoPanel';
 import { NeuralBackground2D } from '../components/NeuralBackground2D';
 import { Header } from '../components/Header';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function Session2() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  
+
   const [allBots, setAllBots] = useState<BotType[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -34,14 +35,7 @@ export default function Session2() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-5">
-          <Activity className="size-8 text-primary animate-spin opacity-40" />
-          <p className="text-outline font-bold uppercase tracking-[0.3em] text-[10px]">Synchronizing Neural Streams</p>
-        </div>
-      </div>
-    );
+    return <LogoLoader text="Synchronizing Neural Streams" />;
   }
 
   return (
@@ -64,7 +58,7 @@ export default function Session2() {
           isDark ? "bg-background/20" : "bg-white/10 shadow-lg"
         )}>
           <div className="flex-1 py-6">
-            <AgentCommandRail 
+            <AgentCommandRail
               agents={allBots.map(b => ({
                 id: b.id,
                 name: b.name,
@@ -76,13 +70,13 @@ export default function Session2() {
                 icon: (b as any).icon || 'Zap',
                 color: (b as any).color || 'from-primary/20 to-secondary/20',
                 details: ['Enterprise Grade', 'Low Latency', 'High Fidelity']
-              }))} 
-              selectedId={selectedAgent?.id} 
+              }))}
+              selectedId={selectedAgent?.id}
               onSelect={(agent) => {
                 const found = allBots.find(b => b.id === agent.id);
                 if (found) setSelectedAgent(found);
-              }} 
-              instanceId="session2-rail" 
+              }}
+              instanceId="session2-rail"
             />
           </div>
         </aside>
@@ -100,13 +94,13 @@ export default function Session2() {
                 className="h-full flex flex-col"
               >
                 <div className="flex-1 rounded-3xl border border-outline-variant/10 overflow-hidden bg-surface/30 backdrop-blur-xl shadow-2xl shadow-black/5">
-                   <CallDemoPanel 
-                    className="h-full" 
+                  <CallDemoPanel
+                    className="h-full"
                     selectedAgent={{
                       ...selectedAgent,
                       category: 'all' // Adapter for the demo panel expectations
-                    }} 
-                   />
+                    }}
+                  />
                 </div>
               </motion.div>
             )}

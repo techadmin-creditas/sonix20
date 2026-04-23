@@ -1,11 +1,11 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import ReactFlow, { 
-  Background, 
-  Controls, 
-  MiniMap, 
-  addEdge, 
-  applyEdgeChanges, 
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  applyEdgeChanges,
   applyNodeChanges,
   Node,
   Edge,
@@ -18,16 +18,16 @@ import ReactFlow, {
   ReactFlowProvider,
   useReactFlow
 } from 'reactflow';
-import { 
-  ArrowLeft, 
-  PlusCircle, 
-  Zap, 
-  Calendar, 
-  GitBranch, 
-  MessageSquare, 
-  CheckCircle, 
-  AlertTriangle, 
-  FileText, 
+import {
+  ArrowLeft,
+  PlusCircle,
+  Zap,
+  Calendar,
+  GitBranch,
+  MessageSquare,
+  CheckCircle,
+  AlertTriangle,
+  FileText,
   Bell,
   Trash2,
   Settings2,
@@ -62,6 +62,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api } from '../lib/api';
+import { LogoLoader } from '../components/LogoLoader';
 
 // --- Custom Node Components ---
 
@@ -341,7 +342,7 @@ function WorkflowEditor() {
   // Simulator state
   const [simOpen, setSimOpen] = useState(false);
   const [simInput, setSimInput] = useState('');
-  const [simChat, setSimChat] = useState<{role: string, text: string}[]>([]);
+  const [simChat, setSimChat] = useState<{ role: string, text: string }[]>([]);
   const [simNode, setSimNode] = useState<string | undefined>();
   const [simHistory, setSimHistory] = useState<string[]>([]);
   const [simVisitCounts, setSimVisitCounts] = useState<Record<string, number>>({});
@@ -450,7 +451,7 @@ function WorkflowEditor() {
       return;
     }
     const newId = Math.random().toString(36).substr(2, 9);
-    
+
     // Default label: bot says -> user input = user_response
     let finalEdgeLabel = edgeLabel || "";
     if (!finalEdgeLabel && selectedNode.type === 'speech' && type === 'userInput') {
@@ -463,7 +464,7 @@ function WorkflowEditor() {
       position: { x: selectedNode.position.x, y: selectedNode.position.y + 250 },
       data: { label: dataLabel || `New ${type}` },
     };
-    
+
     const newEdge: Edge = {
       id: Math.random().toString(36).substr(2, 9),
       source: selectedNode.id,
@@ -475,7 +476,7 @@ function WorkflowEditor() {
 
     setNodes((nds) => nds.concat(newNode));
     setEdges((eds) => eds.concat(newEdge));
-    
+
     setSelectedNode(newNode);
     setCenter(newNode.position.x + 100, newNode.position.y + 50, { zoom: 1.2, duration: 800 });
     setExpandedIntent(null);
@@ -496,10 +497,10 @@ function WorkflowEditor() {
 
   const updateEdgeLabel = (label: string) => {
     if (!selectedNode) return;
-    setEdges((eds) => 
+    setEdges((eds) =>
       eds.map((edge) => {
         if (edge.target === selectedNode.id) {
-           return { ...edge, label };
+          return { ...edge, label };
         }
         return edge;
       })
@@ -527,7 +528,7 @@ function WorkflowEditor() {
       setWorkflowId(res.id);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      
+
       if (!id) {
         navigate(`/workflows/${res.id}/edit`, { replace: true });
       }
@@ -600,7 +601,7 @@ function WorkflowEditor() {
         });
       } else if (Array.isArray(val)) {
         // Skip technical arrays entirely to avoid capturing intents
-        return; 
+        return;
       } else if (val && typeof val === 'object') {
         Object.keys(val).forEach(k => {
           // Skip technical routing keys
@@ -616,10 +617,10 @@ function WorkflowEditor() {
   const runSimulatorTurn = async (overrideText?: string, overrideNode?: string, overrideMetadata?: any) => {
     const isInitial = overrideText === "";
     if (!isInitial && !simInput.trim() && overrideText === undefined) return;
-    
+
     const text = isInitial ? "" : (overrideText || simInput);
     const currentNode = overrideNode !== undefined ? overrideNode : simNode;
-    
+
     // Merge manual overrides into session metadata
     const baseMetadata = overrideMetadata !== undefined ? overrideMetadata : simMetadata;
     const currentMetadata = {
@@ -634,9 +635,9 @@ function WorkflowEditor() {
     setSimRunning(true);
     try {
       const res = await api.testWorkflow(
-        { nodes, edges }, 
-        text, 
-        currentNode, 
+        { nodes, edges },
+        text,
+        currentNode,
         simVisitCounts,
         currentMetadata // Pass the resolved metadata
       );
@@ -648,31 +649,31 @@ function WorkflowEditor() {
 
         // If we moved to a new node, record the transition
         if (prevNodeId && nextNodeId && prevNodeId !== nextNodeId) {
-             setSimHistory(prev => [...prev, `${prevNodeId}->${nextNodeId}`]);
+          setSimHistory(prev => [...prev, `${prevNodeId}->${nextNodeId}`]);
         }
 
         setSimVisitCounts(res.node_visit_counts || {});
-        
+
         const sourceNode = nodes.find(n => n.id === (res.current_node_id || currentNode));
         const nodeLabel = sourceNode?.data?.label || "Bot";
 
-        const newMsgs = (res.speak_responses || []).map((r: string) => ({ 
-            role: 'bot', 
-            text: r, 
-            nodeLabel: nodeLabel,
-            intent: res.intent
+        const newMsgs = (res.speak_responses || []).map((r: string) => ({
+          role: 'bot',
+          text: r,
+          nodeLabel: nodeLabel,
+          intent: res.intent
         }));
         setSimChat(prev => [...prev, ...newMsgs]);
 
         if (res.is_disconnected) {
-            setSimChat(prev => [...prev, { role: 'system', text: '— CALL DISCONNECTED —' }]);
-            setSimNode(undefined);
+          setSimChat(prev => [...prev, { role: 'system', text: '— CALL DISCONNECTED —' }]);
+          setSimNode(undefined);
         } else if (res.next_node_id) {
-            setSimHistory(prev => [...prev, res.next_node_id]);
-            const targetNode = nodes.find(n => n.id === res.next_node_id);
-            if (targetNode) {
-              setCenter(targetNode.position.x + 100, targetNode.position.y + 50, { zoom: 1.2, duration: 800 });
-            }
+          setSimHistory(prev => [...prev, res.next_node_id]);
+          const targetNode = nodes.find(n => n.id === res.next_node_id);
+          if (targetNode) {
+            setCenter(targetNode.position.x + 100, targetNode.position.y + 50, { zoom: 1.2, duration: 800 });
+          }
         }
 
         if (res.yield_to_llm) {
@@ -691,9 +692,9 @@ function WorkflowEditor() {
    * Sync Visual -> JSON (whenever graph changes)
    */
   useEffect(() => {
-     if (isJsonMode && !isSyncing) {
-        setJsonText(JSON.stringify({ nodes, edges }, null, 2));
-     }
+    if (isJsonMode && !isSyncing) {
+      setJsonText(JSON.stringify({ nodes, edges }, null, 2));
+    }
   }, [nodes, edges, isJsonMode]);
 
   /**
@@ -717,7 +718,7 @@ function WorkflowEditor() {
 
   const handleAISuggest = async (tone: string) => {
     if (!selectedNode) return;
-    
+
     setIsGeneratingAI(true);
     try {
       const incomingEdge = edges.find(e => e.target === selectedNode.id);
@@ -755,7 +756,7 @@ function WorkflowEditor() {
       // 1. Gather Context (Predecessors & Successors)
       const incomingEdges = edges.filter(e => e.target === selectedNode.id);
       const outgoingEdges = edges.filter(e => e.source === selectedNode.id);
-      
+
       const predecessors = incomingEdges.map(e => nodes.find(n => n.id === e.source)).filter(Boolean);
       const successors = outgoingEdges.map(e => nodes.find(n => n.id === e.target)).filter(Boolean);
 
@@ -772,21 +773,21 @@ function WorkflowEditor() {
         const text = typeof suggestion === 'string' ? suggestion : suggestion.speech || suggestion.label;
         updateNodeLabel(selectedNode.type === 'speech' ? selectedNode.data.label : text);
         if (selectedNode.type === 'speech') {
-           setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: text } } : n));
-           setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: text } });
+          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: text } } : n));
+          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: text } });
         }
       } else if (op === 'SUGGEST_NEXT') {
         // AI returned a new node object: {type, label, speech}
         const { type, label, speech } = suggestion;
         addConnectedNode(type || 'speech', label || 'AI Generated Step', '');
         if (speech) {
-           // Small delay to ensure the new node is added
-           setTimeout(() => {
-              setNodes(nds => nds.map(n => n.data.label === (label || 'AI Generated Step') ? { ...n, data: { ...n.data, speech } } : n));
-           }, 50);
+          // Small delay to ensure the new node is added
+          setTimeout(() => {
+            setNodes(nds => nds.map(n => n.data.label === (label || 'AI Generated Step') ? { ...n, data: { ...n.data, speech } } : n));
+          }, 50);
         }
       }
-      
+
       setAiStrategyPrompt(""); // Clear prompt after success
     } catch (e) {
       console.error("Architect Error:", e);
@@ -797,25 +798,21 @@ function WorkflowEditor() {
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <Loader2 className="size-10 text-primary animate-spin" />
-      </div>
-    );
+    return <LogoLoader text="Neural Architect initializing..." />;
   }
 
   return (
     <div className="flex-1 flex flex-col h-screen bg-background text-on-surface overflow-hidden dark font-body">
       {/* Mesh Gradient Background */}
       <div className="fixed inset-0 pointer-events-none opacity-40 z-0">
-          <div className="absolute top-0 left-0 size-[600px] bg-amber-900/20 blur-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full" />
-          <div className="absolute bottom-0 right-0 size-[600px] bg-orange-950/20 blur-[120px] translate-x-1/2 translate-y-1/2 rounded-full" />
+        <div className="absolute top-0 left-0 size-[600px] bg-amber-900/20 blur-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full" />
+        <div className="absolute bottom-0 right-0 size-[600px] bg-orange-950/20 blur-[120px] translate-x-1/2 translate-y-1/2 rounded-full" />
       </div>
 
       {/* Header */}
       <header className="h-20 flex items-center justify-between px-10 bg-surface shrink-0 z-50 border-b border-outline-variant/5 backdrop-blur-md">
         <div className="flex items-center gap-6">
-          <button 
+          <button
             onClick={() => navigate('/workflows')}
             className="size-10 flex items-center justify-center rounded-xl bg-surface-high hover:bg-surface-highest transition-all text-on-surface shadow-sm"
           >
@@ -840,20 +837,20 @@ function WorkflowEditor() {
           <button
             onClick={() => setIsJsonMode(!isJsonMode)}
             className={cn(
-                "p-2.5 rounded-xl transition-all flex items-center justify-center border",
-                isJsonMode ? "bg-primary/20 text-primary border-primary/30" : "text-on-surface-variant hover:text-primary hover:bg-primary/10 border-outline-variant/10"
+              "p-2.5 rounded-xl transition-all flex items-center justify-center border",
+              isJsonMode ? "bg-primary/20 text-primary border-primary/30" : "text-on-surface-variant hover:text-primary hover:bg-primary/10 border-outline-variant/10"
             )}
             title="Split-View JSON Code"
           >
             <Code className="size-5" />
           </button>
           <button
-            onClick={async () => { 
-              setSimChat([]); 
+            onClick={async () => {
+              setSimChat([]);
               const firstNodeId = nodes[0]?.id;
-              setSimNode(firstNodeId); 
-              setSimOpen(true); 
-              
+              setSimNode(firstNodeId);
+              setSimOpen(true);
+
               // Fetch and set default user but DO NOT START CALL
               try {
                 const res = await api.request('GET', '/test-customers');
@@ -873,13 +870,13 @@ function WorkflowEditor() {
             <Play className="size-4" />
             Test Flow
           </button>
-          <button 
+          <button
             onClick={() => navigate('/workflows')}
             className="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:text-on-surface transition-all"
           >
             Cancel
           </button>
-          <button 
+          <button
             onClick={handleSave}
             disabled={saving}
             className={cn(
@@ -897,50 +894,50 @@ function WorkflowEditor() {
         {/* Parallel Mode: JSON Code Panel */}
         {isJsonMode && (
           <div className="w-1/3 border-r border-outline-variant/10 flex flex-col bg-surface-lowest shrink-0 animate-in slide-in-from-left duration-500 overflow-hidden shadow-2xl">
-                <header className="px-6 py-5 bg-surface-high flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                            <Code className="size-4" />
-                        </div>
-                        <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-on-surface-variant">Command Source</span>
-                    </div>
-                    {jsonError ? (
-                        <div className="flex items-center gap-1.5 text-red-400 animate-pulse">
-                            <AlertTriangle className="size-3" />
-                            <span className="text-[9px] font-bold uppercase">Invalid Format</span>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-1.5 text-emerald-400">
-                            <CheckCircle className="size-3" />
-                            <span className="text-[9px] font-bold uppercase">Synced</span>
-                        </div>
-                    )}
-                </header>
-                <div className="flex-1 relative bg-black/5">
-                    <textarea
-                        className={cn(
-                            "w-full h-full p-6 bg-transparent font-mono text-[10px] leading-relaxed resize-none focus:outline-none transition-colors",
-                            jsonError ? "text-red-300" : "text-primary"
-                        )}
-                        spellCheck={false}
-                        value={jsonText}
-                        onChange={(e) => handleJsonChange(e.target.value)}
-                    />
-                    {jsonError && (
-                        <div className="absolute bottom-4 left-4 right-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-                            <p className="text-[9px] text-red-300 font-mono italic truncate">{jsonError}</p>
-                        </div>
-                    )}
+            <header className="px-6 py-5 bg-surface-high flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <Code className="size-4" />
                 </div>
-                <footer className="px-5 py-3 border-t border-outline-variant/5 bg-black/20 flex items-center justify-between">
-                    <button 
-                        onClick={async () => await navigator.clipboard.writeText(jsonText)}
-                        className="text-[9px] font-bold text-outline hover:text-on-surface flex items-center gap-1.5"
-                    >
-                        <Copy className="size-3" /> Copy Definition
-                    </button>
-                    <div className="text-[9px] font-bold text-outline uppercase tracking-tight">UTF-8 Live Rendering</div>
-                </footer>
+                <span className="text-[10px] font-headline font-bold uppercase tracking-[0.15em] text-on-surface-variant">Command Source</span>
+              </div>
+              {jsonError ? (
+                <div className="flex items-center gap-1.5 text-red-400 animate-pulse">
+                  <AlertTriangle className="size-3" />
+                  <span className="text-[9px] font-bold uppercase">Invalid Format</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-emerald-400">
+                  <CheckCircle className="size-3" />
+                  <span className="text-[9px] font-bold uppercase">Synced</span>
+                </div>
+              )}
+            </header>
+            <div className="flex-1 relative bg-black/5">
+              <textarea
+                className={cn(
+                  "w-full h-full p-6 bg-transparent font-mono text-[10px] leading-relaxed resize-none focus:outline-none transition-colors",
+                  jsonError ? "text-red-300" : "text-primary"
+                )}
+                spellCheck={false}
+                value={jsonText}
+                onChange={(e) => handleJsonChange(e.target.value)}
+              />
+              {jsonError && (
+                <div className="absolute bottom-4 left-4 right-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                  <p className="text-[9px] text-red-300 font-mono italic truncate">{jsonError}</p>
+                </div>
+              )}
+            </div>
+            <footer className="px-5 py-3 border-t border-outline-variant/5 bg-black/20 flex items-center justify-between">
+              <button
+                onClick={async () => await navigator.clipboard.writeText(jsonText)}
+                className="text-[9px] font-bold text-outline hover:text-on-surface flex items-center gap-1.5"
+              >
+                <Copy className="size-3" /> Copy Definition
+              </button>
+              <div className="text-[9px] font-bold text-outline uppercase tracking-tight">UTF-8 Live Rendering</div>
+            </footer>
           </div>
         )}
 
@@ -956,8 +953,8 @@ function WorkflowEditor() {
               return {
                 ...e,
                 animated: isPath,
-                style: isPath 
-                  ? { stroke: '#fbbf24', strokeWidth: 4, opacity: 1, filter: 'drop-shadow(0 0 8px rgba(251,191,36,0.4))' } 
+                style: isPath
+                  ? { stroke: '#fbbf24', strokeWidth: 4, opacity: 1, filter: 'drop-shadow(0 0 8px rgba(251,191,36,0.4))' }
                   : { opacity: 0.2, stroke: '#64748b' }
               };
             })}
@@ -973,7 +970,7 @@ function WorkflowEditor() {
           >
             <Background color="#343538" gap={20} />
             <Controls />
-            <MiniMap 
+            <MiniMap
               nodeColor={(n) => {
                 if (n.type === 'trigger') return '#ffb77b';
                 if (n.type === 'condition') return '#e0c1a9';
@@ -982,7 +979,7 @@ function WorkflowEditor() {
               maskColor="rgba(5, 6, 8, 0.7)"
               className="!bg-surface-low rounded-xl border border-outline-variant/10"
             />
-            
+
             <Panel position="top-right" className="flex flex-col gap-2">
               <div className="glass-panel p-4 rounded-2xl flex flex-col gap-3 min-w-[180px]">
                 <div className="text-[10px] font-bold text-outline uppercase tracking-widest">Conversation Blocks</div>
@@ -1024,13 +1021,13 @@ function WorkflowEditor() {
               {/* Header: Node Title/Label */}
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-1 w-full">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-outline">Node Name</label>
-                    <input 
-                      type="text" 
-                      className="text-xl font-headline font-extrabold bg-transparent border-b border-outline-variant/20 focus:border-primary focus:outline-none w-full pb-1"
-                      value={selectedNode.data.label || ''}
-                      onChange={(e) => updateNodeLabel(e.target.value)}
-                    />
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-outline">Node Name</label>
+                  <input
+                    type="text"
+                    className="text-xl font-headline font-extrabold bg-transparent border-b border-outline-variant/20 focus:border-primary focus:outline-none w-full pb-1"
+                    value={selectedNode.data.label || ''}
+                    onChange={(e) => updateNodeLabel(e.target.value)}
+                  />
                 </div>
                 <button onClick={removeNode} className="p-2 ml-4 rounded-lg hover:bg-red-500/10 text-red-500 transition-all shrink-0">
                   <Trash2 className="size-4" />
@@ -1043,8 +1040,8 @@ function WorkflowEditor() {
                   <label className="text-[10px] font-bold uppercase tracking-widest text-outline flex items-center gap-2">
                     <Link2 className="size-3" /> Incoming Path Label
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="text-xs font-bold bg-transparent border-b border-outline-variant/20 focus:border-primary focus:outline-none w-full pb-1 py-1"
                     placeholder="e.g. user_response, retry_1..."
                     value={edges.find(e => e.target === selectedNode.id)?.label || ''}
@@ -1058,193 +1055,127 @@ function WorkflowEditor() {
               <div className="flex flex-col gap-3">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-outline">Quick Link (Generic Next)</label>
                 <div className="flex flex-wrap gap-2">
-                    <button 
-                        onClick={() => addConnectedNode('speech', 'Bot Response')} 
-                        className="flex-1 px-3 py-2 rounded-xl bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border border-primary/20 transition-all flex items-center justify-center gap-1"
-                    >
-                        <MessageSquare className="size-3" /> Bot
-                    </button>
-                    <button 
-                        onClick={() => addConnectedNode('userInput', 'User Input')} 
-                        className="flex-1 px-3 py-2 rounded-xl bg-secondary/10 text-secondary text-[10px] font-bold uppercase tracking-wider hover:bg-secondary/20 border border-secondary/20 transition-all flex items-center justify-center gap-1"
-                    >
-                        <Search className="size-3" /> Input
-                    </button>
-                    <button 
-                        onClick={() => addConnectedNode('logic', 'Logic Branch')} 
-                        className="flex-1 px-3 py-2 rounded-xl bg-tertiary/10 text-tertiary text-[10px] font-bold uppercase tracking-wider hover:bg-tertiary/20 border border-tertiary/20 transition-all flex items-center justify-center gap-1"
-                    >
-                        <GitBranch className="size-3" /> Logic
-                    </button>
+                  <button
+                    onClick={() => addConnectedNode('speech', 'Bot Response')}
+                    className="flex-1 px-3 py-2 rounded-xl bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border border-primary/20 transition-all flex items-center justify-center gap-1"
+                  >
+                    <MessageSquare className="size-3" /> Bot
+                  </button>
+                  <button
+                    onClick={() => addConnectedNode('userInput', 'User Input')}
+                    className="flex-1 px-3 py-2 rounded-xl bg-secondary/10 text-secondary text-[10px] font-bold uppercase tracking-wider hover:bg-secondary/20 border border-secondary/20 transition-all flex items-center justify-center gap-1"
+                  >
+                    <Search className="size-3" /> Input
+                  </button>
+                  <button
+                    onClick={() => addConnectedNode('logic', 'Logic Branch')}
+                    className="flex-1 px-3 py-2 rounded-xl bg-tertiary/10 text-tertiary text-[10px] font-bold uppercase tracking-wider hover:bg-tertiary/20 border border-tertiary/20 transition-all flex items-center justify-center gap-1"
+                  >
+                    <GitBranch className="size-3" /> Logic
+                  </button>
                 </div>
               </div>
 
               <div className="h-px bg-outline-variant/10" />
 
-                {selectedNode.type === 'speech' && (
-                  <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Speech Generation Mode</label>
-                        <div className="flex p-1 bg-surface-high rounded-2xl shadow-sm">
-                            <button 
-                                onClick={() => {
-                                    setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'direct' } } : n));
-                                    setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'direct' } });
-                                }}
-                                className={cn(
-                                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
-                                    (selectedNode.data.mode || 'direct') === 'direct' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
-                                )}
-                            >
-                                Standard (Direct)
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'llm' } } : n));
-                                    setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'llm' } });
-                                }}
-                                className={cn(
-                                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
-                                    selectedNode.data.mode === 'llm' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
-                                )}
-                            >
-                                <Sparkles className="size-3 inline mr-1" /> AI Dynamic
-                            </button>
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">
-                            {(selectedNode.data.mode || 'direct') === 'direct' ? "Bot's Response" : "AI Base Guidance"}
-                        </label>
-                        <textarea 
-                        className="w-full h-32 bg-surface-high border-none rounded-2xl p-4 font-body font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/20 transition-all" 
-                        placeholder={selectedNode.data.mode === 'llm' ? "What goal should the AI achieve in this turn?" : "What should the bot say?"}
-                        value={selectedNode.data.speech || ''}
-                        onChange={(e) => {
-                            const val = e.target.value;
-                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
-                            setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
-                        }}
-                        />
-                    </div>
-                  </div>
-                )}
-
-
-                {selectedNode.type === 'logic' && (
-                  <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Goal Persistence</label>
-                        <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex flex-col gap-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-amber-500 flex items-center gap-2">
-                                    <RotateCcw className="size-3" /> Retry Limit
-                                </span>
-                                <input 
-                                    type="number" 
-                                    min="0" 
-                                    max="10"
-                                    className="w-16 bg-surface-lowest/50 border border-amber-500/20 rounded-lg px-2 py-1 text-xs font-bold text-on-surface text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
-                                    value={selectedNode.data.retry_limit || 0}
-                                    onChange={(e) => {
-                                        const val = parseInt(e.target.value) || 0;
-                                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, retry_limit: val } } : n));
-                                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, retry_limit: val } });
-                                    }}
-                                />
-                            </div>
-                            <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                                Sets how many times the bot should try to convince the user before failing.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Branch Intents</label>
-                      <div className="flex flex-col gap-2">
-                        {(selectedNode.data.intents || []).map((intent: string, idx: number) => {
-                          const isExpanded = expandedIntent === `logic-${selectedNode.id}-${intent}-${idx}`;
-                          return (
-                            <div key={`${intent}-${idx}`} className="flex flex-col gap-2 p-3 rounded-xl bg-tertiary/10 border border-tertiary/20 group animate-in fade-in slide-in-from-right-1 duration-200">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-tertiary uppercase tracking-tight">{intent}</span>
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button 
-                                    onClick={() => setExpandedIntent(isExpanded ? null : `logic-${selectedNode.id}-${intent}-${idx}`)}
-                                    className={cn(
-                                      "p-1.5 rounded-lg transition-all",
-                                      isExpanded ? "bg-tertiary text-on-surface" : "bg-tertiary/20 text-tertiary hover:bg-tertiary/30"
-                                    )}
-                                  >
-                                    {isExpanded ? <X className="size-3" /> : <PlusCircle className="size-3" />}
-                                  </button>
-                                  <button 
-                                    onClick={() => {
-                                      const newIntents = selectedNode.data.intents.filter((_: any, i: number) => i !== idx);
-                                      setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
-                                      setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, intents: newIntents } });
-                                    }}
-                                    className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all"
-                                  >
-                                    <Trash2 className="size-3" />
-                                  </button>
-                                </div>
-                              </div>
-                              {isExpanded && (
-                                <div className="flex gap-2 animate-in zoom-in-95 duration-200 mt-1">
-                                  <button onClick={() => addConnectedNode('speech', `Response for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase hover:bg-primary/20 flex items-center justify-center gap-1">
-                                    <MessageSquare className="size-3" /> Bot
-                                  </button>
-                                  <button onClick={() => addConnectedNode('userInput', `Collector for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-secondary/10 text-secondary border border-secondary/20 text-[9px] font-bold uppercase hover:bg-secondary/20 flex items-center justify-center gap-1">
-                                    <Search className="size-3" /> Input
-                                  </button>
-                                  <button onClick={() => addConnectedNode('logic', `Check for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-tertiary/10 text-tertiary border border-tertiary/20 text-[9px] font-bold uppercase hover:bg-tertiary/20 flex items-center justify-center gap-1">
-                                    <GitBranch className="size-3" /> Logic
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                        <button 
-                          onClick={() => {
-                            const intent = prompt('Enter branch label (e.g. Yes, No, Change Language):');
-                            if (intent) {
-                              const newIntents = [...(selectedNode.data.intents || []), intent];
-                              setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
-                              setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, intents: newIntents } });
-                            }
-                          }}
-                          className="w-full py-3 rounded-xl border border-dashed border-tertiary/30 text-tertiary text-[10px] font-bold uppercase tracking-widest hover:bg-tertiary/5 transition-all"
-                        >
-                          + Add Intent Branch
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {selectedNode.type === 'userInput' && (
+              {selectedNode.type === 'speech' && (
+                <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Expected User Intents</label>
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Speech Generation Mode</label>
+                    <div className="flex p-1 bg-surface-high rounded-2xl shadow-sm">
+                      <button
+                        onClick={() => {
+                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'direct' } } : n));
+                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'direct' } });
+                        }}
+                        className={cn(
+                          "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
+                          (selectedNode.data.mode || 'direct') === 'direct' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
+                        )}
+                      >
+                        Standard (Direct)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, mode: 'llm' } } : n));
+                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, mode: 'llm' } });
+                        }}
+                        className={cn(
+                          "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all",
+                          selectedNode.data.mode === 'llm' ? "bg-surface-low text-primary shadow-sm" : "text-outline hover:text-on-surface"
+                        )}
+                      >
+                        <Sparkles className="size-3 inline mr-1" /> AI Dynamic
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">
+                      {(selectedNode.data.mode || 'direct') === 'direct' ? "Bot's Response" : "AI Base Guidance"}
+                    </label>
+                    <textarea
+                      className="w-full h-32 bg-surface-high border-none rounded-2xl p-4 font-body font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder={selectedNode.data.mode === 'llm' ? "What goal should the AI achieve in this turn?" : "What should the bot say?"}
+                      value={selectedNode.data.speech || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+
+              {selectedNode.type === 'logic' && (
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Goal Persistence</label>
+                    <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-500 flex items-center gap-2">
+                          <RotateCcw className="size-3" /> Retry Limit
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          className="w-16 bg-surface-lowest/50 border border-amber-500/20 rounded-lg px-2 py-1 text-xs font-bold text-on-surface text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                          value={selectedNode.data.retry_limit || 0}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 0;
+                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, retry_limit: val } } : n));
+                            setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, retry_limit: val } });
+                          }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        Sets how many times the bot should try to convince the user before failing.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Branch Intents</label>
                     <div className="flex flex-col gap-2">
                       {(selectedNode.data.intents || []).map((intent: string, idx: number) => {
-                        const isExpanded = expandedIntent === `user-${selectedNode.id}-${intent}-${idx}`;
+                        const isExpanded = expandedIntent === `logic-${selectedNode.id}-${intent}-${idx}`;
                         return (
-                          <div key={`${intent}-${idx}`} className="flex flex-col gap-2 p-3 rounded-xl bg-secondary/10 border border-secondary/20 group animate-in fade-in slide-in-from-right-1 duration-200">
+                          <div key={`${intent}-${idx}`} className="flex flex-col gap-2 p-3 rounded-xl bg-tertiary/10 border border-tertiary/20 group animate-in fade-in slide-in-from-right-1 duration-200">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-secondary uppercase tracking-tight">{intent}</span>
+                              <span className="text-xs font-bold text-tertiary uppercase tracking-tight">{intent}</span>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => setExpandedIntent(isExpanded ? null : `user-${selectedNode.id}-${intent}-${idx}`)}
+                                <button
+                                  onClick={() => setExpandedIntent(isExpanded ? null : `logic-${selectedNode.id}-${intent}-${idx}`)}
                                   className={cn(
                                     "p-1.5 rounded-lg transition-all",
-                                    isExpanded ? "bg-secondary text-on-surface" : "bg-secondary/20 text-secondary hover:bg-secondary/30"
+                                    isExpanded ? "bg-tertiary text-on-surface" : "bg-tertiary/20 text-tertiary hover:bg-tertiary/30"
                                   )}
                                 >
                                   {isExpanded ? <X className="size-3" /> : <PlusCircle className="size-3" />}
                                 </button>
-                                <button 
+                                <button
                                   onClick={() => {
                                     const newIntents = selectedNode.data.intents.filter((_: any, i: number) => i !== idx);
                                     setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
@@ -1258,13 +1189,13 @@ function WorkflowEditor() {
                             </div>
                             {isExpanded && (
                               <div className="flex gap-2 animate-in zoom-in-95 duration-200 mt-1">
-                                <button onClick={() => addConnectedNode('speech', `Handling ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase hover:bg-primary/20 flex items-center justify-center gap-1">
+                                <button onClick={() => addConnectedNode('speech', `Response for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase hover:bg-primary/20 flex items-center justify-center gap-1">
                                   <MessageSquare className="size-3" /> Bot
                                 </button>
                                 <button onClick={() => addConnectedNode('userInput', `Collector for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-secondary/10 text-secondary border border-secondary/20 text-[9px] font-bold uppercase hover:bg-secondary/20 flex items-center justify-center gap-1">
                                   <Search className="size-3" /> Input
                                 </button>
-                                <button onClick={() => addConnectedNode('logic', `Logic for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-tertiary/10 text-tertiary border border-tertiary/20 text-[9px] font-bold uppercase hover:bg-tertiary/20 flex items-center justify-center gap-1">
+                                <button onClick={() => addConnectedNode('logic', `Check for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-tertiary/10 text-tertiary border border-tertiary/20 text-[9px] font-bold uppercase hover:bg-tertiary/20 flex items-center justify-center gap-1">
                                   <GitBranch className="size-3" /> Logic
                                 </button>
                               </div>
@@ -1272,180 +1203,246 @@ function WorkflowEditor() {
                           </div>
                         );
                       })}
-                      <button 
+                      <button
                         onClick={() => {
-                          const intent = prompt('Enter new intent (e.g. Greeting, Payment, Status Check):');
+                          const intent = prompt('Enter branch label (e.g. Yes, No, Change Language):');
                           if (intent) {
                             const newIntents = [...(selectedNode.data.intents || []), intent];
                             setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
                             setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, intents: newIntents } });
                           }
                         }}
-                        className="w-full py-3 rounded-xl border border-dashed border-secondary/30 text-secondary text-[10px] font-bold uppercase tracking-widest hover:bg-secondary/5 transition-all"
+                        className="w-full py-3 rounded-xl border border-dashed border-tertiary/30 text-tertiary text-[10px] font-bold uppercase tracking-widest hover:bg-tertiary/5 transition-all"
                       >
-                        + Add Expected Intent
+                        + Add Intent Branch
                       </button>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedNode.type === 'sentiment' && (
-                  <div className="flex flex-col gap-4">
-                    <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
-                      <p className="text-xs text-on-surface-variant leading-relaxed">
-                        This block analyzes the user's tone and routes the conversation based on their mood.
-                      </p>
-                    </div>
+              {selectedNode.type === 'userInput' && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Expected User Intents</label>
+                  <div className="flex flex-col gap-2">
+                    {(selectedNode.data.intents || []).map((intent: string, idx: number) => {
+                      const isExpanded = expandedIntent === `user-${selectedNode.id}-${intent}-${idx}`;
+                      return (
+                        <div key={`${intent}-${idx}`} className="flex flex-col gap-2 p-3 rounded-xl bg-secondary/10 border border-secondary/20 group animate-in fade-in slide-in-from-right-1 duration-200">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-secondary uppercase tracking-tight">{intent}</span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => setExpandedIntent(isExpanded ? null : `user-${selectedNode.id}-${intent}-${idx}`)}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-all",
+                                  isExpanded ? "bg-secondary text-on-surface" : "bg-secondary/20 text-secondary hover:bg-secondary/30"
+                                )}
+                              >
+                                {isExpanded ? <X className="size-3" /> : <PlusCircle className="size-3" />}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const newIntents = selectedNode.data.intents.filter((_: any, i: number) => i !== idx);
+                                  setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
+                                  setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, intents: newIntents } });
+                                }}
+                                className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-all"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="flex gap-2 animate-in zoom-in-95 duration-200 mt-1">
+                              <button onClick={() => addConnectedNode('speech', `Handling ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 text-[9px] font-bold uppercase hover:bg-primary/20 flex items-center justify-center gap-1">
+                                <MessageSquare className="size-3" /> Bot
+                              </button>
+                              <button onClick={() => addConnectedNode('userInput', `Collector for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-secondary/10 text-secondary border border-secondary/20 text-[9px] font-bold uppercase hover:bg-secondary/20 flex items-center justify-center gap-1">
+                                <Search className="size-3" /> Input
+                              </button>
+                              <button onClick={() => addConnectedNode('logic', `Logic for ${intent}`, intent)} className="flex-1 py-2 rounded-lg bg-tertiary/10 text-tertiary border border-tertiary/20 text-[9px] font-bold uppercase hover:bg-tertiary/20 flex items-center justify-center gap-1">
+                                <GitBranch className="size-3" /> Logic
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <button
+                      onClick={() => {
+                        const intent = prompt('Enter new intent (e.g. Greeting, Payment, Status Check):');
+                        if (intent) {
+                          const newIntents = [...(selectedNode.data.intents || []), intent];
+                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, intents: newIntents } } : n));
+                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, intents: newIntents } });
+                        }
+                      }}
+                      className="w-full py-3 rounded-xl border border-dashed border-secondary/30 text-secondary text-[10px] font-bold uppercase tracking-widest hover:bg-secondary/5 transition-all"
+                    >
+                      + Add Expected Intent
+                    </button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedNode.type === 'language' && (
-                  <div className="flex flex-col gap-4">
-                    <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
-                      <p className="text-xs text-on-surface-variant leading-relaxed">
-                        Automatically detect the user's language and switch the bot's persona accordingly.
-                      </p>
-                    </div>
+              {selectedNode.type === 'sentiment' && (
+                <div className="flex flex-col gap-4">
+                  <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      This block analyzes the user's tone and routes the conversation based on their mood.
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedNode.type === 'action' && (
-                  <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Action Type</label>
-                      <select 
-                        className="bg-surface-high border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30"
-                        value={selectedNode.data.actionType || 'sms'}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, actionType: val } } : n));
-                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, actionType: val } });
-                        }}
-                      >
-                        <option value="sms">Send SMS</option>
-                        <option value="email">Send Email</option>
-                        <option value="webhook">Trigger Webhook</option>
-                      </select>
-                    </div>
+              {selectedNode.type === 'language' && (
+                <div className="flex flex-col gap-4">
+                  <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      Automatically detect the user's language and switch the bot's persona accordingly.
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedNode.type === 'knowledge' && (
-                  <div className="flex flex-col gap-6">
-                    <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
-                      <p className="text-xs text-on-surface-variant leading-relaxed">
-                        Connect this node to your Knowledge Base to handle FAQs. 
-                        Filters help prevent the bot from searching unrelated categories.
-                      </p>
-                    </div>
-                    
-                    <div className="flex flex-col gap-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Allowed Topics (Comma Separated)</label>
-                      <input 
-                        type="text" 
-                        className="w-full bg-surface-high border-none rounded-xl p-3 text-xs font-medium text-on-surface focus:ring-1 focus:ring-primary/20 transition-all" 
-                        placeholder="e.g. banking, payments, loan-policy"
-                        value={Array.isArray(selectedNode.data.topics) ? selectedNode.data.topics.join(', ') : (selectedNode.data.topics || '')}
-                        onChange={(e) => {
-                          const val = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, topics: val } } : n));
-                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, topics: val } });
-                        }}
-                      />
-                      <p className="text-[9px] text-outline px-1">Restricts search only to matching 'topic' tags in the DB.</p>
-                    </div>
-
-                    <div className="flex flex-col gap-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Allowed Source Files (Comma Separated)</label>
-                      <input 
-                        type="text" 
-                        className="w-full bg-surface-high border-none rounded-xl p-3 text-xs font-medium text-on-surface focus:ring-1 focus:ring-primary/20 transition-all" 
-                        placeholder="e.g. banking_manual.pdf, faq_v2.pdf"
-                        value={Array.isArray(selectedNode.data.sources) ? selectedNode.data.sources.join(', ') : (selectedNode.data.sources || '')}
-                        onChange={(e) => {
-                          const val = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                          setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, sources: val } } : n));
-                          setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, sources: val } });
-                        }}
-                      />
-                      <p className="text-[9px] text-outline px-1">Limits results to specific uploaded filenames.</p>
-                    </div>
+              {selectedNode.type === 'action' && (
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Action Type</label>
+                    <select
+                      className="bg-surface-high border-none rounded-2xl p-4 font-medium text-on-surface h-14 w-full focus:ring-1 focus:ring-primary/30"
+                      value={selectedNode.data.actionType || 'sms'}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, actionType: val } } : n));
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, actionType: val } });
+                      }}
+                    >
+                      <option value="sms">Send SMS</option>
+                      <option value="email">Send Email</option>
+                      <option value="webhook">Trigger Webhook</option>
+                    </select>
                   </div>
-                )}
+                </div>
+              )}
 
-                {selectedNode.type === 'llm_fallback' && (
-                  <div className="flex flex-col gap-6">
-                    <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10">
-                      <p className="text-xs text-on-surface-variant leading-relaxed">
-                        When the conversation goes off-script, this node allows the LLM to creatively handle the situation while attempting to redirect back to known paths.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Specific Fallback Prompt</label>
-                        <textarea 
-                        className="w-full h-32 bg-surface-high border-none rounded-2xl p-4 font-body font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/20 transition-all" 
-                        placeholder="e.g. If the user is confused about policy, explain it softly and ask if they are ready to proceed with payment."
-                        value={selectedNode.data.speech || ''}
-                        onChange={(e) => {
-                            const val = e.target.value;
-                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
-                            setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
-                        }}
-                        />
-                    </div>
+              {selectedNode.type === 'knowledge' && (
+                <div className="flex flex-col gap-6">
+                  <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      Connect this node to your Knowledge Base to handle FAQs.
+                      Filters help prevent the bot from searching unrelated categories.
+                    </p>
                   </div>
-                )}
 
-                <div className="mt-8 pt-8 border-t border-outline-variant/10">
-                  <div className="flex items-center gap-2 text-primary mb-4 p-4 rounded-2xl bg-primary/5 border border-primary/10">
-                    <Sparkles className="size-4" />
-                    <span className="text-xs font-black uppercase tracking-[0.2em]">Flow Architect</span>
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Allowed Topics (Comma Separated)</label>
+                    <input
+                      type="text"
+                      className="w-full bg-surface-high border-none rounded-xl p-3 text-xs font-medium text-on-surface focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder="e.g. banking, payments, loan-policy"
+                      value={Array.isArray(selectedNode.data.topics) ? selectedNode.data.topics.join(', ') : (selectedNode.data.topics || '')}
+                      onChange={(e) => {
+                        const val = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, topics: val } } : n));
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, topics: val } });
+                      }}
+                    />
+                    <p className="text-[9px] text-outline px-1">Restricts search only to matching 'topic' tags in the DB.</p>
                   </div>
-                  
-                  <div className="flex flex-col gap-4 px-1">
-                      <div className="flex flex-col gap-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant flex items-center justify-between">
-                            Contextual Strategy
-                            <span className="text-[8px] bg-white/5 px-2 py-0.5 rounded italic lowercase font-normal opacity-60">LLM Enhanced</span>
-                          </label>
-                          <textarea 
-                            className="w-full h-24 bg-surface-highest border-none rounded-2xl p-4 text-xs font-medium text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/20 transition-all" 
-                            placeholder="e.g. If user says 'I don't have money', offer a partial payment and remind them of the legal notice."
-                            value={aiStrategyPrompt}
-                            onChange={(e) => setAiStrategyPrompt(e.target.value)}
-                          />
-                      </div>
 
-                      <div className="grid grid-cols-1 gap-2">
-                        <button 
-                          disabled={isGeneratingAI}
-                          onClick={() => handleAIDesignOperation('REFACTOR')}
-                          className="w-full py-4 rounded-2xl bg-primary text-on-primary text-[10px] font-black uppercase tracking-widest hover:opacity-90 flex items-center justify-center gap-2 shadow-lg shadow-primary/10 transition-all disabled:opacity-50"
-                        >
-                          {isGeneratingAI ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                          Refine Flow with AI
-                        </button>
-                        
-                        <button 
-                          disabled={isGeneratingAI}
-                          onClick={() => handleAIDesignOperation('SUGGEST_NEXT')}
-                          className="w-full py-4 rounded-2xl bg-surface-highest border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                        >
-                          {isGeneratingAI ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-                          Predict Next Step
-                        </button>
-                      </div>
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Allowed Source Files (Comma Separated)</label>
+                    <input
+                      type="text"
+                      className="w-full bg-surface-high border-none rounded-xl p-3 text-xs font-medium text-on-surface focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder="e.g. banking_manual.pdf, faq_v2.pdf"
+                      value={Array.isArray(selectedNode.data.sources) ? selectedNode.data.sources.join(', ') : (selectedNode.data.sources || '')}
+                      onChange={(e) => {
+                        const val = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, sources: val } } : n));
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, sources: val } });
+                      }}
+                    />
+                    <p className="text-[9px] text-outline px-1">Limits results to specific uploaded filenames.</p>
+                  </div>
+                </div>
+              )}
 
-                      <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/10 mt-1">
-                        <p className="text-[9px] text-on-surface-variant italic leading-tight">
-                          The Architect analyzes the <b>bidirectional flow</b> (who spoke before and who follows) to ensure your dialogue remains logically consistent.
-                        </p>
-                      </div>
+              {selectedNode.type === 'llm_fallback' && (
+                <div className="flex flex-col gap-6">
+                  <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      When the conversation goes off-script, this node allows the LLM to creatively handle the situation while attempting to redirect back to known paths.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant px-1">Specific Fallback Prompt</label>
+                    <textarea
+                      className="w-full h-32 bg-surface-high border-none rounded-2xl p-4 font-body font-medium text-on-surface resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder="e.g. If the user is confused about policy, explain it softly and ask if they are ready to proceed with payment."
+                      value={selectedNode.data.speech || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, speech: val } } : n));
+                        setSelectedNode({ ...selectedNode, data: { ...selectedNode.data, speech: val } });
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 pt-8 border-t border-outline-variant/10">
+                <div className="flex items-center gap-2 text-primary mb-4 p-4 rounded-2xl bg-primary/5 border border-primary/10">
+                  <Sparkles className="size-4" />
+                  <span className="text-xs font-black uppercase tracking-[0.2em]">Flow Architect</span>
+                </div>
+
+                <div className="flex flex-col gap-4 px-1">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant flex items-center justify-between">
+                      Contextual Strategy
+                      <span className="text-[8px] bg-white/5 px-2 py-0.5 rounded italic lowercase font-normal opacity-60">LLM Enhanced</span>
+                    </label>
+                    <textarea
+                      className="w-full h-24 bg-surface-highest border-none rounded-2xl p-4 text-xs font-medium text-on-surface placeholder:text-outline/40 focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder="e.g. If user says 'I don't have money', offer a partial payment and remind them of the legal notice."
+                      value={aiStrategyPrompt}
+                      onChange={(e) => setAiStrategyPrompt(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      disabled={isGeneratingAI}
+                      onClick={() => handleAIDesignOperation('REFACTOR')}
+                      className="w-full py-4 rounded-2xl bg-primary text-on-primary text-[10px] font-black uppercase tracking-widest hover:opacity-90 flex items-center justify-center gap-2 shadow-lg shadow-primary/10 transition-all disabled:opacity-50"
+                    >
+                      {isGeneratingAI ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                      Refine Flow with AI
+                    </button>
+
+                    <button
+                      disabled={isGeneratingAI}
+                      onClick={() => handleAIDesignOperation('SUGGEST_NEXT')}
+                      className="w-full py-4 rounded-2xl bg-surface-highest border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      {isGeneratingAI ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                      Predict Next Step
+                    </button>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/10 mt-1">
+                    <p className="text-[9px] text-on-surface-variant italic leading-tight">
+                      The Architect analyzes the <b>bidirectional flow</b> (who spoke before and who follows) to ensure your dialogue remains logically consistent.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
         {/* Inline Test Simulator Drawer */}
         {simOpen && (
@@ -1457,66 +1454,66 @@ function WorkflowEditor() {
               </div>
               <button onClick={() => setSimOpen(false)} className="text-outline hover:text-on-surface"><X className="size-4" /></button>
             </div>
-            
+
             {/* User Selection */}
             <div className="p-4 bg-surface-high/30 border-b border-outline-variant/5">
-                <label className="text-[10px] font-black uppercase tracking-widest text-outline mb-2 block">Test Identity</label>
-                <select 
-                  className="w-full bg-surface-highest border border-outline-variant/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all"
-                  value={selectedTestUserId}
-                  onMouseDown={async () => {
-                    const res = await api.request('GET', '/test-customers');
-                    setTestCustomers(res.customers || []);
-                  }}
-                  onChange={(e) => {
-                    const accNum = e.target.value;
-                    setSelectedTestUserId(accNum);
-                    
-                    const user = testCustomers.find(c => c.account_number === accNum);
-                    const metadata = user || {};
-                    const label = user ? user.customer_name : 'Guest';
-                    
-                    setSimMetadata(metadata);
-                    
-                    // Parse DB metadata into overrides
-                    if (user?.test_meta_data) {
-                      try {
-                        setSimOverrides(JSON.parse(user.test_meta_data));
-                      } catch { setSimOverrides({}); }
-                    } else {
-                      setSimOverrides({});
-                    }
-                    
-                    // Reset UI but don't start call automatically
-                    setSimChat([{ role: 'system', text: `Identity switched to ${label}. Click Start Call to begin.` }]);
-                    const firstNodeId = nodes[0]?.id;
-                    setSimNode(firstNodeId);
-                    setSimVisitCounts({});
-                    setSimHistory([]);
-                  }}
-                >
-                  <option value="">Guest (No Metadata)</option>
-                  {testCustomers.map((user) => (
-                    <option key={user.account_number} value={user.account_number}>
-                      {user.customer_name} ({user.account_number})
-                    </option>
+              <label className="text-[10px] font-black uppercase tracking-widest text-outline mb-2 block">Test Identity</label>
+              <select
+                className="w-full bg-surface-highest border border-outline-variant/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all"
+                value={selectedTestUserId}
+                onMouseDown={async () => {
+                  const res = await api.request('GET', '/test-customers');
+                  setTestCustomers(res.customers || []);
+                }}
+                onChange={(e) => {
+                  const accNum = e.target.value;
+                  setSelectedTestUserId(accNum);
+
+                  const user = testCustomers.find(c => c.account_number === accNum);
+                  const metadata = user || {};
+                  const label = user ? user.customer_name : 'Guest';
+
+                  setSimMetadata(metadata);
+
+                  // Parse DB metadata into overrides
+                  if (user?.test_meta_data) {
+                    try {
+                      setSimOverrides(JSON.parse(user.test_meta_data));
+                    } catch { setSimOverrides({}); }
+                  } else {
+                    setSimOverrides({});
+                  }
+
+                  // Reset UI but don't start call automatically
+                  setSimChat([{ role: 'system', text: `Identity switched to ${label}. Click Start Call to begin.` }]);
+                  const firstNodeId = nodes[0]?.id;
+                  setSimNode(firstNodeId);
+                  setSimVisitCounts({});
+                  setSimHistory([]);
+                }}
+              >
+                <option value="">Guest (No Metadata)</option>
+                {testCustomers.map((user) => (
+                  <option key={user.account_number} value={user.account_number}>
+                    {user.customer_name} ({user.account_number})
+                  </option>
+                ))}
+              </select>
+              {selectedTestUserId && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {Object.entries(simMetadata).filter(([k]) => ['balance', 'principal', 'outstanding'].includes(k)).map(([k, v]) => (
+                    <div key={k} className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold">
+                      {k}: {String(v)}
+                    </div>
                   ))}
-                </select>
-                {selectedTestUserId && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                     {Object.entries(simMetadata).filter(([k]) => ['balance', 'principal', 'outstanding'].includes(k)).map(([k, v]) => (
-                        <div key={k} className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 font-bold">
-                           {k}: {String(v)}
-                        </div>
-                     ))}
-                  </div>
-                )}
+                </div>
+              )}
             </div>
 
             {/* Simulation Overrides Accordion */}
             {detectedGraphVars.length > 0 && (
               <div className="mx-4 mb-4 rounded-2xl bg-surface-container/30 border border-outline-variant/10 overflow-hidden">
-                <button 
+                <button
                   onClick={() => setShowOverrides(!showOverrides)}
                   className="w-full flex items-center justify-between p-4 hover:bg-surface-container/50 transition-colors"
                 >
@@ -1526,7 +1523,7 @@ function WorkflowEditor() {
                   </div>
                   <ChevronDown className={cn("size-3.5 text-outline transition-transform duration-300", showOverrides && "rotate-180")} />
                 </button>
-                
+
                 {showOverrides && (
                   <div className="px-4 pb-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                     {detectedGraphVars.map(v => {
@@ -1534,7 +1531,7 @@ function WorkflowEditor() {
                       return (
                         <div key={v} className="flex flex-col gap-1">
                           <label className="text-[10px] font-bold text-outline uppercase px-1">{v}</label>
-                          <input 
+                          <input
                             list={!isDate ? "sim-db-columns" : undefined}
                             type={isDate ? "date" : "text"}
                             className="bg-surface-highest border border-outline-variant/10 rounded-xl p-2.5 text-xs text-primary focus:border-primary/50 outline-none transition-all"
@@ -1555,22 +1552,22 @@ function WorkflowEditor() {
 
             {/* Manual Controls */}
             <div className="px-4 py-2 border-b border-outline-variant/5">
-                <button 
-                  onClick={() => {
-                    const firstNodeId = nodes[0]?.id;
-                    setSimNode(firstNodeId);
-                    setSimVisitCounts({});
-                    setSimHistory([]);
-                    setSimChat([{ role: 'system', text: '— INITIALIZING CALL —' }]);
-                    
-                    const finalMetadata = { ...(simMetadata || {}), ...(simOverrides || {}) };
-                    runSimulatorTurn("", firstNodeId, finalMetadata);
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
-                >
-                  <Phone className={cn("size-3", simRunning && "animate-spin")} />
-                  Start Call
-                </button>
+              <button
+                onClick={() => {
+                  const firstNodeId = nodes[0]?.id;
+                  setSimNode(firstNodeId);
+                  setSimVisitCounts({});
+                  setSimHistory([]);
+                  setSimChat([{ role: 'system', text: '— INITIALIZING CALL —' }]);
+
+                  const finalMetadata = { ...(simMetadata || {}), ...(simOverrides || {}) };
+                  runSimulatorTurn("", firstNodeId, finalMetadata);
+                }}
+                className="w-full py-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
+              >
+                <Phone className={cn("size-3", simRunning && "animate-spin")} />
+                Start Call
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -1582,12 +1579,12 @@ function WorkflowEditor() {
               )}
               {simHistory.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-4 p-2 bg-black/20 rounded-lg border border-white/5">
-                    <span className="text-[8px] font-bold text-outline uppercase tracking-widest w-full mb-1">Path History</span>
-                    {simHistory.map((h, i) => (
-                        <div key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                            {nodes.find(n => n.id === h)?.data.label || h}
-                        </div>
-                    ))}
+                  <span className="text-[8px] font-bold text-outline uppercase tracking-widest w-full mb-1">Path History</span>
+                  {simHistory.map((h, i) => (
+                    <div key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                      {nodes.find(n => n.id === h)?.data.label || h}
+                    </div>
+                  ))}
                 </div>
               )}
               {simChat.map((msg, i) => (
@@ -1595,21 +1592,21 @@ function WorkflowEditor() {
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="text-[10px] text-outline uppercase font-black tracking-tighter">{msg.role}</span>
                     {msg.nodeLabel && (
-                        <span className="text-[8px] px-1.5 py-0.25 rounded bg-primary/20 text-primary font-bold border border-primary/20">
-                            {msg.nodeLabel}
-                        </span>
+                      <span className="text-[8px] px-1.5 py-0.25 rounded bg-primary/20 text-primary font-bold border border-primary/20">
+                        {msg.nodeLabel}
+                      </span>
                     )}
                     {msg.intent && (
-                        <span className="text-[8px] px-1.5 py-0.25 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20 flex items-center gap-1">
-                            <Cpu className="size-2" /> {msg.intent}
-                        </span>
+                      <span className="text-[8px] px-1.5 py-0.25 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20 flex items-center gap-1">
+                        <Cpu className="size-2" /> {msg.intent}
+                      </span>
                     )}
                   </div>
                   <div className={cn(
                     "text-xs px-3 py-2 rounded-xl max-w-[85%] font-medium",
-                    msg.role === 'user' ? 'bg-primary/20 text-primary rounded-br-none border border-primary/10' 
-                    : msg.role === 'system' ? 'bg-red-500/10 text-red-400 italic border border-red-500/20 px-4 py-3 rounded-lg text-[10px]'
-                    : 'bg-surface-highest text-on-surface rounded-bl-none border border-white/5'
+                    msg.role === 'user' ? 'bg-primary/20 text-primary rounded-br-none border border-primary/10'
+                      : msg.role === 'system' ? 'bg-red-500/10 text-red-400 italic border border-red-500/20 px-4 py-3 rounded-lg text-[10px]'
+                        : 'bg-surface-highest text-on-surface rounded-bl-none border border-white/5'
                   )}>
                     {msg.text}
                   </div>

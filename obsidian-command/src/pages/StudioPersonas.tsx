@@ -48,6 +48,7 @@ import { cn } from '../lib/utils';
 import { api, type AiPersona } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
+import { LogoLoader } from '../components/LogoLoader';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Premium Components
@@ -967,19 +968,7 @@ export default function StudioPersonas({ debug }: { debug?: boolean }) {
    );
 
    if (isLoading) {
-      return (
-         <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-            <div className="size-16 rounded-full border-2 border-primary/20 flex items-center justify-center relative">
-               <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                  className="absolute inset-0 rounded-full border-t-2 border-primary"
-               />
-               <BrainCircuit className="size-7 text-primary/60" />
-            </div>
-            <p className="text-[10px] font-bold text-outline uppercase tracking-widest">Loading Neural Registry...</p>
-         </div>
-      );
+      return <LogoLoader text="Accessing Neural Registry..." />;
    }
 
    if (loadError) {

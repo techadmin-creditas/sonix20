@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
@@ -32,60 +33,7 @@ export default function SettingsPage() {
   }, [isAdmin]);
 
   if (!isAdmin) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-10 bg-background relative overflow-hidden">
-        {/* Animated Background Gradients */}
-        <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.4, 0.3] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-red-500/10 blur-[120px] rounded-full"
-        />
-        <motion.div 
-          animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.3, 0.2] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "linear", delay: 1 }}
-          className="absolute -bottom-40 -left-40 w-[600px] h-[600px] bg-primary/10 blur-[120px] rounded-full"
-        />
-
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-panel max-w-2xl w-full p-16 rounded-[3rem] text-center relative z-10 border border-red-500/20 shadow-2xl shadow-red-500/5"
-        >
-          <motion.div 
-            initial={{ scale: 0.8, rotate: -10 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: "spring", damping: 12 }}
-            className="size-24 rounded-3xl bg-red-500/10 flex items-center justify-center mx-auto mb-10 border border-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.1)]"
-          >
-            <ShieldAlert className="size-12 text-red-500" />
-          </motion.div>
-
-          <h2 className="font-headline text-4xl font-black text-on-surface mb-6 uppercase tracking-widest">
-            Neural Access <span className="text-red-500">Denied</span>
-          </h2>
-          
-          <p className="text-lg text-outline mb-12 leading-relaxed">
-            Identity mismatch detected. Platform settings are restricted to administrative entities within the Obsidian network.
-          </p>
-
-          <div className="h-px bg-linear-to-r from-transparent via-red-500/20 to-transparent w-full mb-12" />
-
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="group flex items-center justify-center gap-3 mx-auto px-10 py-5 rounded-2xl bg-surface-high hover:bg-surface-highest border border-outline-variant/20 transition-all active:scale-95 shadow-xl"
-          >
-            <ArrowLeft className="size-5 text-primary group-hover:-translate-x-1 transition-transform" />
-            <span className="font-bold text-sm uppercase tracking-widest">Return to Dashboard</span>
-          </button>
-        </motion.div>
-
-        <div className="mt-10 px-6 py-2 rounded-full border border-outline-variant/10 bg-surface-low/50 backdrop-blur-sm relative z-10">
-          <p className="text-[10px] font-black text-outline uppercase tracking-[0.3em]">
-            Security Protocol: RBAC-TRANSIT-SECURED
-          </p>
-        </div>
-      </div>
-    );
+    return <LogoLoader text="Neural Access Denied..." />;
   }
 
   const svcStatus = (key: string) => {

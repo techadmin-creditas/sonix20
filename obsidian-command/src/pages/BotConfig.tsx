@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { LogoLoader } from '../components/LogoLoader';
 import {
   ArrowLeft,
   UserRoundPen,
@@ -432,7 +433,7 @@ export default function BotConfig() {
           api.getVoices(),
           api.getWorkflows()
         ]);
-        
+
         setModels(modelsData);
         setVoices(voicesData);
         setWorkflows(workflowData);
@@ -673,14 +674,7 @@ export default function BotConfig() {
 
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="size-10 text-primary animate-spin" />
-          <p className="text-on-surface-variant font-medium animate-pulse">Loading Neural Configuration...</p>
-        </div>
-      </div>
-    );
+    return <LogoLoader text="Loading Neural Configuration..." />;
   }
 
   return (

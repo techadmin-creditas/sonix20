@@ -4,6 +4,7 @@ import { Header } from '../components/Header';
 import { PERSONAS } from '../constants';
 import { cn } from '../lib/utils';
 import { api, Bot } from '../lib/api';
+import { LogoLoader } from '../components/LogoLoader';
 import {
   PlusCircle,
   Star,
@@ -171,9 +172,9 @@ export default function Personas({ debug }: { debug?: boolean }) {
           <div className="w-full flex justify-between items-center">
             {debug ? (
               <div className="flex items-center gap-4">
-                 <Link to="/personas" className="px-4 py-2 rounded-xl bg-surface-low text-outline text-xs font-bold hover:bg-surface-high transition-all">
-                   Back to Factory
-                 </Link>
+                <Link to="/personas" className="px-4 py-2 rounded-xl bg-surface-low text-outline text-xs font-bold hover:bg-surface-high transition-all">
+                  Back to Factory
+                </Link>
               </div>
             ) : personas?.length > 0 && (
               <>
@@ -203,12 +204,9 @@ export default function Personas({ debug }: { debug?: boolean }) {
       />
 
       <div className="p-10 flex flex-col gap-10">
-        {botStatsLoading && (
-          <div className="flex-1 flex flex-col items-center justify-center py-20">
-            <Loader2 className="size-12 text-primary animate-spin" />
-            <p className="text-outline mt-4 font-bold uppercase tracking-widest text-xs">Initializing Neural Links...</p>
-          </div>
-        )}
+        {loading || botStatsLoading ? (
+          <LogoLoader text="Initializing Neural Links..." />
+        ) : null}
 
         {error && (
           <div className="flex-1 flex flex-col items-center justify-center py-20 bg-red-500/5 rounded-3xl border border-red-500/20">
@@ -244,11 +242,11 @@ export default function Personas({ debug }: { debug?: boolean }) {
               </p>
             </div>
             {!searchQuery && (
-            <PermissionGuard require={{ module: 'personas', action: 'update' }}>
-              <Link to="/personas/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
-                Create Your First Bot
-              </Link>
-            </PermissionGuard>
+              <PermissionGuard require={{ module: 'personas', action: 'update' }}>
+                <Link to="/personas/create" className="px-6 py-2.5 rounded-xl ember-gradient text-on-primary-fixed font-bold text-sm shadow-lg">
+                  Create Your First Bot
+                </Link>
+              </PermissionGuard>
             )}
           </div>
         )}
@@ -364,36 +362,36 @@ export default function Personas({ debug }: { debug?: boolean }) {
                     </div>
                   ) : (
                     <>
-                  <div className="flex-1 flex items-center gap-3">
-                      <Link
-                        to={`/personas/${persona.id}/config`}
-                        className={cn(
-                          "flex-1 py-2.5 rounded-xl text-on-surface font-bold text-xs transition-all border border-outline-variant/10 text-center",
-                          canUpdate('personas', (persona as any).owner_user_id)
-                            ? "bg-surface-high hover:bg-surface-highest"
-                            : "bg-surface-low opacity-60 cursor-not-allowed"
-                        )}
-                      >
-                        {canUpdate('personas', (persona as any).owner_user_id) ? 'Configure' : 'View Config'}
-                      </Link>
-                    
-                    <PermissionGuard require={{ module: 'personas', action: 'update', ownerId: (persona as any).owner_user_id }}>
-                      <Link
-                        to={`/personas/create?clone=${persona.id}`}
-                        className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
-                        title="Duplicate Bot"
-                      >
-                        <Copy className="size-4" />
-                      </Link>
-                      <button
-                        onClick={() => setDeletingId(persona.id)}
-                        className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                        title="Delete Bot"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </PermissionGuard>
-                  </div>
+                      <div className="flex-1 flex items-center gap-3">
+                        <Link
+                          to={`/personas/${persona.id}/config`}
+                          className={cn(
+                            "flex-1 py-2.5 rounded-xl text-on-surface font-bold text-xs transition-all border border-outline-variant/10 text-center",
+                            canUpdate('personas', (persona as any).owner_user_id)
+                              ? "bg-surface-high hover:bg-surface-highest"
+                              : "bg-surface-low opacity-60 cursor-not-allowed"
+                          )}
+                        >
+                          {canUpdate('personas', (persona as any).owner_user_id) ? 'Configure' : 'View Config'}
+                        </Link>
+
+                        <PermissionGuard require={{ module: 'personas', action: 'update', ownerId: (persona as any).owner_user_id }}>
+                          <Link
+                            to={`/personas/create?clone=${persona.id}`}
+                            className="px-3 py-2.5 rounded-xl bg-surface-high text-on-surface hover:bg-primary/10 hover:text-primary transition-all border border-outline-variant/10"
+                            title="Duplicate Bot"
+                          >
+                            <Copy className="size-4" />
+                          </Link>
+                          <button
+                            onClick={() => setDeletingId(persona.id)}
+                            className="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                            title="Delete Bot"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </PermissionGuard>
+                      </div>
                     </>
                   )}
                 </div>
@@ -416,8 +414,8 @@ export default function Personas({ debug }: { debug?: boolean }) {
                     onClick={() => setSelectedUser(u)}
                     className={cn(
                       "p-4 rounded-3xl border text-left transition-all flex flex-col gap-1 group relative overflow-hidden",
-                      selectedUser?.id === u.id 
-                        ? "bg-primary border-primary shadow-lg text-on-primary-fixed" 
+                      selectedUser?.id === u.id
+                        ? "bg-primary border-primary shadow-lg text-on-primary-fixed"
                         : "bg-surface-low border-outline-variant/10 hover:bg-surface-high text-on-surface"
                     )}
                   >
@@ -448,7 +446,7 @@ export default function Personas({ debug }: { debug?: boolean }) {
                       <p className="text-xs text-outline font-medium mt-1">Managing neural link access protocols for this identity.</p>
                     </div>
                     <div className="flex gap-2">
-                      <span className="px-4 py-2 rounded-xl bg-surface-high border border-outline-variant/10 text-[9px] font-black uppercase tracking-widest text-primary">ID: {selectedUser.id.substring(0,8)}</span>
+                      <span className="px-4 py-2 rounded-xl bg-surface-high border border-outline-variant/10 text-[9px] font-black uppercase tracking-widest text-primary">ID: {selectedUser.id.substring(0, 8)}</span>
                     </div>
                   </div>
 
@@ -469,7 +467,7 @@ export default function Personas({ debug }: { debug?: boolean }) {
                                 <p className="text-[9px] font-black uppercase tracking-widest text-outline">{p.role}</p>
                               </div>
                             </div>
-                            <button 
+                            <button
                               onClick={() => handleToggleAssignment(p, false)}
                               className="px-4 py-2 rounded-xl bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
                             >
@@ -479,7 +477,7 @@ export default function Personas({ debug }: { debug?: boolean }) {
                         ))}
                         {personas.filter(p => p.owner_user_id === selectedUser.id).length === 0 && (
                           <div className="md:col-span-2 p-10 rounded-4xl border border-dashed border-outline-variant/20 flex flex-col items-center justify-center text-center opacity-40">
-                             <p className="text-xs font-bold uppercase tracking-widest">No active neural links</p>
+                            <p className="text-xs font-bold uppercase tracking-widest">No active neural links</p>
                           </div>
                         )}
                       </div>
@@ -498,7 +496,7 @@ export default function Personas({ debug }: { debug?: boolean }) {
                                 <p className="text-[9px] font-black uppercase tracking-widest text-outline">Base Blueprint</p>
                               </div>
                             </div>
-                            <button 
+                            <button
                               onClick={() => handleToggleAssignment(p, true)}
                               className="px-4 py-2 rounded-xl bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-on-primary transition-all flex items-center gap-2"
                             >

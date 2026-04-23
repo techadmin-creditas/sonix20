@@ -36,19 +36,13 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import HomeNewV1 from './pages/HomeNewV1';
 import HomeOld from './pages/HomeOld';
 import Session2 from './pages/Session2';
+import { LogoLoader } from './components/LogoLoader';
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout, isAdmin } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-surface-lowest gap-8">
-        <img src="/images/logoSonix.png" alt="Sonix 2.0" className="w-40 h-auto animate-pulse opacity-90" />
-        {/* <div className="text-[10px] text-outline font-headline tracking-[0.4em] uppercase animate-pulse">
-          Checking neural identity
-        </div> */}
-      </div>
-    );
+    return <LogoLoader text="Checking neural identity..." />;
   }
 
   if (!currentUser) {

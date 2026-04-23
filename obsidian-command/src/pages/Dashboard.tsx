@@ -12,6 +12,7 @@ import { cn } from '../lib/utils';
 import { NeuralBackground } from '../components/NeuralBackground';
 import { api, DashboardStats, SessionRecord, Bot as BotType } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { LogoLoader } from '../components/LogoLoader';
 
 const CHART_DATA = [
   { name: 'Oct 01', value: 400 },
@@ -96,14 +97,7 @@ export default function Dashboard() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="size-12 text-primary animate-spin" />
-          <p className="text-outline font-bold uppercase tracking-widest text-sm">Synchronizing Mission Control...</p>
-        </div>
-      </div>
-    );
+    return <LogoLoader text="Synchronizing Mission Control..." />;
   }
   const totalSessionsValue = stats?.metrics.totalSessions || 0;
   const pieData = stats?.botUsage

@@ -11,6 +11,7 @@ import {
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PermissionSelector, PRESETS } from '../components/PermissionSelector';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function UserManagement() {
   const { isAdmin, isLoading: authLoading } = useAuth();
@@ -18,11 +19,11 @@ export default function UserManagement() {
   const [usersLoading, setUsersLoading] = React.useState(true);
   const [roles, setRoles] = React.useState<{ id: string; permissions: string[] }[]>([]);
   const [rolesLoading, setRolesLoading] = React.useState(true);
-  
+
   const [isRolePopupOpen, setIsRolePopupOpen] = React.useState(false);
   const [selectedRoleId, setSelectedRoleId] = React.useState<string | null>(null);
   const [newRoleName, setNewRoleName] = React.useState('');
-  
+
   const [newUsername, setNewUsername] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [newRole, setNewRole] = React.useState<'admin' | 'user'>('user');
@@ -33,7 +34,7 @@ export default function UserManagement() {
   const [userError, setUserError] = React.useState('');
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = React.useState<string | null>(null);
-  
+
   const [activeTab, setActiveTab] = React.useState<'users' | 'roles'>('users');
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = React.useState(false);
@@ -85,9 +86,9 @@ export default function UserManagement() {
       return;
     }
     try {
-      await api.createUser({ 
-        username: newUsername.trim(), 
-        password: newPassword, 
+      await api.createUser({
+        username: newUsername.trim(),
+        password: newPassword,
         role: newRole,
         permissions: newPermissions.length > 0 ? newPermissions : undefined
       });
@@ -182,11 +183,11 @@ export default function UserManagement() {
   async function handleAddRole() {
     if (!newRoleName.trim()) return;
     const roleId = newRoleName.toLowerCase().replace(/\s+/g, '_');
-    
+
     // Inherit from 'user' role defaults if available
     const userRole = roles.find(r => r.id === 'user');
     const initialPerms = userRole ? [...userRole.permissions] : ["read:sessions", "read:studio"];
-    
+
     try {
       await api.updateRole(roleId, initialPerms);
       setNewRoleName('');
@@ -203,13 +204,13 @@ export default function UserManagement() {
 
     let nextPerms = [...role.permissions];
     const permString = `${action}:${module}`;
-    
+
     if (nextPerms.includes(permString)) {
       nextPerms = nextPerms.filter(p => p !== permString);
     } else {
       nextPerms.push(permString);
     }
-    
+
     void handleSaveRole(roleId, nextPerms);
   };
 
@@ -217,7 +218,7 @@ export default function UserManagement() {
     await handleSaveRole(roleId, perms);
   }
 
-  const filteredUsers = users.filter(u => 
+  const filteredUsers = users.filter(u =>
     u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.role.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -229,6 +230,10 @@ export default function UserManagement() {
     active: users.filter(u => u.is_active !== 0).length
   };
 
+  if (usersLoading || rolesLoading || authLoading) {
+    return <LogoLoader text="Calibrating Neural Permissions..." />;
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-screen">
       <Header
@@ -238,7 +243,7 @@ export default function UserManagement() {
 
       <main className="flex-1 overflow-y-auto px-6 py-8 lg:p-12 custom-scrollbar">
         <div className="max-w-7xl mx-auto space-y-12">
-          
+
           {/* Stats Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             {[
@@ -247,10 +252,10 @@ export default function UserManagement() {
               { label: 'Custom Overrides', value: stats.overrides, icon: Zap, color: 'text-primary' },
               { label: 'Active Sessions', value: stats.active, icon: Verified, color: 'text-emerald-500' }
             ].map((stat, i) => (
-              <motion.div 
-                key={i} 
-                initial={{ opacity: 0, scale: 0.9 }} 
-                animate={{ opacity: 1, scale: 1 }} 
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: i * 0.1 }}
                 className="p-6 rounded-3xl bg-surface-highest/20 border border-white/5 flex flex-col gap-2 relative overflow-hidden group"
               >
@@ -270,7 +275,7 @@ export default function UserManagement() {
             {/* Nav & Search Header */}
             <div className="p-8 border-b border-white/5 bg-surface-highest/10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
               <div className="flex items-center gap-1 bg-background/50 p-1.5 rounded-2xl border border-white/5 w-fit">
-                <button 
+                <button
                   onClick={() => setActiveTab('users')}
                   className={cn(
                     "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
@@ -279,7 +284,7 @@ export default function UserManagement() {
                 >
                   Indentity Registry
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveTab('roles')}
                   className={cn(
                     "px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
@@ -293,14 +298,14 @@ export default function UserManagement() {
               <div className="flex items-center gap-4 flex-1 lg:max-w-md">
                 <div className="relative flex-1 group">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-outline group-focus-within:text-primary transition-colors" />
-                  <input 
+                  <input
                     placeholder="Search by Identity or Protocol..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full pl-12 pr-4 py-3 bg-background/40 border border-white/5 rounded-2xl outline-none focus:border-primary/30 transition-all font-bold text-xs"
                   />
                 </div>
-                <button 
+                <button
                   onClick={() => setIsCreateDrawerOpen(true)}
                   className="size-12 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center hover:bg-primary/20 transition-all shadow-lg"
                   title="Provision New Identity"
@@ -348,7 +353,7 @@ export default function UserManagement() {
                           </td>
                           <td className="px-8 py-6">
                             <div className="relative w-fit group/tier">
-                              <select 
+                              <select
                                 value={u.role}
                                 onChange={(e) => handleUpdateRole(u.id, e.target.value as 'admin' | 'user')}
                                 className="pl-3 pr-8 py-2 rounded-xl bg-surface-highest/50 border border-white/5 text-[9px] font-black uppercase tracking-widest text-outline hover:text-primary transition-all appearance-none cursor-pointer outline-none"
@@ -370,7 +375,7 @@ export default function UserManagement() {
                                 </div>
                               ) : (
                                 <>
-                                  <button 
+                                  <button
                                     onClick={() => handleOpenPermissions(u)}
                                     className="size-10 rounded-xl bg-primary/5 text-primary border border-primary/10 hover:bg-primary/10 transition-all flex items-center justify-center"
                                     title="Edit Permission Protocol"
@@ -378,7 +383,7 @@ export default function UserManagement() {
                                     <Lock className="size-4" />
                                   </button>
                                   {u.overrides && u.overrides.length > 0 && (
-                                    <button 
+                                    <button
                                       onClick={() => handleResetPermissions(u.id)}
                                       className="size-10 rounded-xl bg-orange-500/5 text-orange-400 border border-orange-500/10 hover:bg-orange-500/10 transition-all flex items-center justify-center animate-pulse"
                                       title="Reset to Role Defaults"
@@ -386,14 +391,14 @@ export default function UserManagement() {
                                       <RefreshCw className="size-4" />
                                     </button>
                                   )}
-                                  <button 
+                                  <button
                                     onClick={() => handleChangePassword(u.id)}
                                     className="size-10 rounded-xl bg-surface-highest/50 text-outline border border-white/5 hover:border-white/10 transition-all flex items-center justify-center"
                                     title="Update Password"
                                   >
                                     <Key className="size-4" />
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={() => setDeletingId(u.id)}
                                     className="size-10 rounded-xl bg-red-500/5 text-red-500/40 border border-red-500/10 hover:text-red-500 hover:bg-red-500/10 transition-all flex items-center justify-center"
                                     title="Delete Identity"
@@ -419,8 +424,8 @@ export default function UserManagement() {
                           onClick={() => setSelectedRoleId(role.id)}
                           className={cn(
                             "w-full px-5 py-3.5 rounded-2xl text-left text-[11px] font-black uppercase tracking-widest transition-all border group relative overflow-hidden",
-                            selectedRoleId === role.id 
-                              ? "ember-gradient shadow-indigo  shadow-lg" 
+                            selectedRoleId === role.id
+                              ? "ember-gradient shadow-indigo  shadow-lg"
                               : "bg-background border-white/5 text-outline hover:border-primary/30"
                           )}
                         >
@@ -434,14 +439,14 @@ export default function UserManagement() {
                     <div className="mt-auto pt-8 border-t border-white/5 space-y-4">
                       <p className="text-[9px] font-black uppercase tracking-widest text-outline ml-1">Universal Tiers</p>
                       <div className="flex flex-col gap-3">
-                        <input 
-                          value={newRoleName} 
-                          onChange={e => setNewRoleName(e.target.value)} 
-                          placeholder="New Access Tier..." 
-                          className="bg-background border border-white/5 rounded-xl px-4 py-3 text-[10px] font-bold uppercase outline-none focus:border-primary/50 transition-all" 
+                        <input
+                          value={newRoleName}
+                          onChange={e => setNewRoleName(e.target.value)}
+                          placeholder="New Access Tier..."
+                          className="bg-background border border-white/5 rounded-xl px-4 py-3 text-[10px] font-bold uppercase outline-none focus:border-primary/50 transition-all"
                         />
-                        <button 
-                          onClick={handleAddRole} 
+                        <button
+                          onClick={handleAddRole}
                           className="w-full py-4 rounded-xl ember-gradient flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all"
                         >
                           <Plus className="size-4" /> Initialize
@@ -460,8 +465,8 @@ export default function UserManagement() {
                           </div>
                           {selectedRoleId === 'admin' && <span className="px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[9px] font-black uppercase text-amber-500 flex items-center gap-2"><Lock className="size-3" /> Core System Protected</span>}
                         </div>
-                        
-                        <PermissionSelector 
+
+                        <PermissionSelector
                           permissions={roles.find(r => r.id === selectedRoleId)?.permissions || []}
                           onToggle={(perm) => handleToggleRolePermission(selectedRoleId, perm.split(':')[1], perm.split(':')[0] as any)}
                           onApplyPreset={(perms) => applyPreset(selectedRoleId, perms)}
@@ -490,14 +495,14 @@ export default function UserManagement() {
       <AnimatePresence>
         {isCreateDrawerOpen && (
           <div className="fixed inset-0 z-100 flex items-center justify-end p-0">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsCreateDrawerOpen(false)}
               className="absolute inset-0 bg-background/80 backdrop-blur-md"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -520,21 +525,21 @@ export default function UserManagement() {
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-outline ml-1">Username</label>
-                      <input 
-                        placeholder="Neural Handler..." 
+                      <input
+                        placeholder="Neural Handler..."
                         value={newUsername}
                         onChange={(e) => setNewUsername(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-white/5 rounded-2xl outline-none focus:border-primary/50 transition-all font-bold text-sm" 
+                        className="w-full px-5 py-4 bg-background border border-white/5 rounded-2xl outline-none focus:border-primary/50 transition-all font-bold text-sm"
                       />
                     </div>
                     <div className="space-y-3">
                       <label className="text-[10px] font-black uppercase tracking-widest text-outline ml-1">Password</label>
-                      <input 
+                      <input
                         type="password"
-                        placeholder="••••••••" 
+                        placeholder="••••••••"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full px-5 py-4 bg-background border border-white/5 rounded-2xl outline-none focus:border-primary/50 transition-all font-bold text-sm" 
+                        className="w-full px-5 py-4 bg-background border border-white/5 rounded-2xl outline-none focus:border-primary/50 transition-all font-bold text-sm"
                       />
                     </div>
                   </div>
@@ -542,7 +547,7 @@ export default function UserManagement() {
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase tracking-widest text-outline ml-1">Access Protocol</label>
                     <div className="relative">
-                      <select 
+                      <select
                         value={newRole}
                         onChange={(e) => {
                           const val = e.target.value as any;
@@ -567,7 +572,7 @@ export default function UserManagement() {
                       <label className="text-[10px] font-black uppercase tracking-widest text-outline">Custom Permission Protocol</label>
                       <span className="text-[8px] font-black uppercase px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20">Optional Override</span>
                     </div>
-                    <PermissionSelector 
+                    <PermissionSelector
                       permissions={newPermissions}
                       onToggle={handleToggleNewPermission}
                       onApplyPreset={setNewPermissions}
@@ -578,13 +583,13 @@ export default function UserManagement() {
               </div>
 
               <div className="p-10 bg-background/30 border-t border-white/5 flex gap-4">
-                <button 
+                <button
                   onClick={() => setIsCreateDrawerOpen(false)}
                   className="flex-1 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase tracking-widest text-outline hover:bg-white/5 transition-all"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   form="provision-form"
                   type="submit"
                   className="flex-2 py-4 rounded-2xl ember-gradient shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all"
@@ -601,14 +606,14 @@ export default function UserManagement() {
       <AnimatePresence>
         {isPermModalOpen && (
           <div className="fixed inset-0 z-110 flex justify-end">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsPermModalOpen(false)}
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -625,8 +630,8 @@ export default function UserManagement() {
                     <p className="text-[11px] font-black uppercase tracking-[0.3em] mt-1 text-amber-500">Custom Protocol Editor</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setIsPermModalOpen(false)} 
+                <button
+                  onClick={() => setIsPermModalOpen(false)}
                   className="size-12 rounded-2xl border border-white/5 hover:bg-white/5 flex items-center justify-center text-outline"
                 >
                   <X className="size-6" />
@@ -634,7 +639,7 @@ export default function UserManagement() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-                <PermissionSelector 
+                <PermissionSelector
                   permissions={editingPermissions}
                   onToggle={handleToggleEditingPermission}
                   onApplyPreset={setEditingPermissions}
@@ -642,13 +647,13 @@ export default function UserManagement() {
               </div>
 
               <div className="p-10 bg-background/30 border-t border-white/5 flex gap-4">
-                <button 
+                <button
                   onClick={() => setIsPermModalOpen(false)}
                   className="flex-1 py-4 rounded-2xl border border-white/5 text-[10px] font-black uppercase tracking-widest text-outline hover:bg-white/5 transition-all"
                 >
                   Discard Overrides
                 </button>
-                <button 
+                <button
                   onClick={handleSavePermissions}
                   className="flex-2 py-4 rounded-2xl ember-gradient shadow-lg shadow-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] active:scale-95 transition-all"
                 >

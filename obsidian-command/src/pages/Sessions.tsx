@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { api, SessionRecord } from '../lib/api';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function Sessions() {
   const navigate = useNavigate();
@@ -153,10 +154,7 @@ export default function Sessions() {
       <div className="p-8 flex flex-col gap-6">
         {/* Filters & Search */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center p-20 gap-4">
-            <Loader2 className="size-8 text-primary animate-spin" />
-            <p className="text-outline text-xs font-bold uppercase tracking-widest">Accessing Neural Logs...</p>
-          </div>
+          <LogoLoader text="Accessing Neural Logs..." />
         ) : (
           <div className="grid grid-cols-1 gap-4" style={{ maxHeight: 'calc(100vh - 210px)', overflowY: 'auto' }}>
             {filteredSessions.map((session, index) => (

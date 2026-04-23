@@ -21,6 +21,7 @@ import { api, KnowledgeEntry, RawVectorEntry, QACacheEntry } from '../lib/api';
 import { Loader2 } from 'lucide-react';
 import { PermissionGuard } from '../components/PermissionGuard';
 import { useAuth } from '../contexts/AuthContext';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function KnowledgeBase() {
   const [entries, setEntries] = useState<any[]>([]);
@@ -56,18 +57,18 @@ export default function KnowledgeBase() {
         const data = await api.getKnowledgeEntries();
         setEntries(data);
       } else if (activeTab === 'learned') {
-          // Fallback or specific logic
-          if (activeTab === 'learned' && selectedBotId) {
-            const data = await api.getLearnedMemory(selectedBotId);
-            setEntries(data.map((d: any) => ({
-                id: d.id,
-                question: d.category.toUpperCase() + ": " + d.source,
-                answer: d.content,
-                topic: d.category,
-                priority: 1,
-                created_at: parseFloat(d.timestamp) || Date.now() / 1000
-            })));
-          }
+        // Fallback or specific logic
+        if (activeTab === 'learned' && selectedBotId) {
+          const data = await api.getLearnedMemory(selectedBotId);
+          setEntries(data.map((d: any) => ({
+            id: d.id,
+            question: d.category.toUpperCase() + ": " + d.source,
+            answer: d.content,
+            topic: d.category,
+            priority: 1,
+            created_at: parseFloat(d.timestamp) || Date.now() / 1000
+          })));
+        }
       } else if (activeTab === 'vector') {
         if (vectorSubTab === 'memory') {
           const data = await api.getAllVectorMemory();
@@ -127,7 +128,7 @@ export default function KnowledgeBase() {
     loadEntries();
     if (activeTab === 'tools') loadTools();
   }, [activeTab, selectedBotId, vectorSubTab]);
-  
+
   const filteredEntries = entries.filter(entry => {
     const matchesSearch = entry.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
       entry.answer.toLowerCase().includes(searchQuery.toLowerCase());
@@ -210,8 +211,8 @@ export default function KnowledgeBase() {
       <div className="absolute -top-20 -right-20 w-96 h-96 bg-primary/5 blur-[120px] rounded-full"></div>
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/2 blur-[150px] rounded-full"></div>
 
-      <Header 
-        title="Intelligence Hub" 
+      <Header
+        title="Intelligence Hub"
         subtitle="Manage knowledge core and autonomous tools."
         actions={
           <div className="flex gap-4">
@@ -252,245 +253,242 @@ export default function KnowledgeBase() {
             />
           </div>
           <div className="flex bg-surface-low p-1.5 rounded-2xl ghost-border h-16 shrink-0 overflow-x-auto no-scrollbar">
-             {[
-               { id: 'manual', label: 'Manual Core' },
-               { id: 'learned', label: 'Autonomous' },
-               { id: 'vector', label: 'Vector Store' },
-               { id: 'ingest', label: 'Unified Inflow' },
-               { id: 'tools', label: 'Tools Forge' }
-             ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id as any)}
-                  className={cn("px-6 rounded-xl font-bold transition-all text-[10px] uppercase tracking-[0.2em] whitespace-nowrap", 
-                    activeTab === t.id ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
-                >
-                   {t.label}
-                </button>
-             ))}
+            {[
+              { id: 'manual', label: 'Manual Core' },
+              { id: 'learned', label: 'Autonomous' },
+              { id: 'vector', label: 'Vector Store' },
+              { id: 'ingest', label: 'Unified Inflow' },
+              { id: 'tools', label: 'Tools Forge' }
+            ].map(t => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id as any)}
+                className={cn("px-6 rounded-xl font-bold transition-all text-[10px] uppercase tracking-[0.2em] whitespace-nowrap",
+                  activeTab === t.id ? "ember-gradient text-on-primary-fixed shadow-lg" : "text-outline hover:bg-white/5")}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-black text-outline uppercase tracking-widest mr-2">Shard Filter:</span>
-              <div className="flex flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black text-outline uppercase tracking-widest mr-2">Shard Filter:</span>
+            <div className="flex flex-wrap gap-3">
               {activeTab === 'manual' ? (
-                  ['Global', 'Sales', 'Support', 'Fulfillment'].map(filter => (
-                      <FilterChip 
-                          key={filter} 
-                          label={filter} 
-                          active={activeFilter === filter} 
-                          onClick={() => setActiveFilter(filter)}
-                      />
-                  ))
+                ['Global', 'Sales', 'Support', 'Fulfillment'].map(filter => (
+                  <FilterChip
+                    key={filter}
+                    label={filter}
+                    active={activeFilter === filter}
+                    onClick={() => setActiveFilter(filter)}
+                  />
+                ))
               ) : (activeTab === 'learned' || activeTab === 'vector') ? (
                 <>
-                  <FilterChip 
-                    label="Global Cluster" 
-                    active={activeFilter === 'Global'} 
-                    onClick={() => setActiveFilter('Global')} 
+                  <FilterChip
+                    label="Global Cluster"
+                    active={activeFilter === 'Global'}
+                    onClick={() => setActiveFilter('Global')}
                   />
-                  <FilterChip 
-                    label="PDF Shards" 
-                    active={activeFilter === 'DOCUMENTATION'} 
-                    onClick={() => setActiveFilter('DOCUMENTATION')} 
+                  <FilterChip
+                    label="PDF Shards"
+                    active={activeFilter === 'DOCUMENTATION'}
+                    onClick={() => setActiveFilter('DOCUMENTATION')}
                   />
-                  <FilterChip 
-                    label="Web Crawls" 
-                    active={activeFilter === 'WEBSITE'} 
-                    onClick={() => setActiveFilter('WEBSITE')} 
+                  <FilterChip
+                    label="Web Crawls"
+                    active={activeFilter === 'WEBSITE'}
+                    onClick={() => setActiveFilter('WEBSITE')}
                   />
                 </>
               ) : null}
-              </div>
             </div>
+          </div>
 
-            <div className="flex items-center gap-6">
-              {activeTab === 'learned' && (
-                <div className="flex h-10 px-4 bg-white/5 rounded-full items-center border border-white/10 gap-4">
-                  <span className="text-[10px] font-black text-outline uppercase tracking-widest">Node:</span>
-                  <select 
-                    className="bg-transparent text-[10px] font-black text-primary uppercase focus:outline-none cursor-pointer"
-                    value={selectedBotId}
-                    onChange={e => setSelectedBotId(e.target.value)}
-                  >
-                    {bots.map(bot => (
-                      <option key={bot.id} value={bot.id}>{bot.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {activeTab === 'vector' && (
-                <div className="flex gap-2">
-                  <FilterChip 
-                    label="Long-term Memory" 
-                    active={vectorSubTab === 'memory'} 
-                    onClick={() => setVectorSubTab('memory')}
-                  />
-                  <FilterChip 
-                    label="Semantic Cache" 
-                    active={vectorSubTab === 'qa'} 
-                    onClick={() => setVectorSubTab('qa')}
-                  />
-                </div>
-              )}
-              {['learned', 'vector'].includes(activeTab) && (
-                <div className="text-[9px] font-black text-primary/60 uppercase tracking-widest px-4 py-2 bg-primary/5 rounded-lg border border-primary/20 flex items-center gap-2">
-                  <Activity className="size-3 animate-pulse" />
-                  Live Cluster Active
-                </div>
-              )}
-            </div>
+          <div className="flex items-center gap-6">
+            {activeTab === 'learned' && (
+              <div className="flex h-10 px-4 bg-white/5 rounded-full items-center border border-white/10 gap-4">
+                <span className="text-[10px] font-black text-outline uppercase tracking-widest">Node:</span>
+                <select
+                  className="bg-transparent text-[10px] font-black text-primary uppercase focus:outline-none cursor-pointer"
+                  value={selectedBotId}
+                  onChange={e => setSelectedBotId(e.target.value)}
+                >
+                  {bots.map(bot => (
+                    <option key={bot.id} value={bot.id}>{bot.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {activeTab === 'vector' && (
+              <div className="flex gap-2">
+                <FilterChip
+                  label="Long-term Memory"
+                  active={vectorSubTab === 'memory'}
+                  onClick={() => setVectorSubTab('memory')}
+                />
+                <FilterChip
+                  label="Semantic Cache"
+                  active={vectorSubTab === 'qa'}
+                  onClick={() => setVectorSubTab('qa')}
+                />
+              </div>
+            )}
+            {['learned', 'vector'].includes(activeTab) && (
+              <div className="text-[9px] font-black text-primary/60 uppercase tracking-widest px-4 py-2 bg-primary/5 rounded-lg border border-primary/20 flex items-center gap-2">
+                <Activity className="size-3 animate-pulse" />
+                Live Cluster Active
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-8 relative">
           <div className="flex-1">
             {activeTab === 'ingest' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
-                        <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <ExternalLink size={240} className="text-primary" />
-                        </div>
-                        <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Crawl Intelligence</h3>
-                        <p className="text-outline text-sm mb-10 font-medium max-w-xs">Index any website or support documentation directly into the neural cluster.</p>
-                        <div className="flex gap-4">
-                          <input
-                            type="text"
-                            placeholder="https://example.com/docs"
-                            value={ingestUrl}
-                            onChange={(e) => setIngestUrl(e.target.value)}
-                            className="flex-1 bg-surface-highest ghost-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50"
-                          />
-                          <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
-                            <button
-                              onClick={handleIngest}
-                              disabled={ingestLoading || !ingestUrl.trim()}
-                              className="px-8 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-lg disabled:opacity-50 disabled:grayscale transition-all active:scale-95 flex items-center gap-2"
-                            >
-                              {ingestLoading ? <Loader2 className="size-4 animate-spin" /> : <PlusCircle className="size-4" />}
-                              Sync URL
-                            </button>
-                          </PermissionGuard>
-                        </div>
-                    </div>
-
-                    <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
-                        <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <Database size={240} className="text-primary" />
-                        </div>
-                        <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Shard Ingestion</h3>
-                        <p className="text-outline text-sm mb-10 font-medium max-w-xs">Upload manual PDF shards to expand the distributed vector knowledge base.</p>
-                        <input 
-                          type="file" id="pdf-ingest" className="hidden" accept=".pdf" 
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              try { await api.ingestPdf(file); alert('Knowledge shard uploaded!'); } catch(e) { alert('Upload failed'); }
-                            }
-                          }}
-                        />
-                        <label 
-                          htmlFor="pdf-ingest"
-                          className="w-full h-14 rounded-xl ghost-border bg-surface-highest hover:bg-surface-high transition-all text-outline font-black uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer border-dashed border-2"
-                        >
-                            <PlusCircle size={20} />
-                            Ingest PDF Shard
-                        </label>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
+                  <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <ExternalLink size={240} className="text-primary" />
+                  </div>
+                  <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Crawl Intelligence</h3>
+                  <p className="text-outline text-sm mb-10 font-medium max-w-xs">Index any website or support documentation directly into the neural cluster.</p>
+                  <div className="flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="https://example.com/docs"
+                      value={ingestUrl}
+                      onChange={(e) => setIngestUrl(e.target.value)}
+                      className="flex-1 bg-surface-highest ghost-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50"
+                    />
+                    <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                      <button
+                        onClick={handleIngest}
+                        disabled={ingestLoading || !ingestUrl.trim()}
+                        className="px-8 py-3 rounded-xl ember-gradient text-on-primary-fixed font-bold shadow-lg disabled:opacity-50 disabled:grayscale transition-all active:scale-95 flex items-center gap-2"
+                      >
+                        {ingestLoading ? <Loader2 className="size-4 animate-spin" /> : <PlusCircle className="size-4" />}
+                        Sync URL
+                      </button>
+                    </PermissionGuard>
+                  </div>
                 </div>
+
+                <div className="p-10 rounded-2xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden group hover:border-primary/20 transition-all">
+                  <div className="absolute -top-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <Database size={240} className="text-primary" />
+                  </div>
+                  <h3 className="text-3xl font-black text-on-surface mb-2 uppercase tracking-tighter">Shard Ingestion</h3>
+                  <p className="text-outline text-sm mb-10 font-medium max-w-xs">Upload manual PDF shards to expand the distributed vector knowledge base.</p>
+                  <input
+                    type="file" id="pdf-ingest" className="hidden" accept=".pdf"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try { await api.ingestPdf(file); alert('Knowledge shard uploaded!'); } catch (e) { alert('Upload failed'); }
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="pdf-ingest"
+                    className="w-full h-14 rounded-xl ghost-border bg-surface-highest hover:bg-surface-high transition-all text-outline font-black uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer border-dashed border-2"
+                  >
+                    <PlusCircle size={20} />
+                    Ingest PDF Shard
+                  </label>
+                </div>
+              </div>
             ) : activeTab === 'tools' ? (
               <div className="space-y-6">
-                 <div className="p-10 rounded-3xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden">
-                    <div className="flex items-center justify-between mb-10">
-                      <div className="flex flex-col gap-1">
-                        <h3 className="font-headline text-lg font-bold">External Knowledge Tools</h3>
-                        <p className="text-sm text-outline">Connect real-time API endpoints for dynamic retrieval.</p>
+                <div className="p-10 rounded-3xl bg-surface-low border border-white/5 shadow-2xl relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-10">
+                    <div className="flex flex-col gap-1">
+                      <h3 className="font-headline text-lg font-bold">External Knowledge Tools</h3>
+                      <p className="text-sm text-outline">Connect real-time API endpoints for dynamic retrieval.</p>
+                    </div>
+                    <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
+                      <button
+                        onClick={() => setIsToolModalOpen(true)}
+                        className="px-6 py-2.5 rounded-xl bg-surface-high border border-outline-variant/20 font-bold text-xs hover:bg-surface-highest transition-all flex items-center gap-2"
+                      >
+                        <PlusCircle className="size-4" />
+                        Add Tool
+                      </button>
+                    </PermissionGuard>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {tools.map(tool => (
+                      <div key={tool.id} className="p-6 rounded-2xl bg-surface-highest ghost-border hover:border-primary/30 transition-all group relative">
+                        <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button className="p-1.5 rounded-lg bg-surface hover:text-primary"><Edit2 size={12} /></button>
+                        </div>
+                        <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6 shadow-inner ring-1 ring-primary/20">
+                          <Cpu size={22} />
+                        </div>
+                        <h4 className="font-bold text-on-surface text-lg mb-1 leading-tight">{tool.name}</h4>
+                        <p className="text-[11px] text-outline line-clamp-2 leading-relaxed mb-6 font-medium">{tool.description}</p>
+                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                          <span className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-outline uppercase tracking-wider">{tool.type}</span>
+                          <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <div className="size-1 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                            Verified
+                          </span>
+                        </div>
                       </div>
-                      <PermissionGuard require={{ module: 'knowledge', action: 'update' }}>
-                        <button
-                          onClick={() => setIsToolModalOpen(true)}
-                          className="px-6 py-2.5 rounded-xl bg-surface-high border border-outline-variant/20 font-bold text-xs hover:bg-surface-highest transition-all flex items-center gap-2"
-                        >
-                          <PlusCircle className="size-4" />
-                          Add Tool
-                        </button>
-                      </PermissionGuard>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {tools.map(tool => (
-                            <div key={tool.id} className="p-6 rounded-2xl bg-surface-highest ghost-border hover:border-primary/30 transition-all group relative">
-                                <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button className="p-1.5 rounded-lg bg-surface hover:text-primary"><Edit2 size={12} /></button>
-                                </div>
-                                <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-6 shadow-inner ring-1 ring-primary/20">
-                                    <Cpu size={22} />
-                                </div>
-                                <h4 className="font-bold text-on-surface text-lg mb-1 leading-tight">{tool.name}</h4>
-                                <p className="text-[11px] text-outline line-clamp-2 leading-relaxed mb-6 font-medium">{tool.description}</p>
-                                <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                                    <span className="text-[9px] font-black bg-white/5 px-2 py-0.5 rounded text-outline uppercase tracking-wider">{tool.type}</span>
-                                    <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1.5">
-                                        <div className="size-1 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                                        Verified
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                 </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                     {loading ? (
-                       <div className="col-span-2 py-40 flex flex-col items-center justify-center gap-4">
-                         <Loader2 className="size-10 text-primary animate-spin" />
-                         <p className="text-outline font-black uppercase tracking-[0.3em] text-[10px]">Accessing Distributed Core...</p>
-                       </div>
-                     ) : (
-                       <>
-                         {filteredEntries.map((entry) => (
-                           <div 
-                             key={entry.id}
-                             onClick={() => { setSelectedEntry(entry); setShowPreview(true); }}
-                             className={cn(
-                               "group p-6 rounded-2xl bg-white/3 ghost-border hover:bg-white/7 transition-all cursor-pointer relative",
-                               selectedEntry?.id === entry.id && showPreview && "border-primary/50 bg-primary/5 ring-1 ring-primary/20 shadow-xl"
-                             )}
-                           >
-                             <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                               <button onClick={(e) => handleDelete(entry.id, e)} className="p-2 rounded-lg bg-surface-highest text-error/60 hover:text-error transition-colors shadow-lg"><Trash2 className="size-3.5" /></button>
-                             </div>
-                             <div className="flex justify-between items-start mb-6">
-                               <div className="flex items-center gap-3">
-                                 <div className={cn(
-                                    "size-12 rounded-2xl bg-linear-to-br flex items-center justify-center border border-outline-variant/20",
-                                    entry.priority === 3 ? "from-red-500/10 to-transparent text-red-500" :
-                                      entry.priority === 2 ? "from-primary/10 to-transparent text-primary" :
-                                        "from-emerald-500/10 to-transparent text-emerald-500"
-                                  )}>
-                                    {activeTab === 'vector' ? <Cpu className="size-5" /> : activeTab === 'learned' ? <History className="size-5" /> : <Database className="size-5" />}
-                                 </div>
-                                 <div>
-                                   <p className="text-[10px] font-black text-primary/80 uppercase tracking-widest">{entry.topic}</p>
-                                   <p className="text-[11px] text-outline font-bold mt-0.5">Priority {entry.priority}</p>
-                                 </div>
-                               </div>
-                             </div>
-                             <h4 className="text-lg font-bold text-on-surface mb-3 leading-tight font-headline tracking-tight">{entry.question}</h4>
-                             <p className="text-outline text-sm line-clamp-2 leading-relaxed font-medium opacity-80">{entry.answer}</p>
-                           </div>
-                         ))}
-                         {filteredEntries.length === 0 && (
-                           <div className="col-span-2 py-32 text-center bg-surface-low/50 rounded-3xl ghost-border border-dashed">
-                             <Database className="size-16 text-outline/10 mx-auto mb-6" />
-                             <p className="text-on-surface font-headline font-bold text-lg mb-2">No Clusters Found</p>
-                             <p className="text-outline text-sm max-w-xs mx-auto">No knowledge shards matching your search parameters were found in the current cluster.</p>
-                           </div>
-                         )}
-                       </>
-                     )}
-                </div>
+              <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {loading ? (
+                  <LogoLoader text="Accessing Distributed Core..." />
+                ) : (
+                  <>
+                    {filteredEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        onClick={() => { setSelectedEntry(entry); setShowPreview(true); }}
+                        className={cn(
+                          "group p-6 rounded-2xl bg-white/3 ghost-border hover:bg-white/7 transition-all cursor-pointer relative",
+                          selectedEntry?.id === entry.id && showPreview && "border-primary/50 bg-primary/5 ring-1 ring-primary/20 shadow-xl"
+                        )}
+                      >
+                        <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => handleDelete(entry.id, e)} className="p-2 rounded-lg bg-surface-highest text-error/60 hover:text-error transition-colors shadow-lg"><Trash2 className="size-3.5" /></button>
+                        </div>
+                        <div className="flex justify-between items-start mb-6">
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "size-12 rounded-2xl bg-linear-to-br flex items-center justify-center border border-outline-variant/20",
+                              entry.priority === 3 ? "from-red-500/10 to-transparent text-red-500" :
+                                entry.priority === 2 ? "from-primary/10 to-transparent text-primary" :
+                                  "from-emerald-500/10 to-transparent text-emerald-500"
+                            )}>
+                              {activeTab === 'vector' ? <Cpu className="size-5" /> : activeTab === 'learned' ? <History className="size-5" /> : <Database className="size-5" />}
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-primary/80 uppercase tracking-widest">{entry.topic}</p>
+                              <p className="text-[11px] text-outline font-bold mt-0.5">Priority {entry.priority}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <h4 className="text-lg font-bold text-on-surface mb-3 leading-tight font-headline tracking-tight">{entry.question}</h4>
+                        <p className="text-outline text-sm line-clamp-2 leading-relaxed font-medium opacity-80">{entry.answer}</p>
+                      </div>
+                    ))}
+                    {filteredEntries.length === 0 && (
+                      <div className="col-span-2 py-32 text-center bg-surface-low/50 rounded-3xl ghost-border border-dashed">
+                        <Database className="size-16 text-outline/10 mx-auto mb-6" />
+                        <p className="text-on-surface font-headline font-bold text-lg mb-2">No Clusters Found</p>
+                        <p className="text-outline text-sm max-w-xs mx-auto">No knowledge shards matching your search parameters were found in the current cluster.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
 
             {/* Preview Pane */}
@@ -515,15 +513,15 @@ export default function KnowledgeBase() {
                       <MetaItem label="Neural Collection" value={selectedEntry.topic} />
                       {activeTab === 'vector' && selectedEntry.rawMetadata && (
                         <div className="pt-6 space-y-4 border-t border-white/10">
-                           <p className="text-[10px] font-black text-primary/60 uppercase tracking-[0.3em]">Raw Vector Attributes</p>
-                           <div className="grid grid-cols-1 gap-2">
-                              {Object.entries(selectedEntry.rawMetadata).map(([k, v]: [string, any]) => (
-                                 <div key={k} className="p-3 bg-black/30 rounded-xl border border-white/5">
-                                    <p className="text-[9px] font-black text-outline uppercase tracking-widest mb-1">{k}</p>
-                                    <p className="text-[10px] font-mono text-primary/80 truncate font-bold">{String(v)}</p>
-                                 </div>
-                              ))}
-                           </div>
+                          <p className="text-[10px] font-black text-primary/60 uppercase tracking-[0.3em]">Raw Vector Attributes</p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {Object.entries(selectedEntry.rawMetadata).map(([k, v]: [string, any]) => (
+                              <div key={k} className="p-3 bg-black/30 rounded-xl border border-white/5">
+                                <p className="text-[9px] font-black text-outline uppercase tracking-widest mb-1">{k}</p>
+                                <p className="text-[10px] font-mono text-primary/80 truncate font-bold">{String(v)}</p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -542,8 +540,8 @@ export default function KnowledgeBase() {
           <div className="bg-surface-low w-full max-w-2xl rounded-[2.5rem] border border-white/10 p-12 relative z-10 shadow-3xl">
             <div className="flex justify-between items-center mb-10">
               <h3 className="text-4xl font-headline font-black uppercase tracking-tighter">Forge Entry</h3>
-              <button 
-                onClick={() => setIsModalOpen(false)} 
+              <button
+                onClick={() => setIsModalOpen(false)}
                 className="size-10 rounded-full bg-white/5 flex items-center justify-center text-outline hover:text-on-surface transition-all"
               >
                 <X className="size-6" />
@@ -552,18 +550,18 @@ export default function KnowledgeBase() {
             <form className="space-y-8" onSubmit={handleAdd}>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Activation Query</label>
-                <input 
-                  type="text" 
-                  className="w-full h-16 px-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-headline font-bold text-lg" 
-                  placeholder="e.g. Identity Disclosure Protocol" 
+                <input
+                  type="text"
+                  className="w-full h-16 px-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 text-on-surface font-headline font-bold text-lg"
+                  placeholder="e.g. Identity Disclosure Protocol"
                   value={formData.question}
                   onChange={e => setFormData(prev => ({ ...prev, question: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Neural Output</label>
-                <textarea 
-                  className="w-full p-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 h-40 text-on-surface font-medium leading-relaxed" 
+                <textarea
+                  className="w-full p-8 rounded-2xl bg-surface-highest ghost-border focus:outline-none focus:border-primary/50 h-40 text-on-surface font-medium leading-relaxed"
                   placeholder="Input detailed factual response payload..."
                   value={formData.answer}
                   onChange={e => setFormData(prev => ({ ...prev, answer: e.target.value }))}
@@ -572,7 +570,7 @@ export default function KnowledgeBase() {
               <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Collection</label>
-                  <select 
+                  <select
                     className="w-full h-16 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none text-on-surface font-bold text-sm uppercase tracking-widest cursor-pointer"
                     value={formData.topic}
                     onChange={e => setFormData(prev => ({ ...prev, topic: e.target.value }))}
@@ -584,7 +582,7 @@ export default function KnowledgeBase() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-outline uppercase tracking-[0.3em] ml-2">Priority Rank</label>
-                  <select 
+                  <select
                     className="w-full h-16 px-6 rounded-2xl bg-surface-highest ghost-border focus:outline-none text-on-surface font-bold text-sm uppercase tracking-widest cursor-pointer"
                     value={formData.priority}
                     onChange={e => setFormData(prev => ({ ...prev, priority: parseInt(e.target.value) }))}

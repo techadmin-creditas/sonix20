@@ -26,6 +26,7 @@ import {
   X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { LogoLoader } from '../components/LogoLoader';
 
 // Map node types from backend to icon components
 function NodeTypeIcon({ type, className }: { type: string; className?: string }) {
@@ -173,12 +174,7 @@ export default function Workflows() {
       <div className="p-10 flex flex-col gap-10">
         {/* Loading State */}
         {loading && (
-          <div className="flex items-center justify-center py-24">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="size-10 text-primary animate-spin" />
-              <p className="text-on-surface-variant font-medium animate-pulse">Loading Workflows...</p>
-            </div>
-          </div>
+          <LogoLoader text="Architecting Neural Workflows..." />
         )}
 
         {/* Error State */}

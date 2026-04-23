@@ -4,6 +4,7 @@ import { api, DiyPersonaDraft, getVoiceWebSocketUrl, type AiPersona, type UserFa
 import { cn } from '../lib/utils';
 import { ArrowRight, Bot as BotIcon, Download, Loader2, Mic2, Pause, Play, Sparkles, Wand2, UserRound, Smile, Angry, Focus, Check, Activity, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
+import { LogoLoader } from '../components/LogoLoader';
 
 type StepId = 1 | 2 | 3 | 4;
 
@@ -864,8 +865,8 @@ export default function DiyWithAI() {
                   }}
                 >
                   {liveTranscript.length === 0 ? (
-                    <div className="h-full min-h-[420px] flex items-center justify-center text-xs text-outline italic animate-pulse">
-                      {isConnecting ? 'Connecting…' : 'Waiting for conversation to start…'}
+                    <div className="h-full min-h-[420px] flex items-center justify-center">
+                      <LogoLoader text={isConnecting ? "Connecting to neural grid..." : "Awaiting transmission..."} />
                     </div>
                   ) : (
                     liveTranscript.slice(-80).map((t, idx) => (

@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { cn } from '../lib/utils';
 import { api, LatencyRecord, IntentRecord } from '../lib/api';
+import { LogoLoader } from '../components/LogoLoader';
 
 export default function Analytics() {
   const [latencyData, setLatencyData] = React.useState<LatencyRecord[]>([]);
@@ -95,10 +96,7 @@ export default function Analytics() {
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center gap-3 py-10 text-outline">
-            <Loader2 className="size-5 animate-spin text-primary" />
-            <span className="text-xs font-bold uppercase tracking-widest">Loading Analytics Data...</span>
-          </div>
+          <LogoLoader text="Deciphering Neural Datastreams..." />
         )}
 
         {/* Charts Section */}

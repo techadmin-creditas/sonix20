@@ -19,6 +19,7 @@ import { api, type AiPersona } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Header } from '../components/Header';
 import { Loader2 } from 'lucide-react';
+import { LogoLoader } from '../components/LogoLoader';
 
 // --- Components ---
 
@@ -282,9 +283,8 @@ export default function VoicePersonas() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 min-h-[400px]">
             <AnimatePresence mode="popLayout">
               {isLoading ? (
-                <div className="col-span-full flex flex-col items-center justify-center py-20 gap-4">
-                  <Loader2 className="size-12 text-primary animate-spin" />
-                  <p className="text-sm font-bold text-outline animate-pulse">Syncing Neural Grid...</p>
+                <div className="col-span-full">
+                  <LogoLoader text="Syncing Neural Grid..." />
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="col-span-full flex flex-col items-center justify-center py-20 gap-4 opacity-50">

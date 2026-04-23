@@ -11,6 +11,7 @@ import {
   User, Bot, Calendar, Smile, Loader2, Tags, Languages, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { LogoLoader } from '../components/LogoLoader';
 
 const SENTIMENT_COLOR: Record<string, string> = {
   positive: 'bg-emerald-400',
@@ -501,15 +502,7 @@ export default function SessionDetail() {
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex flex-col ">
-        <Header title="Loading Session..." subtitle="Please wait" />
-        <div className="flex items-center justify-center p-20 flex-col gap-4">
-          <Loader2 className="size-8 text-primary animate-spin" />
-          <p className="text-outline text-xs font-bold uppercase tracking-widest">Accessing Detail Records...</p>
-        </div>
-      </div>
-    );
+    return <LogoLoader text="Accessing Detail Records..." />;
   }
 
   if (!session) {

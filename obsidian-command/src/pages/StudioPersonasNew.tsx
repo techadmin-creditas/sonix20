@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { api, type AiPersona } from '../lib/api';
+import { LogoLoader } from '../components/LogoLoader';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Premium Components
@@ -706,11 +707,7 @@ export default function StudioPersonasNew() {
     const filtered = personas.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
 
     if (isLoading) {
-        return (
-            <div className="flex-1 flex items-center justify-center p-20">
-                <Loader2 className="size-8 text-primary animate-spin" />
-            </div>
-        );
+        return <LogoLoader text="Syncing Neural Persona Records..." />;
     }
 
     return (
