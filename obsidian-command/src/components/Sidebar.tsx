@@ -18,7 +18,7 @@ export function Sidebar({
 
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0 z-50">
-      <div className="flex flex-1 flex-col gap-8 overflow-auto p-8">
+      <div className="flex flex-1 flex-col gap-6 overflow-auto p-8">
         <div className="flex justify-center items-center">
           <div className="py-2">
 
