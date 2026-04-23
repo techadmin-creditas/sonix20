@@ -18,14 +18,17 @@ export function Sidebar({
 
   return (
     <aside className="w-64 h-screen bg-surface-lowest border-r border-outline-variant/10 flex flex-col sticky top-0 shrink-0 z-50">
-      <div className="p-8 flex flex-col gap-8 flex-1 overflow-auto">
-        <div className="flex justify-between items-center">
-          <div>
+      <div className="flex flex-1 flex-col gap-8 overflow-auto p-8">
+        <div className="flex justify-center items-center">
+          <div className="py-2">
 
-            <h1 className="font-headline text-xl font-extrabold tracking-tight text-on-surface uppercase">
-              SONIX <span className="text-primary">2.0</span>
-            </h1>
+            <img src="/images/sidebarlogo.png" alt="Sonix 2.0" className="logo-pulse-sidebar" />
 
+            {/* <img
+              src="/images/logoSonix.png"
+              alt="Sonix Logo"
+              className="h-10 w-auto object-contain brightness-0 invert opacity-95 transition-opacity"
+            /> */}
           </div>
           {/* <ThemeToggle /> */}
         </div>

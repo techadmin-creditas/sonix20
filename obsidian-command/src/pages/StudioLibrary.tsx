@@ -20,14 +20,15 @@ import { cn } from '../lib/utils';
 import { useStudio } from '../contexts/StudioContext';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
+import { VOICES } from '../data/voiceData';
 
-const VOICES = [
-  { id: 'v1', name: 'Ananya', languages: ['Hindi', 'English', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
-  { id: 'v2', name: 'Aarav', languages: ['Hindi'], provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
-  { id: 'v3', name: 'Priya', languages: ['Hindi', 'English', 'Spanish', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
-  { id: 'v4', name: 'Arjun', languages: ['Hindi', 'English'], provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
-  { id: 'v5', name: 'Kavya', languages: ['Hindi', 'English'], provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
-];
+// const VOICES = [
+//   { id: 'v1', name: 'Ananya', languages: ['Hindi', 'English', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
+//   { id: 'v2', name: 'Aarav', languages: ['Hindi'], provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
+//   { id: 'v3', name: 'Priya', languages: ['Hindi', 'English', 'Spanish', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
+//   { id: 'v4', name: 'Arjun', languages: ['Hindi', 'English'], provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
+//   { id: 'v5', name: 'Kavya', languages: ['Hindi', 'English'], provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
+// ];
 
 // --- Sub-components ---
 

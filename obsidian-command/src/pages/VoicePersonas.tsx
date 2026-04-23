@@ -21,6 +21,8 @@ import { Header } from '../components/Header';
 import { Loader2 } from 'lucide-react';
 import { LogoLoader } from '../components/LogoLoader';
 
+import { VOICES } from '../data/voiceData';
+
 // --- Components ---
 
 const VoiceWave = ({ isPlaying, color }: { isPlaying: boolean; color: string }) => {
@@ -77,7 +79,7 @@ const PerspectiveCard = ({ children, className, ...props }: { children: React.Re
       {...props}
     >
       <motion.div
-        className="absolute -inset-2 bg-primary/5 blur-2xl rounded-[2rem] opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -inset-2 bg-primary/5 blur-2xl rounded-4xl opacity-0 group-hover:opacity-100 transition-opacity"
         style={{ x: shadowX, y: shadowY }}
       />
       <div style={{ transform: "translateZ(40px)", transformStyle: "preserve-3d" }}>
@@ -105,7 +107,7 @@ const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: AiPersona;
   return (
     <PerspectiveCard className="h-full">
       <div className={cn(
-        "glass-panel rounded-[2rem] p-6 h-full flex flex-col gap-6 transition-all duration-500",
+        "glass-panel rounded-4xl p-6 h-full flex flex-col gap-6 transition-all duration-500",
         "hover:shadow-2xl hover:border-primary/30 active:scale-[0.98]",
         isPlaying ? "border-primary/40 shadow-primary/10" : ""
       )}>
@@ -149,7 +151,7 @@ const PersonaCard = ({ persona, isPlaying, onTogglePlay }: { persona: AiPersona;
             <p className="text-xs text-on-surface-variant leading-relaxed">{persona.useCase}</p>
           </div>
 
-          <div className="p-4 rounded-2xl bg-surface-low border border-outline-variant/5 bg-gradient-to-br from-surface-low to-surface-low/30 relative overflow-hidden group/psych">
+          <div className="p-4 rounded-2xl bg-surface-low border border-outline-variant/5 bg-linear-to-br from-surface-low to-surface-low/30 relative overflow-hidden group/psych">
             <div className="absolute inset-y-0 left-0 w-1 bg-primary/20 group-hover/psych:bg-primary transition-colors" />
             <div className="flex items-center gap-1.5 text-xs font-bold text-primary uppercase tracking-widest mb-2">
               <Brain className="size-3.5" />
@@ -186,10 +188,33 @@ export default function VoicePersonas() {
   React.useEffect(() => {
     const fetch = async () => {
       try {
-        const data = await api.listAiPersonas();
-        setPersonas(data);
+        const neuralFleet: AiPersona[] = VOICES.map(v => ({
+          id: v.id,
+          name: v.name,
+          gender: v.gender,
+          language: v.languages.join(', '),
+          tone: (v as any).tones?.[0]?.name || 'Neural',
+          useCase: v.role,
+          psychology: `Professional ${v.role} profile optimized for ${v.provider} with ${v.latency} performance latency.`,
+          emotion: (v as any).tones?.[0]?.label || 'Professional',
+          urgency: 35,
+          empathy: 75,
+          stability: parseInt(v.stability) || 92,
+          clarity: 90,
+          styleExaggeration: 15,
+          expressiveness: 25,
+          baseModel: v.provider,
+          selectedVoice: v.id,
+          themeColor: v.themeColor,
+          isActive: true,
+          isDeployed: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        }));
+
+        setPersonas(neuralFleet);
       } catch (err) {
-        console.error('Failed to load personas:', err);
+        console.error('Failed to load fleet:', err);
       } finally {
         setIsLoading(false);
       }
@@ -221,7 +246,7 @@ export default function VoicePersonas() {
             backgroundColor: playingId ? "rgba(var(--primary-rgb), 0.05)" : "rgba(0,0,0,0)",
             scale: playingId ? 1.2 : 1
           }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[100vw] h-[100vw] rounded-full blur-[160px] opacity-20 transition-all duration-1000"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-screen h-screen rounded-full blur-[160px] opacity-20 transition-all duration-1000"
         />
       </div>
 
@@ -316,7 +341,7 @@ export default function VoicePersonas() {
           <motion.section
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
-            className="mt-20 p-12 rounded-[3rem] border border-primary/10 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 relative overflow-hidden"
+            className="mt-20 p-12 rounded-[3rem] border border-primary/10 bg-linear-to-br from-primary/5 via-transparent to-primary/5 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 p-12 opacity-10">
               <Brain className="size-48" />

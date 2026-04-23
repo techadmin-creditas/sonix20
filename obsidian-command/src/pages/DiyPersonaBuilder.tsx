@@ -4,6 +4,7 @@ import { Header } from '../components/Header';
 import { api, DiyPersonaDraft } from '../lib/api';
 import { cn } from '../lib/utils';
 import { Angry, ArrowRight, Focus, Loader2, Smile, Sparkles, UserRound, Wand2 } from 'lucide-react';
+import { VOICES } from '../data/voiceData';
 
 const STORAGE_KEY = 'diy.persona.draft';
 
@@ -15,10 +16,10 @@ export default function DiyPersonaBuilder() {
   const nav = useNavigate();
   const [objective, setObjective] = useState('');
   const [domain, setDomain] = useState('');
-  const [language, setLanguage] = useState<'en' | 'hi'>('en');
+  const [languages, setLanguages] = useState<string[]>(['en']);
   const [tone, setTone] = useState('');
   const [constraints, setConstraints] = useState('');
-  const [voices, setVoices] = useState<{ id: string; name: string; provider: string }[]>([]);
+  const [voices, setVoices] = useState<{ id: string; name: string; provider: string; languages?: string[]; tone?: string }[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -62,7 +63,7 @@ export default function DiyPersonaBuilder() {
       const res = await api.generateDiyPersona({
         objective: objective.trim(),
         domain: domain.trim() || undefined,
-        language,
+        language: languages[0] as 'en' | 'hi', // Fallback to first selected for API
         tone: tone.trim() || undefined,
         constraints: constraints.trim() || undefined,
       });
@@ -142,28 +143,34 @@ export default function DiyPersonaBuilder() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-outline">Language</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-outline">Languages</label>
                   <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setLanguage('en')}
-                      className={cn(
-                        'rounded-xl border px-3 py-2.5 text-xs font-bold',
-                        language === 'en' ? 'border-primary/35 bg-primary/10 text-primary' : 'border-outline-variant/15 bg-surface-highest',
-                      )}
-                    >
-                      English
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLanguage('hi')}
-                      className={cn(
-                        'rounded-xl border px-3 py-2.5 text-xs font-bold',
-                        language === 'hi' ? 'border-primary/35 bg-primary/10 text-primary' : 'border-outline-variant/15 bg-surface-highest',
-                      )}
-                    >
-                      Hindi
-                    </button>
+                    {[
+                      { id: 'en', label: 'English' },
+                      { id: 'hi', label: 'Hindi' },
+                      { id: 'ta', label: 'Tamil' },
+                      { id: 'es', label: 'Spanish' },
+                    ].map((l) => (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => {
+                          setLanguages(prev =>
+                            prev.includes(l.id)
+                              ? prev.filter(x => x !== l.id)
+                              : [...prev, l.id]
+                          );
+                        }}
+                        className={cn(
+                          'rounded-xl border px-3 py-2.5 text-xs font-bold transition-all',
+                          languages.includes(l.id)
+                            ? 'border-primary/35 bg-primary/10 text-primary'
+                            : 'border-outline-variant/15 bg-surface-highest text-outline/60',
+                        )}
+                      >
+                        {l.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -181,13 +188,36 @@ export default function DiyPersonaBuilder() {
                     {voices.length === 0 ? (
                       <option value="">No voices available</option>
                     ) : (
-                      voices
-                        .filter((v) => String(v.provider).toLowerCase() === 'elevenlabs')
-                        .map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.name} ({v.provider})
-                          </option>
-                        ))
+                      (() => {
+                        const filtered = voices.filter((v) => {
+                          if (String(v.provider).toLowerCase() !== 'elevenlabs') return false;
+                          const name = v.name.toLowerCase();
+                          const voiceMeta = VOICES.find(vm => name.includes(vm.name.toLowerCase()));
+
+                          const matchesLang = languages.length === 0 || (voiceMeta ? languages.every(l => {
+                            const lMap: Record<string, string> = { 'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'es': 'Spanish' };
+                            return voiceMeta.languages.includes(lMap[l] || l);
+                          }) : false);
+
+                          const matchesTone = !tone ||
+                            name.includes(tone.toLowerCase()) ||
+                            (voiceMeta?.tags?.some(tag => tag.toLowerCase() === tone.toLowerCase())) ||
+                            (tone.toLowerCase().includes('warm') && (name.includes('ananya') || name.includes('priya'))) ||
+                            (tone.toLowerCase().includes('firm') && (name.includes('arjun') || name.includes('ravi')));
+
+                          return matchesLang && matchesTone;
+                        });
+
+                        return filtered.length === 0 ? (
+                          <option value="">No voices match filters</option>
+                        ) : (
+                          filtered.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name} ({v.provider})
+                            </option>
+                          ))
+                        );
+                      })()
                     )}
                   </select>
                 </div>
@@ -198,7 +228,26 @@ export default function DiyPersonaBuilder() {
 
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-outline">Tone (optional)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-outline">Tone</label>
+                    <div className="flex gap-1.5">
+                      {['Warm', 'Firm', 'Direct'].map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTone(t)}
+                          className={cn(
+                            "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border transition-all",
+                            tone === t
+                              ? "bg-primary/10 border-primary/30 text-primary"
+                              : "bg-surface-highest border-outline-variant/10 text-outline hover:border-primary/20"
+                          )}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <input
                     value={tone}
                     onChange={(e) => setTone(e.target.value)}
@@ -293,7 +342,7 @@ export default function DiyPersonaBuilder() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-outline">
-                  <span>Language: {draft?.default_language || language}</span>
+                  <span>Language: {draft?.default_language || languages.join(' / ')}</span>
                   <span>
                     Voice: {draft?.voice_name || selectedVoice?.name || '—'}
                   </span>

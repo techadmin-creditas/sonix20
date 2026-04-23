@@ -49,18 +49,13 @@ import { api, type AiPersona } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from 'react-router-dom';
 import { LogoLoader } from '../components/LogoLoader';
+import { VOICES } from '../data/voiceData';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Premium Components
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VOICES = [
-   { id: 'v1', name: 'Ananya', languages: ['Hindi', 'English', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Support Specialist', latency: '125ms', stability: '92%' },
-   { id: 'v2', name: 'Aarav', languages: ['Hindi'], provider: 'Deepgram', type: 'Neural', role: 'Collection Authority', latency: '148ms', stability: '88%' },
-   { id: 'v3', name: 'Priya', languages: ['Hindi', 'English', 'Spanish', 'Tamil'], provider: 'ElevenLabs', type: 'Neural', role: 'Customer Success', latency: '135ms', stability: '95%' },
-   { id: 'v4', name: 'Arjun', languages: ['Hindi', 'English'], provider: 'Gemini', type: 'Neural', role: 'Sales Specialist', latency: '162ms', stability: '82%' },
-   { id: 'v5', name: 'Kavya', languages: ['Hindi', 'English'], provider: 'ElevenLabs', type: 'Neural', role: 'Verification Lead', latency: '118ms', stability: '97%' },
-];
+// Shared premium components removed local VOICES constant
 
 const PremiumInput = ({ label, placeholder, value, onChange, icon: Icon }: { label?: string, placeholder: string, value: string, onChange: (v: string) => void, icon?: any }) => (
    <div className="space-y-2 group/input">
@@ -220,8 +215,8 @@ const NeuralIdentityForge = ({
       // We only filter if languages ARE selected. If none selected, we show all.
       if (selectedLangs.length === 0) return;
 
-      // If voice doesn't support ANY of the selected languages, deselect it
-      const isCompatible = currentVoice.languages.some(l => selectedLangs.includes(l));
+      // If voice doesn't support ALL of the selected languages, deselect it
+      const isCompatible = selectedLangs.every(l => currentVoice.languages.includes(l));
       if (!isCompatible) {
          patch({ selectedVoice: '' });
       }
@@ -314,22 +309,54 @@ const NeuralIdentityForge = ({
 
 
    const renderTabContent = () => {
+      const selectedLangs = (formData.language || '').split(',').map(s => s.trim()).filter(Boolean);
+
+      // 1. DYNAMIC LANGUAGES (Unique languages across all VOICES)
+      const allUniqueLangs = Array.from(new Set(VOICES.flatMap(v => v.languages)));
+      const LANG_META: Record<string, any> = {
+         'English': { sub: 'Primary', label: 'United States' },
+         'Hindi': { sub: 'Regional', label: 'India' },
+         'Tamil': { sub: 'Regional', label: 'India' },
+         'Spanish': { sub: 'Europe', label: 'Spain' },
+         'Hinglish': { sub: 'Native Mix', label: 'In-Hi Mix' }
+      };
+
+      // 2. DYNAMIC COMPATIBLES
+      const compatibleVoicesByLang = VOICES.filter(v =>
+         selectedLangs.length === 0 || selectedLangs.every(l => v.languages.includes(l))
+      );
+
       switch (activeTab) {
          case 'Language':
-            return (metadata.languages.length > 0 ? metadata.languages : []).map((lang, i) => {
-               const isSelected = (formData.language || '').split(',').map(s => s.trim()).includes(lang.name);
+            return allUniqueLangs.sort().map((langName, i) => {
+               const isSelected = selectedLangs.includes(langName);
+               const meta = LANG_META[langName] || { sub: 'Neural', label: 'Multi' };
                return (
                   <button
                      key={i}
                      onClick={() => {
-                        const currentLangs = (formData.language || '').split(',').map(s => s.trim()).filter(Boolean);
                         let nextLangs;
                         if (isSelected) {
-                           nextLangs = currentLangs.filter(l => l !== lang.name);
+                           nextLangs = selectedLangs.filter(l => l !== langName);
                         } else {
-                           nextLangs = [...currentLangs, lang.name];
+                           nextLangs = [...selectedLangs, langName];
                         }
-                        patch({ language: nextLangs.length > 0 ? nextLangs.join(', ') : '' });
+
+                        const nextCompatible = VOICES.filter(v =>
+                           nextLangs.length === 0 || nextLangs.every(l => v.languages.includes(l))
+                        );
+
+                        const isToneValid = nextCompatible.some(v =>
+                           (v as any).tones?.some((t: any) => t.name === formData.emotion)
+                        );
+
+                        const isVoiceValid = nextCompatible.some(v => v.id === formData.selectedVoice);
+
+                        patch({
+                           language: nextLangs.length > 0 ? nextLangs.join(', ') : '',
+                           emotion: isToneValid ? formData.emotion : '',
+                           selectedVoice: isVoiceValid ? formData.selectedVoice : ''
+                        });
                      }}
                      className={cn(
                         "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
@@ -337,23 +364,69 @@ const NeuralIdentityForge = ({
                      )}
                   >
                      <div className="text-left">
-                        <div className="text-[11px] font-bold text-on-surface">{lang.name}</div>
-                        <div className="text-[8px] font-medium text-outline">{lang.sub}</div>
+                        <div className="text-[11px] font-bold text-on-surface">{langName}</div>
+                        <div className="text-[8px] font-medium text-outline">{meta.sub}</div>
                      </div>
                      {isSelected && <Check className="size-3 text-primary" />}
                   </button>
                );
             });
+         case 'Tone':
+            // 3. DYNAMIC TONES (extracted from individual voice metadata)
+            const availableTonesMap = new Map();
+            compatibleVoicesByLang.forEach(v => {
+               (v as any).tones?.forEach((t: any) => {
+                  if (!availableTonesMap.has(t.name)) {
+                     availableTonesMap.set(t.name, t);
+                  }
+               });
+            });
+            const availableTones = Array.from(availableTonesMap.values());
+
+            if (availableTones.length === 0) {
+               return <div className="px-6 py-4 text-xs text-outline italic">Adjust language filter to see tones...</div>;
+            }
+
+            return availableTones.map((tone, i) => {
+               const Icon = tone.icon || MessageSquare;
+               const isSelected = formData.emotion === tone.name;
+               return (
+                  <button
+                     key={i}
+                     onClick={() => {
+                        const isVoiceValidForNewTone = compatibleVoicesByLang.some(v =>
+                           v.id === formData.selectedVoice &&
+                           (v as any).tones?.some((t: any) => t.name === tone.name)
+                        );
+                        patch({
+                           emotion: tone.name,
+                           selectedVoice: isVoiceValidForNewTone ? formData.selectedVoice : ''
+                        });
+                     }}
+                     className={cn(
+                        "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
+                        isSelected ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
+                     )}
+                  >
+                     <Icon className={cn("size-4", isSelected ? "text-primary" : "text-outline")} />
+                     <div className="text-left">
+                        <div className="text-[11px] font-bold text-on-surface">{tone.name}</div>
+                        <div className="text-[8px] font-medium text-outline">{tone.label}</div>
+                     </div>
+                  </button>
+               );
+            });
          case 'Voice':
-            return VOICES.filter(v => {
-               if (!formData.language) return true;
-               const selectedLangs = formData.language.split(',').map(l => l.trim());
-               return v.languages.some(l => selectedLangs.includes(l));
+            // 4. DYNAMIC VOICES
+            return compatibleVoicesByLang.filter(v => {
+               if (!formData.emotion) return true;
+               const selectedTone = formData.emotion.toLowerCase();
+               return (v as any).tones?.some((t: any) => t.name.toLowerCase() === selectedTone);
             }).map((av, i) => (
                <button
                   key={i}
                   onClick={() => patch({
-                     gender: [0, 2, 4].includes(i) ? 'Female' : 'Male',
+                     gender: av.gender,
                      selectedVoice: av.id
                   })}
                   className={cn(
@@ -370,27 +443,6 @@ const NeuralIdentityForge = ({
                   </div>
                </button>
             ));
-         case 'Tone':
-            const toneIcons: Record<string, any> = { Heart, Cpu, ShieldCheck, MessageSquare };
-            return (metadata.tones.length > 0 ? metadata.tones : []).map((tone, i) => {
-               const Icon = toneIcons[tone.icon] || MessageSquare;
-               return (
-                  <button
-                     key={i}
-                     onClick={() => patch({ emotion: tone.name })}
-                     className={cn(
-                        "flex items-center gap-3 p-3 px-6 rounded-2xl border transition-all shrink-0",
-                        formData.emotion === tone.name ? "bg-primary/10 border-primary/20 shadow-lg" : "bg-surface-lowest border-outline-variant/10 hover:border-outline-variant/30"
-                     )}
-                  >
-                     <Icon className={cn("size-4", formData.emotion === tone.name ? "text-primary" : "text-outline")} />
-                     <div className="text-left">
-                        <div className="text-[11px] font-bold text-on-surface">{tone.name}</div>
-                        <div className="text-[8px] font-medium text-outline">{tone.label}</div>
-                     </div>
-                  </button>
-               );
-            });
       }
    };
 

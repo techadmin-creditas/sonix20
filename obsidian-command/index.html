@@ -56,6 +56,13 @@
       animation: logoPulse 3s infinite ease-in-out;
     }
 
+    .logo-pulse-sidebar {
+      width: 180px;
+      height: auto;
+      filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.2));
+      animation: breatheyPulse 4s infinite ease-in-out;
+    }
+
     .loader-bar-container {
       width: 220px;
       height: 3px;
@@ -102,6 +109,22 @@
       50% {
         transform: scale(1.03);
         filter: drop-shadow(0 0 40px rgba(59, 130, 246, 0.25));
+      }
+    }
+
+    @keyframes breatheyPulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.15)) brightness(0.9);
+        opacity: 0.85;
+      }
+
+      50% {
+        transform: scale(1.3);
+        filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.4)) brightness(1.1);
+        opacity: 1;
       }
     }
 
