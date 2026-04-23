@@ -10,7 +10,6 @@ export function LogoLoader({ text, fullScreen = true }: LogoLoaderProps) {
     return (
         <div className={`${fullScreen ? 'min-h-screen' : 'h-full w-full'} flex flex-col items-center justify-center bg-surface-lowest gap-8 p-6`}>
             <div className="relative group">
-                {/* Glow effect */}
                 <div className="absolute -inset-4 bg-primary/20 rounded-full blur-2xl group-hover:bg-primary/30 transition-all duration-1000 animate-pulse" />
 
                 <img
@@ -21,10 +20,10 @@ export function LogoLoader({ text, fullScreen = true }: LogoLoaderProps) {
             </div>
 
             {/* {text && (
-                <div className="flex-1 flex items-center justify-center bg-background">
+                <div className="flex-1 flex items-center justify-center">
                     <div className="flex flex-col items-center gap-4">
                         <Loader2 className="size-12 text-primary animate-spin" />
-                        <p className="text-outline font-bold uppercase tracking-widest text-sm">{text}</p>
+                        <p className="text-outline font-bold uppercase tracking-widest text-sm">Fetching data. Please wait...</p>
                     </div>
                 </div>
             )} */}
