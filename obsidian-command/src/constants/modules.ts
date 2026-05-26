@@ -56,6 +56,13 @@ export const AVAILABLE_MODULES: ModuleDefinition[] = [
     path: '/persona',
     description: 'Customize agent personality and behavior.'
   },
+  {
+    id: 'action-analyzer',
+    label: 'Campaign AI',
+    icon: Database,
+    path: '/campaign-ai',
+    description: 'Process uploads, run recursive analysis prompts, and view auto-actions.'
+  },
   // {
   //   id: 'workflows',
   //   label: 'Workflows',

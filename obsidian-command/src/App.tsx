@@ -10,6 +10,7 @@ import Personas from './pages/Personas';
 import BotConfig from './pages/BotConfig';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Analytics from './pages/Analytics';
+import ActionAnalyzer from './pages/ActionAnalyzer';
 import Settings from './pages/Settings';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
@@ -187,6 +188,18 @@ function AppContent() {
             <Route path="/analytics" element={
               <ProtectedRoute moduleId="analytics">
                 <Analytics />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/campaign-ai" element={
+              <ProtectedRoute moduleId="action-analyzer">
+                <ActionAnalyzer />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/campaign-ai/:id" element={
+              <ProtectedRoute moduleId="action-analyzer">
+                <ActionAnalyzer />
               </ProtectedRoute>
             } />
 
