@@ -878,10 +878,10 @@ export default function ActionAnalyzer() {
             <div className="w-full bg-surface-lowest flex flex-col space-y-6 border border-outline-variant/10 rounded-3xl p-6 md:p-8 shadow-xl">
 
                 {/* Header */}
-                <div className="flex justify-between items-start border-b border-outline-variant/10 pb-4">
-                  <div className="space-y-1">
+                <div className="flex justify-between items-start border-b border-outline-variant/10 pb-5">
+                  <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
                         detailJob.status === 'Ingested' ? 'bg-indigo-400/10 text-indigo-400 border-indigo-400/20' :
                         detailJob.status === 'Analyzing' ? 'bg-amber-400/10 text-amber-400 border-amber-400/20 animate-pulse' :
                         detailJob.status === 'Executing' ? 'bg-primary/10 text-primary border-primary/20 animate-pulse' :
@@ -894,8 +894,8 @@ export default function ActionAnalyzer() {
                         <span className="size-2 rounded-full bg-emerald-400 animate-ping" />
                       )}
                     </div>
-                    <h2 className="text-2xl font-bold text-on-surface flex items-center gap-2 mt-1">
-                      <Database className="text-primary size-6" />
+                    <h2 className="text-3xl font-bold text-on-surface flex items-center gap-2.5 mt-1">
+                      <Database className="text-primary size-7" />
                       Campaign File Details: {detailJob.name}
                     </h2>
                     <p className="text-sm text-outline">
@@ -1046,11 +1046,11 @@ export default function ActionAnalyzer() {
 
                         {/* Processing Stream */}
                         <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-3">
-                          <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                            <Database className="size-4 text-primary" />
+                          <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                            <Database className="size-4.5 text-primary" />
                             File Processing Stream Audit
                           </h4>
-                          <p className="text-xs text-outline">
+                          <p className="text-sm text-outline">
                             Verify individual records loaded from campaign batch. Verification matrix: Name [N], Phone [P], Balance [B], DPD [D], Asset Class [A].
                           </p>
                           <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
@@ -1099,8 +1099,8 @@ export default function ActionAnalyzer() {
                       <div className="space-y-6">
                         {/* Field anomalies */}
                         <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-3">
-                          <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                            <AlertTriangle className="size-4 text-amber-400" />
+                          <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                            <AlertTriangle className="size-4.5 text-amber-400" />
                             Field Errors & Auto-Corrections
                           </h4>
                           <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
@@ -1324,21 +1324,21 @@ export default function ActionAnalyzer() {
                             </div>
                             
                             <div className="flex flex-col gap-1 items-center">
-                              <span className="text-primary font-bold text-sm animate-pulse">Routing Engine</span>
+                              <span className="text-primary font-bold text-sm">Routing Engine</span>
                               <ArrowRight className="size-4 text-outline rotate-90 md:rotate-0" />
                             </div>
 
                             <div className="flex flex-wrap md:flex-nowrap gap-3 justify-center">
                               <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
-                                <Phone className="size-4 text-primary mx-auto mb-1 animate-bounce" />
+                                <Phone className="size-4 text-primary mx-auto mb-1" />
                                 <span className="text-xs font-bold text-outline">AI Bot Call</span>
                               </div>
                               <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
-                                <Activity className="size-4 text-amber-400 mx-auto mb-1 animate-pulse" />
+                                <Activity className="size-4 text-amber-400 mx-auto mb-1" />
                                 <span className="text-xs font-bold text-outline">IVR Playback</span>
                               </div>
                               <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
-                                <MessageSquare className="size-4 text-emerald-400 mx-auto mb-1 animate-pulse" />
+                                <MessageSquare className="size-4 text-emerald-400 mx-auto mb-1" />
                                 <span className="text-xs font-bold text-outline">WhatsApp</span>
                               </div>
                               <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
@@ -1573,9 +1573,9 @@ export default function ActionAnalyzer() {
                               <Activity className="size-5" />
                             </div>
                             <div>
-                              <span className="text-[10px] font-black text-outline uppercase tracking-wider block">Total Outreach Targeted</span>
+                              <span className="text-xs font-black text-outline uppercase tracking-wider block">Total Outreach Targeted</span>
                               <span className="text-2xl font-black text-on-surface block mt-0.5">{totalDispatched} Records</span>
-                              <p className="text-[10px] text-outline mt-0.5">Dispatched across all channels</p>
+                              <p className="text-xs text-outline mt-0.5">Dispatched across all channels</p>
                             </div>
                           </div>
 
@@ -1594,9 +1594,9 @@ export default function ActionAnalyzer() {
                               <CheckCircle className="size-5" />
                             </div>
                             <div>
-                              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider block">Promises Kept / Wants to Pay</span>
+                              <span className="text-xs font-black text-emerald-400 uppercase tracking-wider block">Promises Kept / Wants to Pay</span>
                               <span className="text-2xl font-black text-emerald-400 block mt-0.5">{totalAchieved} Commitments</span>
-                              <p className="text-[10px] text-emerald-400/85 mt-0.5">Success Conversion: {Math.round(totalAchieved / totalDispatched * 100)}%</p>
+                              <p className="text-xs text-emerald-400/85 mt-0.5">Success Conversion: {Math.round(totalAchieved / totalDispatched * 100)}%</p>
                             </div>
                           </div>
 
@@ -1615,9 +1615,9 @@ export default function ActionAnalyzer() {
                               <AlertTriangle className="size-5" />
                             </div>
                             <div>
-                              <span className="text-[10px] font-black text-red-400 uppercase tracking-wider block font-bold">Failed / Unresponded</span>
+                              <span className="text-xs font-black text-red-400 uppercase tracking-wider block font-bold">Failed / Unresponded</span>
                               <span className="text-2xl font-black text-red-400 block mt-0.5">{totalFailed} Failed</span>
-                              <p className="text-[10px] text-red-400/85 mt-0.5">Failure / Drop-off Rate: {Math.round(totalFailed / totalDispatched * 100)}%</p>
+                              <p className="text-xs text-red-400/85 mt-0.5">Failure / Drop-off Rate: {Math.round(totalFailed / totalDispatched * 100)}%</p>
                             </div>
                           </div>
                         </div>
@@ -1877,7 +1877,7 @@ export default function ActionAnalyzer() {
                               <div className="overflow-x-auto border border-outline-variant/10 rounded-xl">
                                 <table className="w-full text-left border-collapse text-xs">
                                   <thead>
-                                    <tr className="border-b border-outline-variant/10 bg-surface-high/30 text-[10px] font-bold text-outline uppercase tracking-wider select-none">
+                                    <tr className="border-b border-outline-variant/10 bg-surface-high/30 text-xs font-bold text-outline uppercase tracking-wider select-none">
                                       <th className="p-3">Remediation Loop Route</th>
                                       <th className="p-3 text-center">Status</th>
                                       <th className="p-3 text-center">Active Count</th>
@@ -2638,38 +2638,38 @@ return (
       <main className="w-full px-4 sm:px-6 lg:px-8 mt-6">
         
         {/* Navigation Tabs */}
-        <div className="flex border-b border-outline-variant/10 mb-8 gap-2">
+        <div className="flex border-b border-outline-variant/10 mb-8 gap-1">
           <button
             onClick={() => setActiveTab('upload')}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            className={`py-3.5 px-7 text-base font-bold border-b-2 transition-all flex items-center gap-2.5 ${
               activeTab === 'upload'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-outline hover:text-on-surface'
             }`}
           >
-            <Upload className="size-4" />
+            <Upload className="size-4.5" />
             Upload & Prompt
           </button>
           <button
             onClick={() => setActiveTab('monitor')}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            className={`py-3.5 px-7 text-base font-bold border-b-2 transition-all flex items-center gap-2.5 ${
               activeTab === 'monitor'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-outline hover:text-on-surface'
             }`}
           >
-            <Activity className="size-4" />
+            <Activity className="size-4.5" />
             Batch Ingestion Monitor
           </button>
           <button
             onClick={() => setActiveTab('explorer')}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            className={`py-3.5 px-7 text-base font-bold border-b-2 transition-all flex items-center gap-2.5 ${
               activeTab === 'explorer'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-outline hover:text-on-surface'
             }`}
           >
-            <Users className="size-4" />
+            <Users className="size-4.5" />
             Records & Actions Explorer
           </button>
         </div>
@@ -2828,10 +2828,10 @@ return (
 
                 {/* 2-Column Split when CSV is uploaded: Dropzone left, Preview right */}
                 <div className={csvContent ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "space-y-4"}>
-                  <div className="border border-dashed border-outline-variant/20 rounded-3xl p-8 flex flex-col items-center justify-center bg-surface-low/30 hover:bg-surface-low/50 transition-colors h-full min-h-[140px]">
-                    <Upload className="size-10 text-outline mb-3 animate-bounce" />
-                    <p className="text-sm font-bold text-on-surface">Drag & Drop CSV File here</p>
-                    <p className="text-xs text-outline mt-1">or click to browse from local files</p>
+                  <div className="border border-dashed border-outline-variant/20 rounded-3xl p-10 flex flex-col items-center justify-center bg-surface-low/30 hover:bg-surface-low/50 transition-colors h-full min-h-[160px] group cursor-pointer">
+                    <Upload className="size-10 text-outline mb-4 transition-transform group-hover:-translate-y-1" />
+                    <p className="text-base font-bold text-on-surface">Drag & Drop CSV File here</p>
+                    <p className="text-sm text-outline mt-1.5">or click to browse from local files</p>
                   </div>
 
                   {csvContent && (
@@ -2874,47 +2874,47 @@ return (
             </div>
 
             <div className="space-y-6 relative z-0">
-              <div className="glass-panel p-6 rounded-3xl border border-outline-variant/10 space-y-4">
-                <h4 className="text-xs font-bold text-outline uppercase tracking-wider">How it works</h4>
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">1</div>
+              <div className="glass-panel p-6 rounded-3xl border border-outline-variant/10 space-y-5">
+                <h4 className="text-sm font-bold text-outline uppercase tracking-wider">How it works</h4>
+                <div className="space-y-5">
+                  <div className="flex gap-4">
+                    <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">1</div>
                     <div>
-                      <p className="text-xs font-bold text-on-surface">Import Records</p>
-                      <p className="text-[11px] text-outline mt-0.5">Upload records with arbitrary CSV columns containing balances, contact info, and dates.</p>
+                      <p className="text-sm font-bold text-on-surface">Import Records</p>
+                      <p className="text-xs text-outline mt-1 leading-relaxed">Upload records with arbitrary CSV columns containing balances, contact info, and dates.</p>
                     </div>
                   </div>
-                  <div className="flex gap-3">
-                    <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">2</div>
+                  <div className="flex gap-4">
+                    <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">2</div>
                     <div>
-                      <p className="text-xs font-bold text-on-surface">LLM Rules Translation</p>
-                      <p className="text-[11px] text-outline mt-0.5">AI extracts rules from the custom prompt and calculates risk categories across variables.</p>
+                      <p className="text-sm font-bold text-on-surface">LLM Rules Translation</p>
+                      <p className="text-xs text-outline mt-1 leading-relaxed">AI extracts rules from the custom prompt and calculates risk categories across variables.</p>
                     </div>
                   </div>
-                  <div className="flex gap-3">
-                    <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">3</div>
+                  <div className="flex gap-4">
+                    <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">3</div>
                     <div>
-                      <p className="text-xs font-bold text-on-surface">Recursive Autotask Dispatch</p>
-                      <p className="text-[11px] text-outline mt-0.5">The orchestrator launches automated voice calls or WhatsApp payment links based on dynamic schedule loops.</p>
+                      <p className="text-sm font-bold text-on-surface">Recursive Autotask Dispatch</p>
+                      <p className="text-xs text-outline mt-1 leading-relaxed">The orchestrator launches automated voice calls or WhatsApp payment links based on dynamic schedule loops.</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="glass-panel p-6 rounded-3xl border border-outline-variant/10 space-y-3">
-                <h4 className="text-xs font-bold text-outline uppercase tracking-wider">Active Campaigns Summary</h4>
-                <div className="flex items-center justify-between py-2 border-b border-outline-variant/5">
-                  <span className="text-xs text-outline">Total Upload Jobs</span>
-                  <span className="text-sm font-bold">{jobs.length}</span>
+                <h4 className="text-sm font-bold text-outline uppercase tracking-wider">Active Campaigns Summary</h4>
+                <div className="flex items-center justify-between py-3 border-b border-outline-variant/5">
+                  <span className="text-sm text-outline">Total Upload Jobs</span>
+                  <span className="text-base font-bold">{jobs.length}</span>
                 </div>
-                <div className="flex items-center justify-between py-2 border-b border-outline-variant/5">
-                  <span className="text-xs text-outline">Total Monitored Customers</span>
-                  <span className="text-sm font-bold">{entities.length}</span>
+                <div className="flex items-center justify-between py-3 border-b border-outline-variant/5">
+                  <span className="text-sm text-outline">Total Monitored Customers</span>
+                  <span className="text-base font-bold">{entities.length}</span>
                 </div>
-                <div className="flex items-center justify-between py-2">
-                  <span className="text-xs text-outline">Active Automation Rules</span>
-                  <span className="text-sm font-bold text-primary flex items-center gap-1">
-                    <Sparkles className="size-3" />
+                <div className="flex items-center justify-between py-3">
+                  <span className="text-sm text-outline">Active Automation Rules</span>
+                  <span className="text-base font-bold text-primary flex items-center gap-1.5">
+                    <Sparkles className="size-3.5" />
                     Adaptive LLM
                   </span>
                 </div>
@@ -3504,10 +3504,10 @@ return (
 
             {/* Complete action */}
             {broadcastProgress >= 100 && (
-              <div className="flex justify-center pt-2 animate-bounce">
+              <div className="flex justify-center pt-2">
                 <button
                   onClick={handleCompleteBroadcast}
-                  className="px-8 py-3 rounded-full bg-emerald-400 text-surface-lowest hover:brightness-110 shadow-lg shadow-emerald-400/20 transition-all font-black text-xs flex items-center gap-2"
+                  className="px-8 py-3 rounded-full bg-emerald-400 text-surface-lowest hover:brightness-110 shadow-lg shadow-emerald-400/20 transition-all font-black text-sm flex items-center gap-2"
                 >
                   <CheckCircle className="size-4" />
                   Complete Broadcast & View Monitor
@@ -3519,57 +3519,54 @@ return (
 
         {activeTab === 'monitor' && (
           <div className="space-y-6">
-            
-
-
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Database className="size-5" />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <Database className="size-6" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Total Batches Ingested</p>
-                  <p className="text-xl font-bold">{jobs.length}</p>
+                  <p className="text-xs font-bold text-outline uppercase tracking-wider">Total Batches Ingested</p>
+                  <p className="text-2xl font-black mt-0.5">{jobs.length}</p>
                 </div>
               </div>
-              <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                <div className="size-10 rounded-xl bg-indigo-400/10 text-indigo-400 flex items-center justify-center">
-                  <Clock className="size-5" />
+              <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                <div className="size-12 rounded-xl bg-indigo-400/10 text-indigo-400 flex items-center justify-center">
+                  <Clock className="size-6" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Pending Approval</p>
-                  <p className="text-xl font-bold">{jobs.filter(j => j.status === 'Ingested').length}</p>
+                  <p className="text-xs font-bold text-outline uppercase tracking-wider">Pending Approval</p>
+                  <p className="text-2xl font-black mt-0.5">{jobs.filter(j => j.status === 'Ingested').length}</p>
                 </div>
               </div>
-              <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                <div className="size-10 rounded-xl bg-amber-400/10 text-amber-400 flex items-center justify-center animate-pulse">
-                  <Activity className="size-5" />
+              <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                <div className="size-12 rounded-xl bg-amber-400/10 text-amber-400 flex items-center justify-center">
+                  <Activity className="size-6" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Active Run Classifier</p>
-                  <p className="text-xl font-bold">{jobs.filter(j => j.status === 'Analyzing' || j.status === 'Executing').length}</p>
+                  <p className="text-xs font-bold text-outline uppercase tracking-wider">Active Run Classifier</p>
+                  <p className="text-2xl font-black mt-0.5">{jobs.filter(j => j.status === 'Analyzing' || j.status === 'Executing').length}</p>
                 </div>
               </div>
-              <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                <div className="size-10 rounded-xl bg-emerald-400/10 text-emerald-400 flex items-center justify-center">
-                  <CheckCircle className="size-5" />
+              <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                <div className="size-12 rounded-xl bg-emerald-400/10 text-emerald-400 flex items-center justify-center">
+                  <CheckCircle className="size-6" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Completed Runs</p>
-                  <p className="text-xl font-bold">{jobs.filter(j => j.status === 'Completed').length}</p>
+                  <p className="text-xs font-bold text-outline uppercase tracking-wider">Completed Runs</p>
+                  <p className="text-2xl font-black mt-0.5">{jobs.filter(j => j.status === 'Completed').length}</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-4">
-                <h3 className="text-sm font-bold text-outline uppercase tracking-wider">Ingested Files & Action Runs</h3>
+                <h3 className="text-base font-bold text-on-surface">Ingested Files & Action Runs</h3>
                 
                 <div className="glass-panel rounded-2xl border border-outline-variant/10 overflow-hidden bg-surface-low/10 shadow-xl">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-outline-variant/10 bg-surface-high/60 text-[10px] font-bold text-outline uppercase tracking-wider">
+                        <tr className="border-b border-outline-variant/10 bg-surface-high/60 text-xs font-bold text-outline uppercase tracking-wider">
                           <th className="p-4">File / Batch Name</th>
                           <th className="p-4">Global AI Prompt</th>
                           <th className="p-4 text-center">Records</th>
@@ -3578,7 +3575,7 @@ return (
                           <th className="p-4 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-outline-variant/5 text-xs">
+                      <tbody className="divide-y divide-outline-variant/5 text-sm">
                         {jobs.map(job => (
                           <tr
                             key={job.id}
@@ -3673,48 +3670,48 @@ return (
             <div className="space-y-6">
               
               {/* Top Metrics Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                  <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Users className="size-5" />
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                  <div className="size-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                    <Users className="size-6" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Total Job Records</p>
-                    <p className="text-xl font-bold">{totalSelectedRecords}</p>
+                    <p className="text-xs font-bold text-outline uppercase tracking-wider">Total Job Records</p>
+                    <p className="text-2xl font-black mt-0.5">{totalSelectedRecords}</p>
                   </div>
                 </div>
-                <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                  <div className="size-10 rounded-xl bg-red-400/10 text-red-400 flex items-center justify-center animate-pulse">
-                    <AlertTriangle className="size-5" />
+                <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                  <div className="size-12 rounded-xl bg-red-400/10 text-red-400 flex items-center justify-center">
+                    <AlertTriangle className="size-6" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Urgent Outbound</p>
-                    <p className="text-xl font-bold">{urgentOutbound}</p>
+                    <p className="text-xs font-bold text-outline uppercase tracking-wider">Urgent Outbound</p>
+                    <p className="text-2xl font-black mt-0.5">{urgentOutbound}</p>
                   </div>
                 </div>
-                <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                  <div className="size-10 rounded-xl bg-emerald-400/10 text-emerald-400 flex items-center justify-center">
-                    <CheckCircle className="size-5" />
+                <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                  <div className="size-12 rounded-xl bg-emerald-400/10 text-emerald-400 flex items-center justify-center">
+                    <CheckCircle className="size-6" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Resolved Accounts</p>
-                    <p className="text-xl font-bold">{resolvedAccounts}</p>
+                    <p className="text-xs font-bold text-outline uppercase tracking-wider">Resolved Accounts</p>
+                    <p className="text-2xl font-black mt-0.5">{resolvedAccounts}</p>
                   </div>
                 </div>
-                <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex items-center gap-4 bg-surface-low/10">
-                  <div className="size-10 rounded-xl bg-amber-400/10 text-amber-400 flex items-center justify-center">
-                    <TrendingUp className="size-5" />
+                <div className="glass-panel p-6 rounded-2xl border border-outline-variant/5 flex items-center gap-5 bg-surface-low/10">
+                  <div className="size-12 rounded-xl bg-amber-400/10 text-amber-400 flex items-center justify-center">
+                    <TrendingUp className="size-6" />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Escalated Accounts</p>
-                    <p className="text-xl font-bold">{escalationAccounts}</p>
+                    <p className="text-xs font-bold text-outline uppercase tracking-wider">Escalated Accounts</p>
+                    <p className="text-2xl font-black mt-0.5">{escalationAccounts}</p>
                   </div>
                 </div>
               </div>
 
               {/* Filter controls */}
-              <div className="glass-panel p-4 rounded-2xl border border-outline-variant/5 flex flex-wrap gap-4 items-center justify-between">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <div className="glass-panel p-5 rounded-2xl border border-outline-variant/5 flex flex-wrap gap-4 items-center justify-between">
+                <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
                   <Search className="size-4 text-outline" />
                   <input
                     type="text"
@@ -3725,17 +3722,17 @@ return (
                   />
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Filter className="size-3.5 text-outline" />
-                    <span className="text-xs text-outline">Job Run:</span>
+                    <span className="text-sm text-outline">Job Run:</span>
                     <select
                       value={selectedJobId}
                       onChange={(e) => {
                         setSelectedJobId(e.target.value);
                         setExpandedEntityId(null);
                       }}
-                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-xs text-on-surface outline-none"
+                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-sm text-on-surface outline-none"
                     >
                       {jobs.map(j => (
                         <option key={j.id} value={j.id}>{j.name}</option>
@@ -3744,11 +3741,11 @@ return (
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-outline">Status:</span>
+                    <span className="text-sm text-outline">Status:</span>
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-xs text-on-surface outline-none"
+                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-sm text-on-surface outline-none"
                     >
                       <option value="All">All Statuses</option>
                       <option value="Active">Active</option>
@@ -3760,11 +3757,11 @@ return (
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-outline">Risk:</span>
+                    <span className="text-sm text-outline">Risk:</span>
                     <select
                       value={riskFilter}
                       onChange={(e) => setRiskFilter(e.target.value)}
-                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-xs text-on-surface outline-none"
+                      className="bg-surface-high border border-outline-variant/10 rounded-xl py-1.5 px-3 text-sm text-on-surface outline-none"
                     >
                       <option value="All">All Risk Levels</option>
                       <option value="Critical">Critical</option>
@@ -3819,7 +3816,7 @@ return (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="border-b border-outline-variant/10 bg-surface-high/60 text-[10px] font-bold text-outline uppercase tracking-wider select-none">
+                      <tr className="border-b border-outline-variant/10 bg-surface-high/60 text-xs font-bold text-outline uppercase tracking-wider select-none">
                         <th className="p-4">Ref ID</th>
                         <th className="p-4 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSort('name')}>
                           Customer Name {sortField === 'name' && (sortDirection === 'asc' ? '▲' : '▼')}
@@ -3841,7 +3838,7 @@ return (
                         <th className="p-4 text-right">Profile</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-outline-variant/5 text-xs">
+                    <tbody className="divide-y divide-outline-variant/5 text-sm">
                       {paginatedEntities.length === 0 ? (
                         <tr>
                           <td colSpan={9} className="p-8 text-center text-outline italic">
@@ -3921,7 +3918,7 @@ return (
                 </div>
 
                 {/* Pagination Controls */}
-                <div className="p-4 border-t border-outline-variant/10 bg-surface-high/30 flex items-center justify-between flex-wrap gap-4 text-xs">
+                <div className="p-4 border-t border-outline-variant/10 bg-surface-high/30 flex items-center justify-between flex-wrap gap-4 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="text-outline">Rows per page:</span>
                     <select
@@ -3930,7 +3927,7 @@ return (
                         setPageSize(Number(e.target.value));
                         setCurrentPage(1);
                       }}
-                      className="bg-surface-high border border-outline-variant/10 rounded-lg py-1 px-2 text-xs text-on-surface outline-none"
+                      className="bg-surface-high border border-outline-variant/10 rounded-lg py-1 px-2 text-sm text-on-surface outline-none"
                     >
                       <option value={10}>10</option>
                       <option value={25}>25</option>
@@ -3945,7 +3942,7 @@ return (
                     <button
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      className="px-3 py-1.5 rounded-lg bg-surface-high hover:bg-surface-highest border border-outline-variant/10 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      className="px-3 py-1.5 rounded-lg bg-surface-high hover:bg-surface-highest border border-outline-variant/10 font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
                       Previous
                     </button>
@@ -3955,7 +3952,7 @@ return (
                     <button
                       disabled={currentPage === totalPages}
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      className="px-3 py-1.5 rounded-lg bg-surface-high hover:bg-surface-highest border border-outline-variant/10 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      className="px-3 py-1.5 rounded-lg bg-surface-high hover:bg-surface-highest border border-outline-variant/10 font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
                       Next
                     </button>
@@ -3977,14 +3974,14 @@ return (
             {/* Header */}
             <div className="flex justify-between items-start">
               <div>
-                <h3 className="font-bold text-base text-on-surface">Voice Dialer Console</h3>
-                <p className="text-xs text-outline mt-0.5">Automated Collection Protocol</p>
+                <h3 className="font-bold text-xl text-on-surface">Voice Dialer Console</h3>
+                <p className="text-sm text-outline mt-0.5">Automated Collection Protocol</p>
               </div>
               <button
                 onClick={() => setCallSession(null)}
                 className="p-1 rounded-lg hover:bg-surface-high text-outline transition-colors"
               >
-                <X className="size-4" />
+                <X className="size-5" />
               </button>
             </div>
 
@@ -4003,7 +4000,7 @@ return (
             {/* Status & equalizers */}
             <div className="flex flex-col items-center justify-center py-4 space-y-3">
               <div className="size-16 rounded-full bg-primary/10 text-primary flex items-center justify-center border border-primary/20 animate-pulse">
-                <Phone className="size-6 animate-bounce" />
+                <Phone className="size-6" />
               </div>
               <div className="text-center">
                 <p className="text-xs font-bold text-on-surface uppercase tracking-wider">
@@ -4110,17 +4107,17 @@ return (
                 {/* Header */}
                 <div className="p-6 border-b border-outline-variant/10 flex justify-between items-center">
                   <div>
-                    <h3 className="font-bold text-base text-on-surface flex items-center gap-2">
-                      <User className="text-primary size-4" />
+                    <h3 className="font-bold text-xl text-on-surface flex items-center gap-2.5">
+                      <User className="text-primary size-5" />
                       Customer Profile & Actions
                     </h3>
-                    <p className="text-xs text-outline mt-0.5">{entity.name} ({entity.referenceId})</p>
+                    <p className="text-sm text-outline mt-0.5">{entity.name} ({entity.referenceId})</p>
                   </div>
                   <button
                     onClick={() => setSelectedEntityDetailId(null)}
                     className="p-1.5 rounded-lg hover:bg-surface-high text-outline transition-colors"
                   >
-                    <X className="size-4" />
+                    <X className="size-5" />
                   </button>
                 </div>
 
@@ -4130,21 +4127,21 @@ return (
                   {/* Quick Metadata Info */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-surface-low/50 border border-outline-variant/5 p-4 rounded-xl">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Outstanding Amount</p>
-                      <p className="text-lg font-bold mt-1 text-primary">{entity.attributes.OutstandingAmount || 'N/A'}</p>
+                      <p className="text-xs font-bold text-outline uppercase tracking-wider">Outstanding Amount</p>
+                      <p className="text-2xl font-black mt-1.5 text-primary">{entity.attributes.OutstandingAmount || 'N/A'}</p>
                     </div>
                     <div className="bg-surface-low/50 border border-outline-variant/5 p-4 rounded-xl">
-                      <p className="text-[10px] font-bold text-outline uppercase tracking-wider">Contact Info</p>
-                      <p className="text-xs font-bold mt-1.5 text-on-surface/80">{entity.contactInfo}</p>
+                      <p className="text-xs font-bold text-outline uppercase tracking-wider">Contact Info</p>
+                      <p className="text-sm font-bold mt-1.5 text-on-surface/80">{entity.contactInfo}</p>
                     </div>
                   </div>
 
                   {/* Attributes Grid */}
                   <div>
-                    <h4 className="text-xs font-bold text-outline uppercase tracking-wider mb-2">CSV Field Attributes</h4>
-                    <div className="bg-surface-high/40 rounded-xl p-4 border border-outline-variant/5 space-y-2 text-xs">
+                    <h4 className="text-sm font-bold text-outline uppercase tracking-wider mb-3">CSV Field Attributes</h4>
+                    <div className="bg-surface-high/40 rounded-xl p-4 border border-outline-variant/5 space-y-2 text-sm">
                       {Object.entries(entity.attributes).map(([key, val]) => (
-                        <div key={key} className="flex justify-between py-1 border-b border-outline-variant/5 last:border-0">
+                        <div key={key} className="flex justify-between py-1.5 border-b border-outline-variant/5 last:border-0">
                           <span className="text-outline">{key}</span>
                           <span className="font-bold">{String(val || 'N/A')}</span>
                         </div>
@@ -4173,8 +4170,8 @@ return (
 
                   {/* Autotask Schedule Queue */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-outline uppercase tracking-wider flex items-center gap-1">
-                      <Clock className="size-3.5" />
+                    <h4 className="text-sm font-bold text-outline uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="size-4" />
                       Autotask Schedule Queue
                     </h4>
 
@@ -4231,8 +4228,8 @@ return (
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-outline uppercase tracking-wider flex items-center gap-1">
-                      <History className="size-3.5" />
+                    <h4 className="text-sm font-bold text-outline uppercase tracking-wider flex items-center gap-1.5">
+                      <History className="size-4" />
                       Campaign Progression History
                     </h4>
                     <div className="bg-surface-high/30 rounded-xl p-3 border border-outline-variant/5 space-y-2">
@@ -4269,8 +4266,8 @@ return (
 
                   {/* Communication History Log */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-bold text-outline uppercase tracking-wider flex items-center gap-1">
-                      <Activity className="size-3.5" />
+                    <h4 className="text-sm font-bold text-outline uppercase tracking-wider flex items-center gap-1.5">
+                      <Activity className="size-4" />
                       Communication Log History
                     </h4>
 
@@ -4342,15 +4339,15 @@ return (
               className="fixed right-0 top-0 bottom-0 w-[80%] max-w-[85%] bg-surface-lowest border-l border-outline-variant/10 shadow-2xl z-[100] overflow-y-auto p-6 md:p-8 flex flex-col space-y-6"
             >
             {/* Header */}
-            <div className="flex justify-between items-start border-b border-outline-variant/10 pb-4">
-              <div className="space-y-1">
+            <div className="flex justify-between items-start border-b border-outline-variant/10 pb-5">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  <span className="text-sm bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                     Background Processing Summary (Audit View)
                   </span>
                 </div>
-                <h2 className="text-2xl font-bold text-on-surface flex items-center gap-2 mt-1">
-                  <Database className="text-primary size-6" />
+                <h2 className="text-3xl font-bold text-on-surface flex items-center gap-3 mt-1">
+                  <Database className="text-primary size-7" />
                   Inbound Data Ingestion & Scrubber Logs
                 </h2>
                 <p className="text-sm text-outline">
@@ -4448,11 +4445,11 @@ return (
 
                     {/* Processing Stream */}
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-3">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Database className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Database className="size-4.5 text-primary" />
                         Complete Processing Stream Audit
                       </h4>
-                      <p className="text-xs text-outline">
+                      <p className="text-sm text-outline">
                         Staggered records read directly from file payload. Checked fields: Name [N], Phone [P], Balance [B], DPD [D], Asset Class [A].
                       </p>
                       <div className="space-y-1.5 max-h-[350px] overflow-y-auto pr-1">
@@ -4506,8 +4503,8 @@ return (
                   <div className="space-y-6">
                     {/* Field anomalies */}
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-3">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <AlertTriangle className="size-4 text-amber-400" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <AlertTriangle className="size-4.5 text-amber-400" />
                         Field Errors & Auto-Corrections
                       </h4>
                       <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
@@ -4561,8 +4558,8 @@ return (
                   {/* Left Column: Deduplication Metrics */}
                   <div className="lg:col-span-1 space-y-6">
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-4">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Layers className="size-4.5 text-primary" />
                         Deduplication Analytics
                       </h4>
                       <div className="space-y-4">
@@ -4596,11 +4593,11 @@ return (
                   {/* Right 2 Columns: Merged Profile Audit Logs */}
                   <div className="lg:col-span-2 space-y-6">
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-3">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Database className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Database className="size-4.5 text-primary" />
                         Deduplication Merge & Action Logs
                       </h4>
-                      <p className="text-xs text-outline">
+                      <p className="text-sm text-outline">
                         Profiles matched against historical tables. Merged accounts are consolidated under unified profiles to prevent spam and preserve interaction histories.
                       </p>
                       <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
@@ -4632,8 +4629,8 @@ return (
                   {/* Left Column: AI Logic Definitions */}
                   <div className="lg:col-span-1 space-y-6">
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-4">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Sparkles className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Sparkles className="size-4.5 text-primary" />
                         AI Stratification Rules
                       </h4>
                       <div className="space-y-3 text-xs">
@@ -4659,8 +4656,8 @@ return (
                   {/* Right 2 Columns: AI Risk Funnel Allocation */}
                   <div className="lg:col-span-2 space-y-6">
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-4">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Sparkles className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Sparkles className="size-4.5 text-primary" />
                         AI Risk Funnel Allocation
                       </h4>
                       <div className="space-y-2">
@@ -4713,8 +4710,8 @@ return (
                   {/* Left Column: Channel Allocations */}
                   <div className="lg:col-span-1 space-y-6">
                     <div className="glass-panel p-5 rounded-2xl border border-outline-variant/10 space-y-4">
-                      <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
-                        <Cpu className="size-4 text-primary" />
+                      <h4 className="text-base font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
+                        <Cpu className="size-4.5 text-primary" />
                         Campaign Allocations
                       </h4>
                       <div className="space-y-3">
@@ -4736,7 +4733,7 @@ return (
                   <div className="lg:col-span-2 space-y-6">
                     {/* Channel Dispatch Network Animation */}
                     <div className="bg-surface-high/20 border border-outline-variant/5 p-5 rounded-2xl space-y-4">
-                      <h4 className="text-sm font-black uppercase text-outline tracking-wider">
+                      <h4 className="text-base font-black uppercase text-outline tracking-wider">
                         Outbound Campaign Telephony Route Graph
                       </h4>
                       <div className="bg-surface-lowest border border-outline-variant/10 rounded-xl p-6 relative overflow-hidden flex flex-col md:flex-row justify-around items-center gap-6 md:gap-4">
@@ -4753,7 +4750,7 @@ return (
 
                         <div className="flex flex-wrap md:flex-nowrap gap-3 justify-center">
                           <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
-                            <Phone className="size-4 text-primary mx-auto mb-1 animate-bounce" />
+                            <Phone className="size-4 text-primary mx-auto mb-1" />
                             <span className="text-xs font-bold text-outline">AI Bot Call</span>
                           </div>
                           <div className="bg-surface-high p-3 rounded-xl border border-outline-variant/10 text-center w-24">
