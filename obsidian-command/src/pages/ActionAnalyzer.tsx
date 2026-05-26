@@ -2775,7 +2775,7 @@ return (
                 </div>
 
                 {/* Display Current Selected Config Info Badge */}
-                {(() => {
+                {/* {(() => {
                   const selectedCase = CAMPAIGN_PRESET_CASES.find(c => c.id === selectedCasePresetId) || CAMPAIGN_PRESET_CASES[0];
                   return (
                     <div className="flex flex-wrap items-center gap-3 bg-surface-high/20 border border-outline-variant/5 rounded-2xl p-3 text-xs">
@@ -2795,9 +2795,9 @@ return (
                       </div>
                     </div>
                   );
-                })()}
+                })()} */}
 
-                <div className="space-y-2">
+                {/* <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-outline uppercase tracking-wider">Campaign Instructions</label>
                     <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">LLM Orchestrator</span>
@@ -2805,7 +2805,7 @@ return (
                   <div className="w-full bg-surface-high/40 border border-outline-variant/10 rounded-2xl p-4 text-sm text-on-surface leading-relaxed whitespace-pre-wrap select-all font-medium min-h-[80px]">
                     {systemPrompt}
                   </div>
-                </div>
+                </div> */}
               </div>
 
               <div className="glass-panel p-6 rounded-3xl border border-outline-variant/10 space-y-4 relative z-0">
