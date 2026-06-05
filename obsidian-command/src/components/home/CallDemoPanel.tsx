@@ -256,6 +256,69 @@ const SCENARIOS: Record<ScenarioKey, ScenarioData> = {
   },
 };
 
+// ─── Agent-specific scenario catalogs ─────────────────────────────────────────
+
+type ScenarioOption = { value: ScenarioKey; label: string };
+
+const DEFAULT_SCENARIO_OPTIONS: ScenarioOption[] = [
+  { value: 'debt', label: 'Debt Recovery' },
+  { value: 'kyc', label: 'KYC Onboarding' },
+  { value: 'fraud', label: 'Fraud Alert' },
+  { value: 'loan', label: 'Loan Query' },
+];
+
+function getScenarioOptionsForAgent(selectedAgent: any): ScenarioOption[] {
+  const name = String(selectedAgent?.name || '').toLowerCase();
+  const role = String(selectedAgent?.role || '').toLowerCase();
+
+  // Negotiator / collections domain
+  if (
+    name.includes('negotiator') ||
+    role.includes('negotiator') ||
+    role.includes('collections') ||
+    role.includes('collection') ||
+    role.includes('debt')
+  ) {
+    // We reuse the existing underlying scenario keys, but present
+    // the business-facing scenario names requested for Session2.
+    return [
+      { value: 'debt', label: 'Bucket 0' },
+      { value: 'debt', label: 'Collection' },
+      { value: 'debt', label: 'Settlement' },
+      { value: 'loan', label: 'Payment Due' },
+    ];
+  }
+
+  // Onboarding domain
+  if (role.includes('kyc') || role.includes('onboarding') || name.includes('kyc')) {
+    return [{ value: 'kyc', label: 'KYC Onboarding' }];
+  }
+
+  // Fraud/security domain
+  if (role.includes('fraud') || role.includes('security') || name.includes('fraud')) {
+    return [{ value: 'fraud', label: 'Fraud Alert' }];
+  }
+
+  // Loan/EMI domain
+  if (role.includes('emi') || role.includes('loan') || name.includes('emi') || name.includes('loan')) {
+    return [
+      { value: 'loan', label: 'Payment Due' },
+      { value: 'loan', label: 'EMI Query' },
+      { value: 'debt', label: 'Collection' },
+    ];
+  }
+
+  return DEFAULT_SCENARIO_OPTIONS;
+}
+
+function normalizeScenarioValueForAgentOptions(options: ScenarioOption[], current: ScenarioKey): ScenarioKey {
+  // Because some agent options may show multiple labels for the same underlying scenario,
+  // we only validate that the current scenario exists as a value in the options.
+  const allowed = new Set(options.map(o => o.value));
+  if (allowed.has(current)) return current;
+  return options[0]?.value || 'debt';
+}
+
 // ─── SentimentSparkline ───────────────────────────────────────────────────────
 
 const SentimentSparkline = ({ points, animate: shouldAnimate }: { points: number[]; animate: boolean }) => {
@@ -697,16 +760,9 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
   useEffect(() => {
     if (!selectedAgent) return;
 
-    // Map agent ID to scenario
-    const mapping: Record<string, ScenarioKey> = {
-      astra: 'debt',
-      nova: 'kyc',
-      midas: 'fraud',
-      luna: 'loan',
-      apex: 'debt', // Default to debt for now
-    };
-
-    const targetScenario = mapping[selectedAgent.id] || 'debt';
+    // Pick a reasonable default scenario for the agent's domain
+    const options = getScenarioOptionsForAgent(selectedAgent);
+    const targetScenario = normalizeScenarioValueForAgentOptions(options, scenario);
     
     // Reset call state
     setScenario(targetScenario);
@@ -1129,15 +1185,17 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                   {/* Row 1: Dropdowns */}
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <Dropdown<ScenarioKey>
-                      label="Scenario" value={scenario}
+                      label="Scenario"
+                      value={scenario}
                       tooltip="Select the core call objective for the AI to handle."
-                      options={[
-                        { value: 'debt',  label: 'Debt Recovery' },
-                        { value: 'kyc',   label: 'KYC Onboarding' },
-                        { value: 'fraud', label: 'Fraud Alert' },
-                        { value: 'loan',  label: 'Loan Query' },
-                      ]}
+                      options={getScenarioOptionsForAgent(selectedAgent)}
                       onChange={(v) => { handleScenarioChange(v); }}
+                    />
+                    <Dropdown<string>
+                      label="Persona" value={voiceProfile}
+                      tooltip="Select the exact sonic persona used to generate audio."
+                      options={VOICE_PROFILES}
+                      onChange={setVoiceProfile}
                     />
                     <Dropdown<LangKey>
                       label="Lang" value={language}
@@ -1159,12 +1217,6 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                       ]}
                       onChange={setTone}
                     />
-                    <Dropdown<string>
-                      label="Persona" value={voiceProfile}
-                      tooltip="Select the exact sonic persona used to generate audio."
-                      options={VOICE_PROFILES}
-                      onChange={setVoiceProfile}
-                    />
                   </div>
 
                   {/* Row 1.5: Neural Precision & Stress */}
@@ -1175,13 +1227,13 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                       options={[{ label: 'Easy', value: 'low' }, { label: 'Hard', value: 'high' }]}
                       onChange={setStressLevel}
                     />
-                    <SegmentedControl<number>
+                    {/* <SegmentedControl<number>
                       label="Network" value={latency}
                       tooltip="Injects artificial delay to test how conversational flow feels under 4G or poor network conditions."
                       options={[{ label: 'Fast', value: 0 }, { label: '4G', value: 800 }, { label: 'Poor', value: 2500 }]}
                       onChange={setLatency}
-                    />
-                    <AnimatePresence>
+                    /> */}
+                    {/* <AnimatePresence>
                       {language === 'hinglish' && (
                         <motion.div
                           initial={{ opacity: 0, width: 0, scale: 0.9 }}
@@ -1201,7 +1253,7 @@ export const CallDemoPanel: React.FC<{ className?: string; selectedAgent?: any }
                           />
                         </motion.div>
                       )}
-                    </AnimatePresence>
+                    </AnimatePresence> */}
                   </div>
 
                   {/* Neural Prompt Editor */}
